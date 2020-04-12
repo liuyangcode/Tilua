@@ -2,8 +2,11 @@
 a simple mvc lua web development kit based on [openresty](https://openresty.org/)
 # Status
 Pruduction not ready
-# Module
-
+# Dependencies
+* [lua-resty-template](https://github.com/bungle/lua-resty-template)
+* [lua-resty-redis](https://github.com/bungle/lua-resty-redis)
+* [lua-resty-mysql](https://github.com/bungle/lua-resty-mysql)
+* [Penlight - A Portable Lua Library](http://www.penlight.luaforge.net/)
 # Demo
 nginx/8001.conf
 ```nginx

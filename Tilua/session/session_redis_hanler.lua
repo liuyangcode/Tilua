@@ -1,4 +1,3 @@
-
 local cache = require('Tilua.cache')
 local hanlder = nil
 local log = require "Tilua.log"
@@ -25,13 +24,13 @@ end
 function session_redis_hanler.close()
     return true
 end
-function session_redis_hanler.read(id, gc_maxlifetime)
-    local val, err = hanlder:get('ACCESSTOKEN' .. id, true)
+function session_redis_hanler.read(name, id, gc_maxlifetime)
+    local val, err = hanlder:get(name .. id, true)
     return val or ''
 end
-function session_redis_hanler.write(id, val, gc_maxlifetime)
+function session_redis_hanler.write(name, id, val, gc_maxlifetime)
     log.record(log.ERR, 'session_redis_hanler.write', id, val, gc_maxlifetime)
-    local val, err = hanlder:set('ACCESSTOKEN' .. id, val, gc_maxlifetime)
+    local val, err = hanlder:set(name .. id, val, gc_maxlifetime)
     return val
 end
 function session_redis_hanler.destroy(name, id)
@@ -43,16 +42,16 @@ function session_redis_hanler.gc()
     return true
 end
 
-function session_redis_hanler.create_sid()
+function session_redis_hanler.create_id()
 
 end
 
-function session_redis_hanler.validate_sid(id)
+function session_redis_hanler.validate_id(id)
     return id
 end
-function session_redis_hanler.updateTimestamp(id, val, gc_maxlifetime)
+function session_redis_hanler.update_timestamp(name, id, val, gc_maxlifetime)
     log.record(log.ERR, 'session_redis_hanler.updateTimestamp', id, val, gc_maxlifetime)
-    local val, err = hanlder:expire('ACCESSTOKEN' .. id, gc_maxlifetime)
+    local val, err = hanlder:expire(name .. id, gc_maxlifetime)
     return true
 end
 

@@ -1,10 +1,14 @@
 
+local ngx = ngx
+local md5 = ngx.md5
+local ngx_cookie_time = ngx.cookie_time
+local format = string.format
+local ngx_time = ngx.time
 ---@class session
 local session = {}
 local log = require('Tilua.log')
 local id = nil
 local session_status = 0
-local define_sid = 1
 local session_vars = ''
 local send_cookie = 1
 
@@ -93,7 +97,7 @@ function session.destroy()
     if session_status ~= 1 then
         return false
     end
-    if id and not save_handler.destroy(id) then
+    if id and not save_handler.destroy(session_name,id) then
         return false
     end
     return true
@@ -150,20 +154,17 @@ function session.start(request, config)
         session_status = 0
     end
     if session_status == 0 then
-        define_sid = not use_only_cookies
         send_cookie = use_cookies or use_only_cookies
     end
     if use_cookies then
         id = request:get_cookie(session_name)
         if id then
             send_cookie = 0
-            define_sid = 0
         end
     elseif not use_only_cookies then
         id = request:get(session_name) or request:post(session_name)
         if id then
             send_cookie = 0
-            define_sid = 0
         end
     end
     local referer = request:get_header('referer')
@@ -209,9 +210,9 @@ function session.init()
             send_cookie = 1
         end
     elseif use_strict_mode and
-            save_handler.validate_sid and
-            save_handler.validate_sid(id) == false then
-        id = save_handler.create_sid()
+            save_handler.validate_id and
+            save_handler.validate_id(id) == false then
+        id = save_handler.create_id()
         if not id then
             id = session.create_id()
         end
@@ -224,7 +225,7 @@ function session.init()
         return false
     end
     session.track_init()
-    local val = save_handler.read(id, gc_maxlifetime)
+    local val = save_handler.read(session_name,id, gc_maxlifetime)
     if val == false then
         session.abort()
         return false
@@ -268,15 +269,14 @@ function session.save_current_state(write)
         if type(_session) == 'table' then
             local val = session.encode(_session)
             if val ~= '{}' then
-                if lazy_write and session_vars and save_handler.updateTimestamp
+                if lazy_write and session_vars and save_handler.update_timestamp
                         and #val == #session_vars and val == session_vars then
-                    ret = save_handler.updateTimestamp(id, val, gc_maxlifetime)
+                    ret = save_handler.update_timestamp(session_name,id, val, gc_maxlifetime)
                 else
-                    ngx.say(val, session_vars)
-                    ret = save_handler.write(id, val, gc_maxlifetime)
+                    ret = save_handler.write(session_name,id, val, gc_maxlifetime)
                 end
             else
-                ret = save_handler.write(id, '{}', gc_maxlifetime)
+                ret = save_handler.write(session_name,id, '{}', gc_maxlifetime)
             end
         end
         if not ret then
@@ -293,13 +293,9 @@ function session.cookie_to_send()
 end
 
 function session.send_cookie()
-    local ncookie = ''
-    if ngx.headers_sent then
-        return false
-    end
     local cookie_format = '%s=%s;path=%s;expires=%s;domain=%s;%s'
-    _cookies = string.format(cookie_format, session_name, id, cookie_path,
-            cookie_expires > 0 and ngx.cookie_time(ngx.time() + 60 * cookie_expires) or 0, cookie_domain, cookie_http_only and 'httponly;' or '')
+    _cookies = format(cookie_format, session_name, id, cookie_path,
+            cookie_expires > 0 and ngx_cookie_time(ngx_time() + 60 * cookie_expires) or 0, cookie_domain, cookie_http_only and 'httponly;' or '')
     return true
 end
 
