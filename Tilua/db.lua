@@ -49,7 +49,7 @@ function db.parseConfig(config)
 end
 
 function db.close()
-    log.record(ngx.DEBUG, 'run db connections instance handle close')
+    log.record(log.DEBUG, 'run db connections instance handle close')
     lw_util.foreach(instance, function(db_inst)
         db_inst:close()
     end)

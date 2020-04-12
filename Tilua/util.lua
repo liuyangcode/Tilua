@@ -1,4 +1,3 @@
-
 local tablex = require "pl.tablex"
 local tablex_size = tablex.size
 local foreach = tablex.foreach
@@ -85,6 +84,17 @@ function util.dump(...)
         ngx.say(util.json_encode(params[i]) .. '<br/>')
 
     end
+end
+
+---check vals is nil
+function util.is_set(...)
+    local params = { ... }
+    for i = 1, #params do
+        if params[i] == nil then
+            return false
+        end
+    end
+    return true
 end
 
 ---reverseTable

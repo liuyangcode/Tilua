@@ -1,5 +1,3 @@
-
-
 local class = require('pl.class')
 local pl_utils = require "pl.utils"
 local stringx = require "pl.stringx"
@@ -76,25 +74,15 @@ function driver:properties()
     self.queryTimes = 0
     -- 执行次数
     self.executeTimes = 0
-    self.bind = {}
 end
---        if (!empty($config)) {
---            $this->config = array_merge($this->config, $config);
---            if (is_array($this->config['params'])) {
---                $this->options = $this->config['params'] + $this->options;
---            }
---        }
+
 function driver:_init(config)
     self:properties()
     if config then
         tablex.update(self.config, config)
-        --todo
-        --            if (is_array($this->config['params'])) {
-        --                $this->options = $this->config['params'] + $this->options;
-        --            }
     end
-
 end
+
 function driver.derive()
     return class(driver)
 end
@@ -111,12 +99,6 @@ function driver:query(str, fetchSql, master)
         return false
     end
     self.queryStr = str
-
-    --if self.bind then
-    --    --todo
-    --    self.queryStr = ""
-    --    --            $this->queryStr = strtr($this->queryStr, array_map(function ($val) use ($that) {return '\'' . $that->escapeString($val) . '\'';}, $this->bind));
-    --end
 
     if fetchSql then
         return self.queryStr
@@ -251,7 +233,7 @@ end
 ---@param value any
 function driver:parseValue(value)
     if is_string(value) then
-        value = choose(string_find(value, '\\:') and in_array(tablex.keys(self.bind), value), self:escapeString(value), '\'' .. self:escapeString(value) .. '\'')
+        value = '\'' .. self:escapeString(value) .. '\''
     elseif is_array(value) and is_string(value[1]) and string.lower(value[1]) == 'exp' then
         value = self:escapeString(value[2])
     elseif type(value) == 'table' then
@@ -308,10 +290,10 @@ end
 
 function driver:parseWhere(where)
     local whereStr = ""
-    if type(where) == 'string' then
+    if lw_utils.is_string(where) == 'string' then
         whereStr = where
     else
-        local operate = choose(where._logic, string.upper(where._logic or ''), '')
+        local operate = string.upper(where._logic or '')
         if in_array({ 'AND', 'OR', 'XOR' }, operate) then
             operate = ' ' .. operate .. ' '
             where._logic = nil
@@ -322,43 +304,39 @@ function driver:parseWhere(where)
             if is_number(key) then
                 key = '_complex'
             end
-            if 1 == string_find(key, '_') then
-                whereStr = whereStr .. self:parseThinkWhere(key, val)
+            local multi = type(val) == 'table' and val._multi
+            key = stringx.strip(key)
+            if string_find(key, '|') then
+                local array = stringx.split(key, '|')
+                local str = {}
+                foreach(array, function(k, m)
+                    local v = choose(multi, val[m], val)
+                    str[#str + 1] = '(' .. self:parseWhereItem(self:parseKey(k), v)
+                end)
+                whereStr = table_concat({
+                    whereStr,
+                    '（ ',
+                    table_concat(str, ' OR '),
+                    ')'
+                })
+            elseif string_find(key, '&') then
+                local array = stringx.split(key, '&')
+                local str = {}
+                foreach(array, function(k, m)
+                    local v = choose(multi, val[m], val)
+                    str[#str + 1] = '(' .. self:parseWhereItem(self:parseKey(k), v)
+                end)
+                whereStr = table_concat({
+                    whereStr,
+                    '（ ',
+                    table_concat(str, ' AND '),
+                    ')'
+                })
             else
-                local multi = type(val) == 'table' and val._multi
-                key = stringx.strip(key)
-                if string_find(key, '|') then
-                    local array = stringx.split(key, '|')
-                    local str = {}
-                    foreach(array, function(k, m)
-                        local v = choose(multi, val[m], val)
-                        str[#str + 1] = '(' .. self:parseWhereItem(self:parseKey(k), v)
-                    end)
-                    whereStr = table_concat({
-                        whereStr,
-                        '（ ',
-                        table_concat(str, ' OR '),
-                        ')'
-                    })
-                elseif string_find(key, '&') then
-                    local array = stringx.split(key, '&')
-                    local str = {}
-                    foreach(array, function(k, m)
-                        local v = choose(multi, val[m], val)
-                        str[#str + 1] = '(' .. self:parseWhereItem(self:parseKey(k), v)
-                    end)
-                    whereStr = table_concat({
-                        whereStr,
-                        '（ ',
-                        table_concat(str, ' AND '),
-                        ')'
-                    })
-                else
-                    whereStr = table_concat({
-                        whereStr,
-                        self:parseWhereItem(self:parseKey(key), val)
-                    })
-                end
+                whereStr = table_concat({
+                    whereStr,
+                    self:parseWhereItem(self:parseKey(key), val)
+                })
             end
             whereStr = whereStr .. operate
         end)
@@ -416,8 +394,6 @@ function driver:parseWhereItem(key, val)
 
                     })
                 end
-            elseif 'bind' == exp then
-                whereStr = whereStr .. key .. ' = :' .. val[2]
             elseif 'exp' == exp then
                 whereStr = whereStr .. key .. ' ' .. val[2]
             elseif exp == 'notin' or exp == 'not in' or 'in' == exp then
@@ -438,8 +414,10 @@ function driver:parseWhereItem(key, val)
             end
         else
             local count = #val
-            local rule
-            --todo                $rule  = isset($val[$count - 1]) ? (is_array($val[$count - 1]) ? strtoupper($val[$count - 1][0]) : strtoupper($val[$count - 1])) : '';
+            local rule = ""
+            if val[count] then
+                rule = string.upper(val[count][1] or val[count])
+            end
             if rule == 'AND' or rule == 'OR' or 'XOR' then
                 count = count - 1
             else
@@ -464,11 +442,6 @@ function driver:parseWhereItem(key, val)
         end
     end
     return whereStr
-end
-function driver:parseThinkWhere(key, value)
-    local whereStr = ''
-    --todo
-    return '( ' .. whereStr .. ' )';
 end
 
 function driver:parseLimit(limit)
@@ -587,10 +560,6 @@ function driver:insert(data, options, replace)
     local sql = choose(replace, 'REPLACE', 'INSERT') .. ' INTO ' .. self:parseTable(options.table) .. ' (' .. table_concat(fields, ',') .. ') VALUES (' .. table_concat(values, ',') .. ' )' .. self:parseDuplicate(replace)
     sql = sql .. self:parseComment(options.comment or '')
     return self:execute(sql, options.fetch_sql)
-end
-
-function driver:bindParam(name, value)
-    self.bind[':' .. name] = value
 end
 
 function driver:insertAll(dataSet, options, replace)
