@@ -1,4 +1,3 @@
-
 local ngx = ngx
 local class = require("pl.class")
 local tablex = require "pl.tablex"
@@ -11,24 +10,20 @@ class.dispatch()
 function dispatch:_init(app)
     self.app = app
 end
-function dispatch:prepare_response(content, code, header)
-    if type(content) == 'string' then
-        return require('Tilua.response')(content, code, header)
-    elseif type(content) == 'table' and content.is_a and content:is_a(response) then
-        return content
-    end
+
+function dispatch:prepare_ctx_args_for_responser(args)
+    return self.app, response(), table.unpack(args)
 end
+
 ---make_chain_call
 ---@param midware table
 ---@param handler function
 function dispatch:make_chain_call(midware, handler, ...)
     local mid
     local args = { ... } --参数绑定
-    local default_before_midware = self.app:C('default_midware')
     local next = function
-    (app)
-        args[#args + 1] = app
-        local resp = self:prepare_response(handler(table.unpack(args)))
+    ()
+        local resp = handler(self:prepare_ctx_args_for_responser(args))
         local async_mid = {}
         if midware.aftermidware then
             for i = 1, #midware.aftermidware do
@@ -43,9 +38,11 @@ function dispatch:make_chain_call(midware, handler, ...)
                     ngx.eof() --返回终端
                     --异步执行代码
                     ngx.timer.at(500, function()
-                        args[#args + 1] = resp
                         tablex.map(function(asyc_midware)
-                            pl_utils.bind1(asyc_midware.handle, asyc_midware)(table.unpack(args))
+                            pl_utils.bind1(asyc_midware.handle, asyc_midware)(table.unpack({
+                                resp,
+                                table.unpack(args)
+                            }))
                         end, async_mid)
                     end)
                 end)
@@ -60,9 +57,11 @@ function dispatch:make_chain_call(midware, handler, ...)
             assert(false, 'midware named' .. next_midware .. ' not found')
         end
         mid = midware_class(self.app)
-        local func = pl_utils.bind1(mid.handle, mid)
         return function(...)
-            return func(res, table.unpack(args))
+            return pl_utils.bind1(mid.handle, mid)(table.unpack({
+                res,
+                table.unpack(args)
+            }))
         end
     end, lw_util.reverseTable(midware.beforemidware or {}), next)
     return next

@@ -1,6 +1,7 @@
 
 local ngx = ngx
 local md5 = ngx.md5
+local re_match = ngx.re.match
 local ngx_cookie_time = ngx.cookie_time
 local format = string.format
 local ngx_time = ngx.time

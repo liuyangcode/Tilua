@@ -1,4 +1,3 @@
-
 local class = require "pl.class"
 local template = require "resty.template"
 local path = require "pl.path"
@@ -57,17 +56,12 @@ function view:get_template_cache_file_path(view)
 end
 
 function view:get_template_cache_path()
-    local path = self.app:C('view_cache_path')
-    if path == '' then
-        path = self.app.app_path .. table.concat({
-            'Runtime',
-            'cache',
-            self.app:C('view_layer'),
-            self.app:get_module(),
-            ''
-        }, '/')
-    end
-    return path
+    local view_cache_path = self.app.app_path .. table.concat({
+        'cache',
+        self.app:C('view_layer'),
+        ''
+    }, '/')
+    return view_cache_path
 end
 
 function view:render(view)
@@ -98,15 +92,11 @@ function view:get_template_cache_path_relative()
 end
 
 function view:get_template_path()
-    local path = self.app:C('view_path')
-    if path == '' then
-        path = self.app.app_path .. table.concat({
-            self.app:get_module(),
-            self.app:C('view_layer'),
-            ''
-        }, '/')
-    end
-    return path
+    local view_path = self.app.app_path .. table.concat({
+        'view',
+        ''
+    }, '/')
+    return view_path
 end
 
 return view

@@ -2,18 +2,17 @@
 
 local class = require('pl.class')
 local tablex = require('pl.tablex')
-local stringx = require('pl.stringx')
 local ngx = ngx
 ---@class response
 class.response()
 
 ---_init
----@param data any
+---@param body any
 ---@param code number
 ---@param headers table
-function response:_init(data, code, headers)
+function response:_init(body, code, headers)
     code = code or 200
-    self.data = data
+    self.body = body
     self.headers = headers or {}
     self.code = code
     self.after_send_callback = {}
@@ -32,6 +31,9 @@ function response:send_headers()
         ngx.header[k] = v
     end
     return self
+end
+function response:render(view, context)
+
 end
 ---设置响应头
 ---@param header table|any
@@ -77,8 +79,8 @@ function response:set_cookie(name, value, path, expires, domain, httponly, secur
     return true
 end
 ---发送正文给客户端
-function response:send_data()
-    ngx.say(self.data)
+function response:send_body()
+    ngx.say(self.body)
     tablex.map(function(f)
         f()
     end, self.after_send_callback)
@@ -89,7 +91,7 @@ end
 function response:send()
     self:add_header('content_type', "application/json;chartset=uft-8")
     self:send_headers()
-    self:send_data()
+    self:send_body()
 end
 
 return response

@@ -28,21 +28,18 @@ function db.parseConfig(config)
     if not lw_util.empty(config) then
     else
         config = {
-            type = app:C('DB_TYPE'),
-            username = app:C('DB_USER'),
-            password = app:C('DB_PWD'),
-            hostname = app:C('DB_HOST'),
-            hostport = app:C('DB_PORT'),
-            database = app:C('DB_NAME'),
-            dsn = app:C('DB_DSN'),
-            params = app:C('DB_PARAMS'),
-            charset = app:C('DB_CHARSET'),
-            deploy = app:C('DB_DEPLOY_TYPE'),
-            rw_separate = app:C('DB_RW_SEPARATE'),
-            master_num = app:C('DB_MASTER_NUM'),
-            slave_no = app:C('DB_SLAVE_NO'),
-            debug = app:C('DB_DEBUG', app.debug),
-            lite = app:C('DB_LITE')
+            type = app:C('db_type'),
+            username = app:C('db_user'),
+            password = app:C('db_pwd'),
+            hostname = app:C('db_host'),
+            hostport = app:C('db_port'),
+            database = app:C('db_name'),
+            charset = app:C('db_charset'),
+            deploy = app:C('db_deploy_type'),
+            rw_separate = app:C('db_rw_separate'),
+            master_num = app:C('db_master_num'),
+            slave_no = app:C('db_slave_no'),
+            debug = app:C('db_debug', app.debug)
         }
     end
     return config

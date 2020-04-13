@@ -1,5 +1,3 @@
-
-
 local class = require("pl.class")
 local path = require "pl.path"
 local path_exists = path.exists
@@ -18,16 +16,13 @@ class.app()
 
 ---初始化属性
 function app:properties()
-    self.multi_module = true
+    self.status = 'prod'
+    self.config = self.config or {}
 end
 ---_init
 ---@param app_instance app
 function app:_init(app_instance)
     self:properties()
-
-    module = app_instance.module or ''
-
-    self.config = self.config or {}
     --共享全局app实例
     ctx.app_context = app_instance
 end
@@ -108,35 +103,16 @@ end
 
 ---应用初始化
 function app:init()
-    self.pathinfo = var.uri
-    if self.multi_module and lw_utils.empty(self.module) then
-        self.module = table.unpack(split(lstrip(self.pathinfo, '/'), '/'))
-    end
     --加载系统默认配置
-    lw_utils.extend(self.config, require "Tilua.config")
+    lw_utils.extend(self.config, require "Tilua.config.default")
+    local _, config = pcall(require, table_concat({
+        self.app_name,
+        "config",
+        self.status
+    }, '.'))
+    self:load_config(config or {})
     --加载应用路由定义
     pcall(require, self.app_name .. '.routes')
-    if self.module and self.multi_module then
-        --加载模块路由配置
-        pcall(require, table_concat({
-            self.app_name,
-            self.module,
-            'routes'
-        }, '.'))
-
-        self.module_path = self.app_path .. self.module
-        if not path_exists(self.module_path) then
-            error('module ' .. self:get_module() .. ' not found')
-        end
-        local found, module_config = pcall(require, table_concat({
-            self.app_name,
-            self.module,
-            'config'
-        }, '.'))
-        if found then
-            self:load_config(module_config)
-        end
-    end
 end
 
 ---加载配置
@@ -165,7 +141,7 @@ end
 ---handle
 ---@param request request
 function app:handle(request)
-    (self:dispatch(self:get_route()(request)))(self):send()
+    (self:dispatch(self:get_route()(request)))():send()
 end
 
 function app:start()
@@ -192,7 +168,6 @@ function app:run()
     else
         self:start()
     end
-    require("Tilua.db").close()
 end
 
 function app.derive()

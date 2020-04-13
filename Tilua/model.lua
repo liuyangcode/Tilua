@@ -1,4 +1,3 @@
-
 local stringx = require "pl.stringx"
 local split = stringx.split
 local strip = stringx.strip
@@ -1159,9 +1158,9 @@ end
 
 ---缓存字段信息
 function model:F(tableName, fields)
-    local cache_type = app:C('DB_FIELDS_CACHE_TYPE')
+    local cache_type = app:C('db_fields_cache_type')
     local cache
-    local cache_key = app:C('DB_FIELDS_CACHE_PREFIX') .. self.db.config.database .. tableName
+    local cache_key = app:C('db_fields_cache_prefix') .. self.db.config.database .. tableName
     if cache_type == 'shdict' then
         cache = app:get_cache({
             type = cache_type,
@@ -1171,7 +1170,8 @@ function model:F(tableName, fields)
         cache = app:get_cache({
             type = cache_type,
             host = app:C('redis_host'),
-            port = app:C('redis_port')
+            port = app:C('redis_port'),
+            db_index = app:C('redis_db_index')
         })
     end
     if empty(fields) then
@@ -1216,7 +1216,7 @@ function model:flush()
         end
     end
     self.fields._type = type
-    if app:C('DB_FIELDS_CACHE') then
+    if app:C('db_fields_cache') then
         self:F('_fields' .. string.lower(tableName), self.fields)
     end
 end

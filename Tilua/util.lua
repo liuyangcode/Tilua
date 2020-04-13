@@ -1,4 +1,5 @@
 local tablex = require "pl.tablex"
+local pretty = require('pl.pretty')
 local tablex_size = tablex.size
 local foreach = tablex.foreach
 local ngx = ngx
@@ -81,8 +82,7 @@ end
 function util.dump(...)
     local params = { ... }
     for i = 1, #params do
-        ngx.say(util.json_encode(params[i]) .. '<br/>')
-
+        ngx.say(pretty.write(params[i])..'<br/>')
     end
 end
 
