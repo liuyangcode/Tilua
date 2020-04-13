@@ -1,6 +1,5 @@
-
-
 local ngx = ngx
+
 local class = require "pl.class"
 local re_gsub = ngx.re.gsub
 local string_sub = string.sub
@@ -13,10 +12,13 @@ local strip = stringx.strip
 local parse_agrs = ngx.decode_args
 local split = require('pl.utils').split
 local lw_util = require('Tilua.util')
+local middleware = require("Tilua.midware")
 
 local rules = {}
+
 ---@class route
-class.route()
+local route = class()
+
 function route:_init(_rules)
     self.rules = _rules or {}
 end
@@ -34,6 +36,10 @@ function route:check()
 
 end
 
+---get
+---@param path string
+---@param handler function
+---@param midware table
 function route.get(path, handler, midware)
     rules['get ' .. path] = {
         responser = handler,
@@ -61,10 +67,10 @@ function route:to_router(router, path)
         router.aftermidware = router.aftermidware or {}
         router.beforemidware = router.beforemidware or ''
         if lw_util.is_string(router.aftermidware) then
-            router.aftermidware = split(router.aftermidware, ',')
+            router.aftermidware = middleware.parse_midware_from_string(router.aftermidware)
         end
         if lw_util.is_string(router.beforemidware) then
-            router.beforemidware = split(router.beforemidware, ',')
+            router.beforemidware = middleware.parse_midware_from_string(router.beforemidware)
         end
         standard_handler.midware = {
             aftermidware = router.aftermidware,
@@ -155,8 +161,8 @@ function route:parse_midware(responser)
         -- 没有中间件
         return beforemidware, midware
     end
-    midware.beforemidware = split(beforemidware, ',')
-    midware.aftermidware = aftermidware and split(aftermidware, ',') or {}
+    midware.beforemidware = middleware.parse_midware_from_string(beforemidware)
+    midware.aftermidware = middleware.parse_midware_from_string(aftermidware)
     return responser, midware
 end
 
@@ -285,4 +291,3 @@ function route:run(request)
 end
 
 return route
-

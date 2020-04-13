@@ -8,7 +8,7 @@ local strip = stringx.strip
 local table_concat = table.concat
 
 local callable = lw_util.callable
-local mvc_router = require "Tilua.midware.midware" .derive()
+local mvc_router = require "Tilua.midware" .derive()
 
 function mvc_router:handle(next, request, ...)
     local pathinfo = request.get_routed_uri()

@@ -1,4 +1,4 @@
-local test = require('Tilua.midware.midware').derive()
+local test = require('Tilua.midware').derive()
 function test:_init(ctx)
     self:super(ctx)
 end
