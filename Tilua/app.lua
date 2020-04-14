@@ -9,21 +9,17 @@ local ctx = ngx.ctx
 local var = ngx.var
 local pl_utils = require('pl.utils')
 local lw_utils = require('Tilua.util')
+local midware_manager = require('Tilua.midware_manager')
 ---@type request
 local request = require('Tilua.request')
 ---@class app
 class.app()
 
----初始化属性
-function app:properties()
-    self.status = 'prod'
-    self.config = self.config or {}
-end
 ---_init
 ---@param app_instance app
 function app:_init(app_instance)
-    self:properties()
     --共享全局app实例
+    self.config = {}
     ctx.app_context = app_instance
 end
 
@@ -90,15 +86,10 @@ function app:get_route()
     return self.route
 end
 
----get_cache
----@param config table
----@return cache
-function app:get_cache(config)
-    if self.cache then
-        return self.cache:instance(config)
-    end
-    self.cache = require "Tilua.cache"(self)
-    return self.cache:instance(config)
+---初始化缓存
+function app:init_cache()
+    local cache = require "Tilua.cache"
+    cache.init(self)
 end
 
 ---应用初始化
@@ -110,7 +101,10 @@ function app:init()
         "config",
         self.status
     }, '.'))
+
     self:load_config(config or {})
+    self:init_cache()
+    midware_manager.init_group(self:C('midware_group'))
     --加载应用路由定义
     pcall(require, self.app_name .. '.routes')
 end
@@ -135,7 +129,10 @@ function app:C(name, value)
         self.config[name] = value
         return true
     end
-    return self.config[name] or ''
+    if not self.config then
+        lw_utils.dump(name)
+    end
+    return self.config[name] or nil
 end
 
 ---handle

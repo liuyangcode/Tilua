@@ -6,8 +6,11 @@ local config = {
     html_cache_time = 60,
     html_cache_rules = {},
     html_cache_file_ext = '.html',
-    default_midware = {
-        'Tilua.midware.session'
+    midware_group = {
+        api = {
+            'Tilua.midware.session',
+            'Tilua.midware.json_response'
+        }
     },
     session = {
         use_strict_mode = true,
@@ -22,7 +25,7 @@ local config = {
         lazy_write = 1, --延迟写入
         gc_probability = 1,
         cookie_path = '/',
-        cookie_domain = 'centos-7',
+        cookie_domain = '',
         cookie_expires = 30,
         cookie_http_only = true
     },

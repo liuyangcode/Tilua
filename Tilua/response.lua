@@ -89,7 +89,6 @@ end
 
 ---发送
 function response:send()
-    self:add_header('content_type', "application/json;chartset=uft-8")
     self:send_headers()
     self:send_body()
 end

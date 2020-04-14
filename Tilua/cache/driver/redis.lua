@@ -1,7 +1,5 @@
-
 local redis_c = require "resty.redis"
 local lw_util = require('Tilua.util')
-local app = ngx.ctx.app_context
 
 local commands = {
     "append", "bgsave", "blpop", "brpoplpush", "auth", "bitcount",
@@ -49,13 +47,13 @@ local function is_redis_null(res)
     return false
 end
 
-function redis:_init(config, app)
-    self:super(app)
+function redis:_init(config, ctx)
+    self:super(ctx)
     self.config = {
-        timeout = (config.timeout and config.timeout * 1000) or 1000,
-        db_index = config.db_index or 0,
-        host = config.host or 6379,
-        port = config.port or '127.0.0.1'
+        timeout = config.timeout and config.timeout * 1000 or 1000,
+        db_index = config.db_index or ctx:C('redis_db_index') or 0,
+        host = config.host or ctx:C('redis_host') or '127.0.0.1',
+        port = config.port or ctx:C('redis_port') or 6379
     }
     self.handler = {}
 end
@@ -76,7 +74,7 @@ function redis:connect_mod()
 end
 --加入连接池
 function redis:set_keepalive_mod()
-    return self:get_redis():set_keepalive(app:C('redis_pool_timeout') * 1000, app:C('redis_pool_size'))
+    return self:get_redis():set_keepalive(self.app:C('redis_pool_timeout') * 1000, self.app:C('redis_pool_size'))
 end
 
 function redis:init_pipeline()

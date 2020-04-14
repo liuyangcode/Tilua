@@ -1,6 +1,6 @@
 
 return {
-    redis_host = 'openresty',
+    redis_host = '10.211.55.6',
     redis_port = 6379,
     db_type = 'mysql', -- 数据库类型
     db_host = '10.211.55.6', -- 服务器地址

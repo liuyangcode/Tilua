@@ -12,11 +12,10 @@ local session_redis_hanler = {
         end
     }
 }
+
 function session_redis_hanler.open()
-    hanlder = cache():instance({
-        type = 'redis',
-        host = '172.17.0.1',
-        port = 6379
+    hanlder = cache.instance({
+        type = 'redis'
     })
     return true
 end

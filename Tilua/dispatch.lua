@@ -27,11 +27,11 @@ function dispatch:make_chain_call(midware, handler, ...)
         local async_mid = {}
         if midware.aftermidware then
             for i = 1, #midware.aftermidware do
-                local ok, midware_class = pcall(require, midware.aftermidware[i])
+                local ok, midware_class = pcall(require, midware.aftermidware[i][1])
                 if not ok then
-                    assert(false, 'midware named' .. midware.aftermidware[i] .. ' not found')
+                    assert(false, 'midware named' .. midware.aftermidware[i][1] .. ' not found')
                 end
-                async_mid[#async_mid + 1] = midware_class(self.app)
+                async_mid[#async_mid + 1] = midware_class(self.app,midware.aftermidware[i][2])
             end
             if #async_mid > 0 then
                 resp:after_send(function()
@@ -50,21 +50,22 @@ function dispatch:make_chain_call(midware, handler, ...)
         end
         return resp
     end
+
     --初始化响应前中间件
-    next = tablex.reduce(function(res, next_midware)
-        local ok, midware_class = pcall(require, next_midware)
+    return tablex.reduce(function(res, next_midware)
+        local ok, midware_class = pcall(require, next_midware[1])
         if not ok then
-            assert(false, 'midware named' .. next_midware .. ' not found')
+            assert(false, 'midware named' .. next_midware[1] .. ' not found')
         end
-        mid = midware_class(self.app)
+        mid = midware_class(self.app,next_midware[2])
+        local func = pl_utils.bind1(mid.handle, mid)
         return function(...)
-            return pl_utils.bind1(mid.handle, mid)(table.unpack({
+            return func(table.unpack({
                 res,
                 table.unpack(args)
             }))
         end
     end, lw_util.reverseTable(midware.beforemidware or {}), next)
-    return next
 end
 
 ---run
