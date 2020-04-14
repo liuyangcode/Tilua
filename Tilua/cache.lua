@@ -9,10 +9,11 @@ local context = nil
 function cache:_init(ctx)
     self.app = ctx
 end
+
 function cache.init(ctx)
     context = ctx
+    cache.catch(cache.magic)
 end
-
 function cache.instance(config)
     if type(config) == 'string' then
         config = { type = config }
@@ -25,12 +26,21 @@ function cache.instance(config)
     instances = instances or {}
     local ok, driver = pcall(require, "Tilua.cache.driver." .. config.type)
     assert(ok, 'unsupported cache type ' .. config.type)
-    instances[hash] = driver(config,context )
+    instances[hash] = driver(config, context)
     return instances[hash]
 end
 
+---get
+---@param key string
 function cache.get(key)
-
+    return cache.instance(context.config.data_cache_type):get(context.config.data_cache_prefix .. key)
+end
+---set
+---@param name string
+---@param value any
+---@param expire number
+function cache.set(name, value, expire)
+    return cache.instance(context.config.data_cache_type):set(context.config.data_cache_prefix .. name, value, expire)
 end
 
 function cache.derive()

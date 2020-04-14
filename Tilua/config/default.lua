@@ -1,5 +1,6 @@
 
 local config = {
+    data_cache_type = 'redis',
     data_cache_prefix = 'Tilua:',
     html_cache = true,
     html_cache_path = "html",

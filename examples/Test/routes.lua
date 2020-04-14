@@ -4,7 +4,18 @@ route.get('/', function(ctx, response, request, name)
 end)
 
 route.get('~/{name}', function(ctx, response, request, name)
-    response.body = name
+    --ctx.cache.set('name',{
+    --    name = name
+    --},240)
+    --response.body = ctx.cache.redis
+    local user = ctx.model.user
+    user:where({
+        uid = 1
+    })  :save({
+        name = "刘洋2"
+    })
+
+    response.body = user:find(1)
     return response
 end, {
     before = "[api]"

@@ -16,12 +16,16 @@ local is_string = lw_utils.is_string
 local is_number = lw_utils.is_number
 local is_scalar = lw_utils.is_scalar
 local in_array = lw_utils.in_array
-local cache_handler = require("Tilua.cache")
 
 ---@type app
-local app = ngx.ctx.app_context
+local app = nil
 ---@class model
-class.model()
+local model = class()
+
+function model.init_context(ctx)
+    app = ctx
+    return model
+end
 
 ---s属性初始化
 ---@protected
@@ -43,7 +47,7 @@ function model:properties()
     -- 数据库名称
     self.dbName = ''
     --数据库配置
-    self.connection = ''
+    self.connection = nil
     -- 数据表名（不包含表前缀）
     self.tableName = ''
     -- 实际数据表名（包含表前缀）
@@ -80,15 +84,12 @@ function model:_init(name, tablePrefix, connection)
     self:_initialize()
     if name then
         if string.find(name, '\\.') then
-            local names = split(name, '\\.')
+            local names = split(name, '.')
             self.dbName = names[1]
             self.name = names[2]
         else
             self.name = name;
         end
-
-    elseif not self.name then
-        self.name = self:getModleName()
     end
 
     if not tablePrefix then
@@ -99,9 +100,6 @@ function model:_init(name, tablePrefix, connection)
         self.tablePrefix = app:C(self.connection .. '.db_prefix') or app:C('db_prefix')
     end
     self:db_instance(1, connection or self.connection, true)
-end
-
-function model:getModleName()
 end
 
 function model:_initialize()
@@ -234,8 +232,10 @@ function model:save(data, options)
         return false
     end
     options = self:_parseOptions(options)
+
     local pk = self:getPk()
     local where
+    lw_utils.dump(options)
     if not options.where then
         if type(pk) == 'string' and data.pk then
             where.pk = data.pk
@@ -468,7 +468,7 @@ function model:_options_filter(options)
 end
 
 function model:_parseType(data, key)
-    if not self.options.bind[':' .. key] and self._fields._type[key] then
+    if self._fields._type[key] then
         local fieldType = string.lower(self._fields._type[key])
         if string.find(fieldType, 'enum') then
         elseif string.find(fieldType, 'bigint') and string.find(fieldType, 'int') then
@@ -1160,22 +1160,9 @@ end
 
 ---缓存字段信息
 function model:F(tableName, fields)
-    local cache_type = app:C('db_fields_cache_type')
-    local cache
-    local cache_key = app:C('db_fields_cache_prefix') .. self.db.config.database .. tableName
-    if cache_type == 'shdict' then
-        cache = app:get_cache({
-            type = cache_type,
-            dict = app:C('SHDICIT_NAME')
-        })
-    elseif cache_type == 'redis' then
-        cache = app:get_cache({
-            type = cache_type,
-            host = app:C('redis_host'),
-            port = app:C('redis_port'),
-            db_index = app:C('redis_db_index')
-        })
-    end
+    local cache_type = app.config.db_fields_cache_type
+    local cache = app.cache.instance(cache_type)
+    local cache_key = app.config.db_fields_cache_prefix.. self.db.config.database .. tableName
     if empty(fields) then
         return cache:get(cache_key)
     else
@@ -1187,7 +1174,6 @@ function model:_after_db()
 end
 
 function model:flush()
-
     self.db:setModel(self.name)
     local tableName = self:getTableName()
     local fields = self.db:getFields(tableName)
@@ -1218,14 +1204,14 @@ function model:flush()
         end
     end
     self.fields._type = type
-    if app:C('db_fields_cache') then
+    if app.config.db_fields_cache then
         self:F('_fields' .. string.lower(tableName), self.fields)
     end
 end
 
 function model:_checkTableInfo()
     if empty(self.fields) then
-        if app:C('DB_FIELDS_CACHE') then
+        if app.config.db_fields_cache then
             local fields = self:F('_fields' .. string.lower(self:getTableName()))
             if fields then
                 self.fields = fields
@@ -1248,12 +1234,11 @@ function model:db_instance(linkNum, config, force)
     if '' == linkNum and self.db then
         return self.db
     end
-
     if not self._db[linkNum] or force then
-        if config and type(config) == 'string' and not string.find(config, '/') then
+        if lw_utils.is_string(config) == 'string' and not string.find(config, '/') then
             config = app:C(config)
         end
-        self._db[linkNum] = Db.getInstance(config)
+        self._db[linkNum] = app.db.instance(config)
     elseif not config then
         self._db[linkNum]:close()
         self._db[linkNum] = nil

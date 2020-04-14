@@ -7,7 +7,9 @@ local getmtime = path.getmtime
 local makepath = require "pl.dir".makepath
 local path_exists = path.exists
 
-class.view()
+local view_engine = nil
+---@class view
+local view = class()
 
 function view:_init(ctx)
     self.app = ctx
@@ -58,7 +60,7 @@ end
 function view:get_template_cache_path()
     local view_cache_path = self.app.app_path .. table.concat({
         'cache',
-        self.app:C('view_layer'),
+        'view',
         ''
     }, '/')
     return view_cache_path
@@ -83,10 +85,8 @@ end
 
 function view:get_template_cache_path_relative()
     return '../../' .. table.concat({
-        'Runtime',
         'cache',
-        self.app:C('view_layer'),
-        self.app:get_module(),
+        'view',
         ''
     }, '/')
 end

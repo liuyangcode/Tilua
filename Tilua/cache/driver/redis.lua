@@ -125,11 +125,12 @@ function redis:get(name, raw)
         return ''
     end
     local result, err = self:do_command('get', name)
+
     if not result or err then
         return nil, err
     end
     if not raw then
-        return lw_util.json_decode(result)
+        return lw_util.json_decode(result) or result
     end
     return result
 end
