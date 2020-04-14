@@ -29,6 +29,10 @@ function cache.instance(config)
     return instances[hash]
 end
 
+function cache.get(key)
+
+end
+
 function cache.derive()
     return class(cache)
 end

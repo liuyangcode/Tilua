@@ -16,6 +16,7 @@ local is_string = lw_utils.is_string
 local is_number = lw_utils.is_number
 local is_scalar = lw_utils.is_scalar
 local in_array = lw_utils.in_array
+local cache_handler = require("Tilua.cache")
 
 ---@type app
 local app = ngx.ctx.app_context
@@ -95,7 +96,7 @@ function model:_init(name, tablePrefix, connection)
     elseif '' ~= tablePrefix then
         self.tablePrefix = tablePrefix
     elseif not self.tablePrefix then
-        self.tablePrefix = app:C(self.connection .. '.DB_PREFIX') or app:C('DB_PREFIX')
+        self.tablePrefix = app:C(self.connection .. '.db_prefix') or app:C('db_prefix')
     end
     self:db_instance(1, connection or self.connection, true)
 end
@@ -112,7 +113,7 @@ function model:_facade(data)
         if not self.options.field then
             fields = self.options.field
             self.options.field = nil
-            if 'string' == type('fields') then
+            if 'string' == type(fields) then
                 fields = split(fields, ',')
             end
         else
@@ -385,11 +386,12 @@ function model:select(options)
     local key
     if options.cache then
         cache = options.cache
-        key = cache.key
-        if type(cache.key) == 'table' then
-            key = '' --- hash options
-        end
-        local data = self:S(key, '', cache)
+        key = cache.key or lw_utils.get_hash(options)
+
+        --if type(cache.key) == 'table' then
+        --    key = '' --- hash options
+        --end
+        local data = cache_handler.ge(key, '', cache)
         if data then
             return data
         end
