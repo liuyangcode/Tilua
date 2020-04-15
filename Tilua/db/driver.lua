@@ -118,6 +118,9 @@ function driver:execute(str, fetchSql)
         return false
     end
     self.queryStr = str
+    if self.model then
+        self.modelSql[self.model] = str
+    end
     if fetchSql then
         return self.queryStr
     end
@@ -289,8 +292,9 @@ function driver:parseTable(tables)
 end
 
 function driver:parseWhere(where)
+
     local whereStr = ""
-    if lw_utils.is_string(where) == 'string' then
+    if lw_utils.is_string(where)  then
         whereStr = where
     else
         local operate = string.upper(where._logic or '')
