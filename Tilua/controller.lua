@@ -1,9 +1,10 @@
-
 local class = require("pl.class")
 local cjson = require "cjson"
 local app = ngx.ctx.app_context
-class.controller()
-function controller:_init()
+---@class controller
+local controller = class()
+function controller:_init(ctx)
+    self.app = ctx
 end
 
 function controller:get_view()
@@ -12,13 +13,6 @@ function controller:get_view()
     end
     self.view = require "Tilua.view"(self.app)
     return self.view
-end
-
-function controller:input(name)
-    if name then
-        return self.app:get_dispatch().request[name] or nil
-    end
-    return self.app:get_dispatch().request
 end
 
 function controller:assign(...)
@@ -47,7 +41,7 @@ end
 
 function controller:display(template_file)
     if not template_file then
-        template_file = app:get_controller() .. '/' .. app:get_action() .. '.html'
+        template_file = app.mvc_router.controller_name .. '/' .. app.mvc_router.action_name .. '.html'
     end
     return self:get_view():render(template_file)
 end

@@ -39,7 +39,7 @@ end
 ---魔术方法
 ---@param name string
 function app:magic(name)
-    if rawget(self,'get_' .. name) then
+    if rawget(self, 'get_' .. name) then
         return self['get_' .. name](_context)
     end
 end
@@ -119,7 +119,9 @@ function app:get_cache()
     end
     return _cache
 end
-
+function app:get_logger()
+    return require("Tilua.log")
+end
 ---应用初始化
 function app:init()
     --加载系统默认配置

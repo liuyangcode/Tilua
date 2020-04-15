@@ -1,7 +1,7 @@
 local ngx = ngx
 
 local class = require "pl.class"
-local re_gsub = ngx.re.gsub
+local re_sub = ngx.re.sub
 local string_sub = string.sub
 local var = ngx.var
 local re_match = ngx.re.match
@@ -236,13 +236,12 @@ function route:run(request)
     local longest_match_midware = {}
 
     lw_util.extend(rule_caches['~'], self.rule_caches['*'] and self.rule_caches['*']['~'] or {})
-
     --正则匹配
     for location, router in pairs(rule_caches['~']) do
         local url, parsed_regex, params = self:parse_path_to_regex(location)
         local path_params = {}
-        local midware, parsed_route, validation
-        local newpath, n, err = re_gsub(pathinfo, parsed_regex, function(m)
+        local validation
+        local newpath, n, err = re_sub(pathinfo, parsed_regex, function(m)
             path_params = self:bind_params_for_responser(params, m, request)
             router, validation = table.unpack(router)
             if lw_util.callable(router.responser) then
@@ -280,7 +279,7 @@ function route:run(request)
         end
     end
     if not lw_util.empty(longest_match_path) then
-        request:set_routed_uri(longest_match_path)
+        request:set_routed_uri(pathinfo)
         return {
             longest_match_path,
             longest_match_params,

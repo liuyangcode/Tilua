@@ -428,19 +428,6 @@ function model:_parseType(data, key)
     return data
 end
 
-function model:_read_data(data)
-    if not empty(self._map) and app:C('read_data_map') then
-        for k, v in pairs(self._map) do
-            if data[v] then
-                data[k] = data[v]
-                data[v] = nil
-            end
-        end
-    end
-
-    return data
-end
-
 ---load_query_cache
 ---@param key string
 ---@param cache table
@@ -479,17 +466,15 @@ function model:find(options)
     end
 
     local resultSet = self.db:select(options)
-    if false == resultSet then
+    if lw_utils.empty(resultSet) then
         return false
     end
-    if not resultSet then
-        return nil
-    end
+
     if type(resultSet) == 'string' then
         return resultSet
     end
 
-    data = self:_read_data(resultSet[1])
+    data = resultSet[1]
 
     self.data = data
 
