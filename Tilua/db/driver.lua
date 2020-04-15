@@ -15,13 +15,13 @@ local foreach = lw_utils.foreach
 local in_array = lw_utils.in_array
 local log = require('Tilua.log')
 ---@class driver
-class.driver()
+local driver = class()
 
 function driver:properties()
     -- PDO操作实例
     self.PDOStatement = null
     -- 当前操作所属的模型名
-    self.model = '_think_'
+    self.model = ''
     -- 当前SQL指令
     self.queryStr = ''
     self.modelSql = {}

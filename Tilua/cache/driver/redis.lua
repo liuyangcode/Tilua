@@ -55,17 +55,19 @@ function redis:_init(config, ctx)
         host = config.host or ctx:C('redis_host') or '127.0.0.1',
         port = config.port or ctx:C('redis_port') or 6379
     }
+    self._reqs = ''
+    self._redisc = false
     self.handler = {}
 end
 
 function redis:get_redis()
-    if self.redis then
-        return self.redis
+    if self._redisc then
+        return self._redisc
     end
-    local redisc, err = redis_c:new()
-    assert(redisc, 'redis init failed' .. (err or ''))
-    self.redis = redisc
-    return self.redis
+    local _redisc, err = redis_c:new()
+    assert(_redisc, 'redis init failed' .. (err or ''))
+    self._redisc = _redisc
+    return self._redisc
 end
 
 function redis:connect_mod()
@@ -146,15 +148,15 @@ function redis:set(name, value, expire)
     else
         result, err = self:do_command('set', name, value)
     end
+
     return result, err
 end
 
 function redis:do_command(cmd, ...)
-    if self._reqs then
+    if self._reqs~='' and self._reqs then
         table.insert(self._reqs, { cmd, ... })
         return
     end
-
     local ok, err = self:connect_mod()
     assert(ok, 'redis connect failed ' .. (err or ''))
 

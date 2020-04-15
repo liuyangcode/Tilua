@@ -4,8 +4,7 @@ local class = require('pl.class')
 local tablex = require('pl.tablex')
 local ngx = ngx
 ---@class response
-class.response()
-
+local response = class()
 ---_init
 ---@param body any
 ---@param code number
@@ -32,9 +31,11 @@ function response:send_headers()
     end
     return self
 end
-function response:render(view, context)
 
+function response:render(view, context)
+    return self
 end
+
 ---设置响应头
 ---@param header table|any
 function response:add_header(header, ...)

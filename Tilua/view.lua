@@ -7,10 +7,9 @@ local getmtime = path.getmtime
 local makepath = require "pl.dir".makepath
 local path_exists = path.exists
 
-local view_engine = nil
 ---@class view
 local view = class()
-
+local _template = nil
 function view:_init(ctx)
     self.app = ctx
     self.context = {}
@@ -25,20 +24,21 @@ function view:get(name)
 end
 
 function view:get_template()
-    if self.template then
-        return self.template
+    if _template then
+        return _template
     end
-    self.template = template.new({
+    _template = template.new({
         root = self:get_template_path()
     })
-    self.template.caching(false)
-    return self.template
+    _template.caching(false)
+    return _template
 end
 
 function view:precompile(view, cache)
     local viewCacheFile = self:get_template_cache_file_path(view)
     if not path_exists(dirname(viewCacheFile)) then
-        makepath(dirname(viewCacheFile))
+        local _, err = makepath(dirname(viewCacheFile))
+        assert(not err, 'dir ' .. dirname(viewCacheFile) .. ' write ' .. err)
     end
     self:get_template().precompile(view, viewCacheFile)
 end
@@ -63,18 +63,19 @@ function view:get_template_cache_path()
         'view',
         ''
     }, '/')
+    if not path_exists(view_cache_path) then
+        local _, err = makepath(view_cache_path)
+        assert(not err, 'dir ' .. view_cache_path .. ' write ' .. err)
+    end
     return view_cache_path
 end
 
 function view:render(view)
-    if getmtime(self:get_template_cache_file_path(view)) < getmtime(self:get_template_path() .. view) then
-        ngx.log(ngx.ERR, "template cache expired need update")
+    if (getmtime(self:get_template_cache_file_path(view)) or 0) < getmtime(self:get_template_path() .. view) then
+        self.app.logger.record(ngx.ERR, "template cache expired need update")
         self:precompile(view)
     end
     local content = self:fetch(view)
-    if self.app:C('html_cache') then
-        self.app:get_html_cache_interceptor():cache(content)
-    end
     return (content)
 end
 
@@ -84,7 +85,7 @@ function view:fetch(view)
 end
 
 function view:get_template_cache_path_relative()
-    return '../../' .. table.concat({
+    return '../' .. table.concat({
         'cache',
         'view',
         ''

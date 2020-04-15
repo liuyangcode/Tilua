@@ -24,8 +24,7 @@ local _context = nil
 ---@param app_instance app
 function app:_init(app_instance)
     --共享全局app实例
-    self.debug = false
-    ctx.app_context = self
+    ctx.app_context = app_instance
     _context = self
     self:catch(self.magic)
 end
@@ -43,7 +42,6 @@ function app:magic(name)
     if rawget(self, 'get_' .. name) then
         return self['get_' .. name](_context)
     end
-    return nil
 end
 ---获得路由分发器
 function app:get_dispatcher()
@@ -104,6 +102,7 @@ end
 
 function app:get_db()
     return require("Tilua.db").init_context(self)
+
 end
 ---初始化缓存
 function app:init_cache()
@@ -120,7 +119,9 @@ function app:get_cache()
     end
     return _cache
 end
-
+function app:get_logger()
+    return require("Tilua.log")
+end
 ---应用初始化
 function app:init()
     --加载系统默认配置

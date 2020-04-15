@@ -29,7 +29,16 @@ function shdict:get(name)
     end
     return result
 end
-
+function shdict:del(name)
+    if not name then
+        return false
+    end
+    local result, err = self:do_command('delete', name)
+    if not result or err then
+        return nil, err
+    end
+    return true
+end
 function shdict:set(name, value, ...)
     if type(value) == 'table' then
         value = json.encode(value)

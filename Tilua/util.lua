@@ -82,7 +82,7 @@ end
 function util.dump(...)
     local params = { ... }
     for i = 1, #params do
-        ngx.say(pretty.write(params[i])..'<br/>')
+        ngx.say(pretty.write(params[i]) .. '<br/>')
     end
 end
 
@@ -96,7 +96,10 @@ function util.is_set(...)
     end
     return true
 end
-
+function util.import(module)
+    local ok, m = pcall(require, module)
+    return ok and m or nil
+end
 ---reverseTable
 ---@param tab table
 ---@return table

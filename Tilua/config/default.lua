@@ -1,4 +1,3 @@
-
 local config = {
     data_cache_type = 'redis',
     data_cache_prefix = 'Tilua:',
@@ -11,6 +10,19 @@ local config = {
         api = {
             'Tilua.midware.session',
             'Tilua.midware.json_response'
+        },
+        mvc = {
+            'Tilua.midware.session',
+            {
+                'Tilua.midware.mvc_router',
+                {
+                    default_controller = 'index',
+                    default_action = 'index',
+                    view_layer = 'view',
+                    controller_layer = 'controller',
+                    model_layer = 'model'
+                }
+            }
         }
     },
     session = {
@@ -36,10 +48,14 @@ local config = {
     redis_port = 6379,
     redis_db_index = 0,
 
+    default_charset = 'utf-8', --默认输出编码
+    default_content_type = 'text/html', --默认输出编码
 
     route_filter = 'Tilua.route',
     dispatch = 'Tilua.dispatch',
-    route = {},
+    route = {
+        ['/'] = "[mvc] /"
+    },
     SHDICIT_NAME = 'app_test_cache',
     db_type = 'mysql', -- 数据库类型
     db_host = '', -- 服务器地址
@@ -52,7 +68,6 @@ local config = {
     db_fields_cache = true, -- 启用字段缓存
     db_fields_cache_type = 'redis',
     db_fields_cache_prefix = 'Tilua:',
-
     db_charset = 'utf8', -- 数据库编码默认采用utf8
     db_deploy_type = 0, -- 数据库部署方式:0 集中式(单一服务器),1 分布式(主从服务器)
     db_rw_separate = false, -- 数据库读写是否分离 主从式有效
