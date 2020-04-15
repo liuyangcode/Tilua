@@ -19,14 +19,15 @@ local _cache = nil
 local _dispatcher = nil
 local _route = nil
 local _config = {}
-local _context = nil
 ---_init
 ---@param app_instance app
 function app:_init(app_instance)
     --共享全局app实例
     ctx.app_context = app_instance
     _context = self
-    self:catch(self.magic)
+    self:catch(function(_, name)
+        return self:magic(name)
+    end)
 end
 ---分发路由
 ---@return dispatch
@@ -40,7 +41,9 @@ end
 ---@param name string
 function app:magic(name)
     if rawget(self, 'get_' .. name) then
-        return self['get_' .. name](_context)
+        return self['get_' .. name](self)
+    elseif self['get_' .. name] then
+        return self['get_' .. name](self)
     end
 end
 ---获得路由分发器
