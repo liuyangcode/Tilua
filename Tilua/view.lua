@@ -37,7 +37,8 @@ end
 function view:precompile(view, cache)
     local viewCacheFile = self:get_template_cache_file_path(view)
     if not path_exists(dirname(viewCacheFile)) then
-        local _,err = makepath(dirname(viewCacheFile))
+        local _, err = makepath(dirname(viewCacheFile))
+        assert(not err, 'dir ' .. dirname(viewCacheFile) .. ' write ' .. err)
     end
     self:get_template().precompile(view, viewCacheFile)
 end
@@ -63,8 +64,8 @@ function view:get_template_cache_path()
         ''
     }, '/')
     if not path_exists(view_cache_path) then
-        local _,err = makepath(view_cache_path)
-        assert(not err ,'dir '..view_cache_path..' write '..err)
+        local _, err = makepath(view_cache_path)
+        assert(not err, 'dir ' .. view_cache_path .. ' write ' .. err)
     end
     return view_cache_path
 end
