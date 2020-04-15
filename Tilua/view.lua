@@ -7,10 +7,9 @@ local getmtime = path.getmtime
 local makepath = require "pl.dir".makepath
 local path_exists = path.exists
 
-local view_engine = nil
 ---@class view
 local view = class()
-
+local _template = nil
 function view:_init(ctx)
     self.app = ctx
     self.context = {}
@@ -25,14 +24,14 @@ function view:get(name)
 end
 
 function view:get_template()
-    if self.template then
-        return self.template
+    if _template then
+        return _template
     end
-    self.template = template.new({
+    _template = template.new({
         root = self:get_template_path()
     })
-    self.template.caching(false)
-    return self.template
+    _template.caching(false)
+    return _template
 end
 
 function view:precompile(view, cache)

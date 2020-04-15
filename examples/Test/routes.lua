@@ -4,7 +4,7 @@ route.get('/', function(ctx, response, request, name)
 end)
 
 route.get('~/{name}', function(ctx, response, request, name)
-    --ctx.cache.set('name',{
+    --ctx.cache.test_redis:set('name',{
     --    name = name
     --},240)
     --response.body = ctx.cache.redis
@@ -15,7 +15,7 @@ route.get('~/{name}', function(ctx, response, request, name)
         name = "刘洋2"
     })
 
-    response.body = user:find(1)
+    response.body = user:cache(300):find(1)
     return response
 end, {
     before = "[api]"

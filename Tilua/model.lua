@@ -22,11 +22,23 @@ local app = nil
 ---@class model
 local model = class()
 
+local _db_fields_cache_hanlder = nil
 function model.init_context(ctx)
     app = ctx
+    model.catch(model.instance)
     return model
 end
-
+function model.instance(m, name)
+    local mod = lw_utils.import(table.concat({
+        app.app_name,
+        'model',
+        name
+    }, '.'))
+    if mod then
+        return mod()
+    end
+    return m(name)
+end
 ---s属性初始化
 ---@protected
 function model:properties()
@@ -81,7 +93,6 @@ function model:_init(name, tablePrefix, connection)
     self:properties()
     connection = connection or ''
 
-    self:_initialize()
     if name then
         if string.find(name, '\\.') then
             local names = split(name, '.')
@@ -99,10 +110,18 @@ function model:_init(name, tablePrefix, connection)
     elseif not self.tablePrefix then
         self.tablePrefix = app:C(self.connection .. '.db_prefix') or app:C('db_prefix')
     end
+    self:catch(function(_, name)
+        return self:magic(name)
+    end)
     self:db_instance(1, connection or self.connection, true)
 end
 
-function model:_initialize()
+function model:magic(name)
+    if rawget(self, 'get_' .. name) then
+        return self['get_' .. name](self)
+    elseif self['get_' .. name] then
+        return self['get_' .. name](self)
+    end
 end
 
 function model:_facade(data)
@@ -132,11 +151,7 @@ function model:_facade(data)
         data = tablex.map(data, self.options.fiter)
         self.options.filter = nil
     end
-    self:_before_write(data)
     return data
-end
-
-function model:_before_write(data)
 end
 
 function model:add(data, options, replace)
@@ -150,9 +165,6 @@ function model:add(data, options, replace)
     end
     data = self:_facade(data)
     options = self:_parseOptions(options)
-    if not self:_before_insert(data, options) then
-        return false
-    end
     local result = self.db:insert(data, options, replace)
     if result and type(result) == 'number' then
         local pk = self:getPk()
@@ -162,29 +174,10 @@ function model:add(data, options, replace)
         local insertId = self:getLastInsID()
         if insertId then
             data[pk] = insertId
-            if not self:_after_insert(data, options) then
-                return false
-            end
             return insertId
-        end
-        if not self:_after_insert(data, options) then
-            return false
         end
     end
     return result
-end
-
-function model:_before_insert(data, options)
-    return true
-end
-
-function model:_after_insert(data, options)
-end
-
-function model:_before_update(data, options)
-end
-
-function model:_after_update(data, options)
 end
 
 function model:addAll(dataList, options, replace)
@@ -218,6 +211,9 @@ function model:selectAdd(fields, table, options)
     end
 end
 
+---保存记录
+---@param data table
+---@param options table
 function model:save(data, options)
     if not data then
         if self.data then
@@ -234,46 +230,15 @@ function model:save(data, options)
     options = self:_parseOptions(options)
 
     local pk = self:getPk()
-    local where
-    lw_utils.dump(options)
-    if not options.where then
-        if type(pk) == 'string' and data.pk then
-            where.pk = data.pk
-            data.pk = nil
-        else
-            if type(pk) == 'table' then
-                for i = 1, #pk do
-                    if data.field then
-                        where[#pk[i]] = data.field
-                    else
-                        --                        $this->error = L('_OPERATION_WRONG_');
-                        return false
-                    end
-                end
-                data.field = nil
-            end
-        end
-        if not where then
-            return false
-        else
-            options.where = where
-        end
-    end
-
     local pkValue
     if type(options.where) == 'table' and options.where[pk] then
         pkValue = options.where[pk]
     end
-    if self:_before_update(data, options) then
-        return false
-    end
-
     local result = self.db:update(data, options)
     if result and type(result) == 'number' then
         if pkValue then
             data[pk] = pkValue
         end
-        self:_after_update(data, options)
     end
     return result
 end
@@ -324,9 +289,6 @@ function model:delete(options)
     if type(options.where) and options.where[pk] then
         pkValue = options.where[pk]
     end
-    if not self:_before_delete(options) then
-        return false
-    end
 
     local result = self.db:delete(options)
 
@@ -335,16 +297,8 @@ function model:delete(options)
         if pkValue then
             data[pk] = pkValue
         end
-        self:_after_delete(data, options)
     end
     return result
-end
-
-function model:_before_delete(options)
-    return true
-end
-
-function model:_after_delete(data, options)
 end
 
 ---查询数据
@@ -391,7 +345,7 @@ function model:select(options)
         --if type(cache.key) == 'table' then
         --    key = '' --- hash options
         --end
-        local data = cache_handler.ge(key, '', cache)
+        local data = self:cache(key, '', cache)
         if data then
             return data
         end
@@ -405,7 +359,6 @@ function model:select(options)
             return resultSet
         end
         resultSet = tablex.map(pl_utils.bind1(self._read_data, self), resultSet)
-        self:_after_select(resultSet, options)
         if options.index then
             local index = split(options.index, ',')
             local cols
@@ -424,9 +377,6 @@ function model:select(options)
         self:S(key, resultSet, cache)
     end
     return resultSet
-end
-
-function model:_after_select()
 end
 
 function model:_parseOptions(options)
@@ -459,17 +409,12 @@ function model:_parseOptions(options)
     end
 
     self.options = {}
-    self:_options_filter(options)
-    return options
-end
-
-function model:_options_filter(options)
     return options
 end
 
 function model:_parseType(data, key)
-    if self._fields._type[key] then
-        local fieldType = string.lower(self._fields._type[key])
+    if self.fields._type[key] then
+        local fieldType = string.lower(self.fields._type[key])
         if string.find(fieldType, 'enum') then
         elseif string.find(fieldType, 'bigint') and string.find(fieldType, 'int') then
             data[key] = tonumber(data[key])
@@ -484,7 +429,7 @@ function model:_parseType(data, key)
 end
 
 function model:_read_data(data)
-    if not empty(self._map) and app:C('READ_DATA_MAP') then
+    if not empty(self._map) and app:C('read_data_map') then
         for k, v in pairs(self._map) do
             if data[v] then
                 data[k] = data[v]
@@ -496,8 +441,22 @@ function model:_read_data(data)
     return data
 end
 
-function model:get_hash_key(data)
-    return data
+---load_query_cache
+---@param key string
+---@param cache table
+function model:load_query_cache(key, cache)
+    return app.cache.get(key)
+end
+
+---save_query_cache
+---@param key string
+---@param data table
+---@param cache table
+function model:save_query_cache(key, data, cache)
+    if data == nil then
+        return app.cache.del(key)
+    end
+    return app.cache.set(key,data,cache.expire )
 end
 
 function model:find(options)
@@ -506,35 +465,14 @@ function model:find(options)
         where[self:getPk()] = options
         self.options.where = where
     end
-    local pk = self:getPk()
-    if type(options) == 'table' and #options > 0 and type(pk) == 'table' then
-        local count = 1
-        local keys = tablex.keys(options)
-        for i = 1, #keys do
-            if type(keys[i]) == 'number' then
-                count = count + 1
-            end
-        end
-        if #pk == count then
-            local j = 1
-            for i = 1, #pk do
-                where[pk[i]] = options[j]
-                options.remove(j)
-                j = j + 1
-            end
-            self.options.where = where
-        else
-            return false
-        end
-    end
     self.options.limit = 1
     options = self:_parseOptions()
     local cache, key, data
 
     if options.cache then
         cache = options.cache
-        key = self:get_hash_key(options)
-        data = self:S(key, '', cache)
+        key = lw_utils.get_hash(options)
+        data = self:load_query_cache(key, cache)
         if data then
             return data
         end
@@ -553,36 +491,12 @@ function model:find(options)
 
     data = self:_read_data(resultSet[1])
 
-    self:_after_find(data, options)
-    if options.result then
-        return self:returnResult(data, options.result)
-    end
     self.data = data
 
     if cache then
-        self:S(key, data, cache)
+        self:save_query_cache(key, data, cache)
     end
     return self.data
-end
-
-function model:_after_find(results, options)
-end
-
----@param data table
----@param resultType any
-function model:returnResult(data, resultType)
-    if resultType then
-        if type(resultType) == 'function' then
-            return resultType(data)
-        end
-        resultType = string.lower(resultType)
-        if resultType == 'json' then
-            return json.encode(data)
-        elseif resultType == 'xml' then
-            return xml_encode(data)
-        end
-    end
-    return data
 end
 
 ---处理字段映射
@@ -778,47 +692,6 @@ function model:getField(field, sepa)
     return nil
 end
 
----@param data any
----@param type string 状态
-function model:create(data, type)
-    if not data then
-        --todo
-    end
-end
---自动表单令牌验证
-function model:autoCheckToken()
-    --todo
-end
---使用正则验证数据
-function model:regex()
-    --todo
-end
---自动表单处理
-function model:autoOperation()
-    --todo
-end
---自动表单验证
-function model:autoValidation()
-    --todo
-end
----验证表单字段 支持批量验证
-function model:_validationField()
-    --todo
-end
-
----根据验证因子验证字段
-function model:_validationFieldItem()
-    --todo
-end
----验证数据 支持 in between equal length regex expire ip_allow ip_deny
-function model:check()
-    --todo
-end
---存储过程返回多数据集
-function model:procedure()
-    --todo
-end
-
 ---sql查询
 ---@param sql string
 ---@param parse table
@@ -851,7 +724,7 @@ end
 ---@param parse boolean 是否需要解析SQL
 function model:parseSql(sql, parse)
     if true == parse then
-        local options = sefl:_parseOptions()
+        local options = self:_parseOptions()
         sql = self.db:parseSql(sql, options)
     elseif type(parse) == 'table' then
         parse = tablex.map(parse, function(v)
@@ -869,13 +742,7 @@ end
 
 ---得到当前的数据对象名称
 function model:getModelName()
-    if not self.name then
-        -- $name = substr(get_class($this), 0, -strlen(C('DEFAULT_M_LAYER')));
-        --todo
-    end
-
     return self.name
-
 end
 
 ---得到完整的数据表名
@@ -1052,13 +919,6 @@ function model:field(field, except)
     return self
 end
 
----调用命名范围
----@param scope table
----@param args userdata
-function model:scope(scope, args)
-    --todo
-end
-
 ---指定查询条件 支持安全过滤
 ---@param where any 条件表达式
 ---@param parse any 预处理参数
@@ -1158,19 +1018,29 @@ function model:buildSql()
     return '( ' .. self:fetchSql(true):select() .. ' )'
 end
 
----缓存字段信息
-function model:F(tableName, fields)
-    local cache_type = app.config.db_fields_cache_type
-    local cache = app.cache.instance(cache_type)
-    local cache_key = app.config.db_fields_cache_prefix.. self.db.config.database .. tableName
-    if empty(fields) then
-        return cache:get(cache_key)
-    else
-        cache:set(cache_key, fields)
-    end
+---获取数据表字段缓存键名
+---@param tableName string
+function model:get_table_fields_cache_key(tableName)
+    return table.concat({
+        app.config.db_fields_cache_prefix,
+        self.db.config.database,
+        tableName
+    })
 end
-
-function model:_after_db()
+function model:get_table_fields_cache(tableName)
+    local cache_key = self:get_table_fields_cache_key(tableName)
+    return self.db_fields_cache_hanlder:get(cache_key)
+end
+function model:cache_table_fields(tableName, fields)
+    local cache_key = self:get_table_fields_cache_key(tableName)
+    self.db_fields_cache_hanlder:set(cache_key, fields)
+end
+function model:get_db_fields_cache_hanlder()
+    if not _db_fields_cache_hanlder then
+        local cache_type = app.config.db_fields_cache_type
+        _db_fields_cache_hanlder = app.cache.instance(cache_type)
+    end
+    return _db_fields_cache_hanlder
 end
 
 function model:flush()
@@ -1205,14 +1075,14 @@ function model:flush()
     end
     self.fields._type = type
     if app.config.db_fields_cache then
-        self:F('_fields' .. string.lower(tableName), self.fields)
+        self:cache_table_fields('_fields' .. string.lower(tableName), self.fields)
     end
 end
 
 function model:_checkTableInfo()
     if empty(self.fields) then
         if app.config.db_fields_cache then
-            local fields = self:F('_fields' .. string.lower(self:getTableName()))
+            local fields = self:get_table_fields_cache('_fields' .. string.lower(self:getTableName()))
             if fields then
                 self.fields = fields
                 if fields['_pk'] then
@@ -1245,7 +1115,6 @@ function model:db_instance(linkNum, config, force)
         return ;
     end
     self.db = self._db[linkNum]
-    self:_after_db()
     if self.name and self.autoCheckFields then
         self:_checkTableInfo()
     end
