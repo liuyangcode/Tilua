@@ -22,7 +22,8 @@ local config = {
                     controller_layer = 'controller',
                     model_layer = 'model'
                 }
-            }
+            },
+            'Tilua.midware.html_cache'
         }
     },
     session = {

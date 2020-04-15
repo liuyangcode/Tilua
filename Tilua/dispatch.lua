@@ -58,6 +58,7 @@ function dispatch:make_chain_call(midware, handler, ...)
             assert(false, 'midware named' .. next_midware[1] .. ' not found')
         end
         mid = midware_class(self.app,next_midware[2])
+        assert( mid.handle, 'midware named:' .. next_midware[1] .. ' handle func required')
         local func = pl_utils.bind1(mid.handle, mid)
         return function(...)
             return func(table.unpack({
