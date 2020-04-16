@@ -7,7 +7,6 @@ function html_cache:_init(ctx, config)
 end
 
 function html_cache:handle(next,request,...)
-    ngx.say(self.ctx.mvc_router.controller_name)
     return next(request)
 end
 
