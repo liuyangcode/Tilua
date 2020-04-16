@@ -1,8 +1,7 @@
-
-
 local class = require('pl.class')
 local tablex = require('pl.tablex')
 local ngx = ngx
+local ngx_redirect = ngx.redirect
 ---@class response
 local response = class()
 ---_init
@@ -10,7 +9,7 @@ function response:_init(ctx)
     self.ctx = ctx
     self.body = ""
     self.headers = {}
-    self.code = 200
+    self.status = 200
     self.after_send_callback = {}
 end
 
@@ -78,17 +77,22 @@ function response:set_cookie(name, value, path, expires, domain, httponly, secur
 end
 ---发送正文给客户端
 function response:send_body()
-    ngx.say(self.body)
-    tablex.map(function(f)
-        f()
-    end, self.after_send_callback)
+    if self.status == 200 or self.status == 0 then
+        ngx.say(self.body)
+        tablex.map(function(f)
+            f()
+        end, self.after_send_callback)
+    else
+        ngx.exit(self.status)
+    end
     return self
 end
-
+function response.redirect(...)
+    ngx_redirect(...)
+end
 ---发送
 function response:send()
     self:send_headers()
     self:send_body()
 end
-
 return response

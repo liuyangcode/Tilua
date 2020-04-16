@@ -5,11 +5,12 @@ function index:_init(ctx)
 end
 
 function index:index(ctx)
-    ctx.response.body = "hello world"
-    return ctx.response
+    ctx.response.body = {
+        name = "刘洋"
+    }
 end
 
-function index:login(ctx)
+function index:login()
     self:display()
 end
 

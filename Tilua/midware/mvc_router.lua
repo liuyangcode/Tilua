@@ -27,16 +27,15 @@ function mvc_router:handle(next, ...)
 
     if found then
         self.controller = hanlder(self.app)
-        if callable(self.controller[self.action_name]) then
+        if rawget(hanlder, self.action_name) and callable(self.controller[self.action_name]) and string.sub(self.action_name, 1, 1) ~= '_' then
             self.action = self.controller[self.action_name]
         elseif callable(self.controller._call) then
             self.action = self.controller._call
         end
         self.app.dispatcher:to_handler(pl_utils.bind1(self.action, self.controller))
     else
-        self.app.dispatcher:to_handler(function(ctx,response)
-            response.body = 'found no responser for route:' .. pathinfo
-            return response
+        self.app.dispatcher:to_handler(function(ctx)
+            ctx.response.body = 'found no responser for route:' .. pathinfo
         end)
     end
     return next(...)

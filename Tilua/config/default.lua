@@ -23,8 +23,19 @@ local config = {
                     model_layer = 'model'
                 }
             },
+            'Tilua.midware.json_response',
             'Tilua.midware.html_cache'
         }
+    },
+    multipart = {
+        field_name_size = 100,
+        field_size = '100kb',
+        fields = 10,
+        file_size = '10mb',
+        files = 10,
+        file_extensions = {},
+        whitelist = {},
+        tmpdir = '/tmp/Tilua-multipart-tmp/'
     },
     session = {
         use_strict_mode = true,

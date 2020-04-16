@@ -19,6 +19,7 @@ local _request = nil
 local routed_uri
 ---@class request
 local request = class()
+---@type app
 local _ctx = nil
 local _method = nil
 local _get = nil
@@ -75,7 +76,7 @@ local function init_request_args()
                 if not read_line then
                     return nil, err
                 end
-                local upload_tmp_dir = '/usr/local/openresty/lua/Test/tmp/'
+                local upload_tmp_dir = _ctx.config.multipart.tmpdir
                 if not path_exists(upload_tmp_dir) then
                     makepath(upload_tmp_dir)
                 end
