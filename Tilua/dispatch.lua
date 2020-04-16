@@ -12,7 +12,7 @@ function dispatch:_init(app)
 end
 
 function dispatch:prepare_ctx_args_for_responser(args)
-    return self.app, response(), table.unpack(args)
+    return self.app, table.unpack(args)
 end
 
 ---make_chain_call

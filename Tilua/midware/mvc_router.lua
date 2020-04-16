@@ -9,7 +9,8 @@ local table_concat = table.concat
 local callable = lw_util.callable
 local mvc_router = require "Tilua.midware" .derive()
 
-function mvc_router:handle(next, request, ...)
+function mvc_router:handle(next, ...)
+    local request = self.app:unpack()
     local pathinfo = request.get_routed_uri()
     local controller, action, params = (function
     (controller, action, ...)
@@ -38,7 +39,7 @@ function mvc_router:handle(next, request, ...)
             return response
         end)
     end
-    return next(request, ...)
+    return next(...)
 end
 
 function mvc_router:_init(app, config)

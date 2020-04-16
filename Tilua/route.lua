@@ -169,14 +169,13 @@ end
 ---解析路径变量
 ---@param params table
 ---@param values table
-function route:bind_params_for_responser(params, values, request)
+function route:bind_params_for_responser(params, values)
     local path_params = {}
     for i = 1, #params do
         path_params[params[i]] = values[i]
     end
 
     path_params.args = tablex.sub(values, 1, #values) --用于传递给responser
-    table.insert(path_params.args, 1, request)
     return path_params
 end
 
@@ -223,7 +222,7 @@ function route:run(request)
                 router, _ = table.unpack(router)
                 return {
                     router.responser,
-                    self:bind_params_for_responser({}, {}, request),
+                    self:bind_params_for_responser({}, {}),
                     router.midware
                 }
             end
@@ -242,7 +241,7 @@ function route:run(request)
         local path_params = {}
         local validation
         local newpath, n, err = re_sub(pathinfo, parsed_regex, function(m)
-            path_params = self:bind_params_for_responser(params, m, request)
+            path_params = self:bind_params_for_responser(params, m)
             router, validation = table.unpack(router)
             if lw_util.callable(router.responser) then
                 return ''
@@ -259,7 +258,7 @@ function route:run(request)
         end
     end
     if not lw_util.empty(longest_match_path) then
-        request:set_routed_uri(longest_match_path)
+        request.set_routed_uri(longest_match_path)
         return {
             longest_match_path,
             longest_match_params,
@@ -273,13 +272,13 @@ function route:run(request)
         router = router[1]
         if find and #location > longest_match then
             longest_match = #location
-            longest_match_params = self:bind_params_for_responser({}, { string_sub(pathinfo, end_pos + 1) }, request)
+            longest_match_params = self:bind_params_for_responser({}, { string_sub(pathinfo, end_pos + 1) })
             longest_match_path = router.responser
             longest_match_midware = router.midware
         end
     end
     if not lw_util.empty(longest_match_path) then
-        request:set_routed_uri(pathinfo)
+        request.set_routed_uri(pathinfo)
         return {
             longest_match_path,
             longest_match_params,

@@ -10,21 +10,20 @@ local var = ngx.var
 local pl_utils = require('pl.utils')
 local lw_utils = require('Tilua.util')
 local midware_manager = require('Tilua.midware_manager')
----@type request
-local request = require('Tilua.request')
 ---@class app
 ---properties
 local app = class()
 local _cache = nil
 local _dispatcher = nil
 local _route = nil
+local _response = nil
+local _request = nil
 local _config = {}
 ---_init
 ---@param app_instance app
 function app:_init(app_instance)
     --共享全局app实例
     ctx.app_context = app_instance
-    _context = self
     self:catch(function(_, name)
         return self:magic(name)
     end)
@@ -54,6 +53,19 @@ function app:get_dispatcher()
     return _dispatcher
 end
 
+function app:get_response()
+    if not _response then
+        _response = require("Tilua.response")(self)
+    end
+    return _response
+end
+
+function app:get_request()
+    if not _request then
+        _request = require("Tilua.request").init_context(self)
+    end
+    return _request
+end
 ---初始化路由分发器
 function app:init_dispatcher()
     local dispatcher = self:C('dispatch')
@@ -169,6 +181,11 @@ function app:C(name, value)
     return config
 end
 
+---unpack
+---@return request,response,cache,table
+function app:unpack()
+    return self.request, self.response, self.cache, self.config
+end
 ---handle
 ---@param request request
 function app:handle(request)
@@ -177,11 +194,11 @@ end
 
 function app:start()
     self:init()
-    self:handle(request.capture())
+    self:handle(self.request.capture())
 end
 
 function app.error_handle(err)
-    ngx.say(string.gsub(err, "\n", "<br>") .. "<br>")
+    ngx.say(string.gsub(err or "", "\n", "<br>") .. "<br>")
     ngx.say(string.gsub(debug.traceback(), "\n", "<br>"))
 end
 

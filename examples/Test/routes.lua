@@ -1,17 +1,16 @@
 local route = require("Tilua.route")
 
-route.get('~/user/get/{uid}', function(ctx, response, request, uid)
+route.get('~/user/get/{uid}', function(ctx, uid)
     local user = ctx.model.user
     local data = user:save({
         name = "刘洋2"
-    },{
+    }, {
         where = {
-            uid = {'eq',uid}
+            uid = { 'eq', uid }
         },
         limit = 1
     })
-    response.body = user:getLastSql()
-    return response
+    ctx.response.body = user:getLastSql()
 end, {
     before = "[api]"
 })

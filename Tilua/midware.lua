@@ -2,7 +2,10 @@ local class = require('pl.class')
 
 
 local midware = class()
+---_init
+---@param app app
 function midware:_init(app)
+    ---@type app
     self.app = app
 end
 

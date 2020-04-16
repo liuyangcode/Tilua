@@ -6,14 +6,11 @@ local ngx = ngx
 ---@class response
 local response = class()
 ---_init
----@param body any
----@param code number
----@param headers table
-function response:_init(body, code, headers)
-    code = code or 200
-    self.body = body
-    self.headers = headers or {}
-    self.code = code
+function response:_init(ctx)
+    self.ctx = ctx
+    self.body = ""
+    self.headers = {}
+    self.code = 200
     self.after_send_callback = {}
 end
 

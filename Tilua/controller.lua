@@ -4,6 +4,7 @@ local app = ngx.ctx.app_context
 ---@class controller
 local controller = class()
 function controller:_init(ctx)
+    ---@type app
     self.app = ctx
 end
 
@@ -43,7 +44,7 @@ function controller:display(template_file)
     if not template_file then
         template_file = app.mvc_router.controller_name .. '/' .. app.mvc_router.action_name .. '.html'
     end
-    return self:get_view():render(template_file)
+    self.app.response.body = self:get_view():render(template_file)
 end
 
 function controller:_call()

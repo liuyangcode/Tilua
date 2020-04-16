@@ -4,23 +4,23 @@ function index:_init(ctx)
     self:super(ctx)
 end
 
-function index:index(ctx, response, request)
-    response.body = "hello world"
-    return response
+function index:index(ctx)
+    ctx.response.body = "hello world"
+    return ctx.response
 end
 
-function index:login(ctx, response, request)
-    response.body = self:display()
-    return response
+function index:login(ctx)
+    self:display()
 end
 
-function index:upload(ctx, response, request)
+---upload
+---@param ctx app
+function index:upload(ctx)
+    local request, response = ctx:unpack()
     if request.method == 'POST' then
         response.body = ''
     else
-        response.body = self:display()
-
+        self:display()
     end
-    return response
 end
 return index

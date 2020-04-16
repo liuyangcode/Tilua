@@ -11,6 +11,7 @@ local path_exists = path.exists
 local view = class()
 local _template = nil
 function view:_init(ctx)
+    ---@type app
     self.app = ctx
     self.context = {}
     self.template = nil

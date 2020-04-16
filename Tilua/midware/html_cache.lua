@@ -6,8 +6,8 @@ function html_cache:_init(ctx, config)
     self.config = config
 end
 
-function html_cache:handle(next,request,...)
-    return next(request)
+function html_cache:handle(next, ...)
+    return next(...)
 end
 
 return html_cache

@@ -3,8 +3,8 @@ function test:_init(ctx)
     self:super(ctx)
 end
 
-function test:handle(next, request, ...)
-    return next(request, ...)
+function test:handle(next, ...)
+    return next(...)
 end
 
 return test
