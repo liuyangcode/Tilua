@@ -1,4 +1,4 @@
-local manager = {}
+
 local ngx = ngx
 local midware_sep = "|"
 local midware_group = {}
@@ -7,6 +7,8 @@ local lw_util = require('Tilua.util')
 local map = require("pl.tablex").map
 local split = require('pl.utils').split
 local match = ngx.re.match
+
+local manager = {}
 function manager.is_group(val)
     local mat, _ = match(val, '[[a-zA-Z_0-9]+]')
     return mat ~= nil

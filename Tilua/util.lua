@@ -4,7 +4,14 @@ local tablex_size = tablex.size
 local foreach = tablex.foreach
 local ngx = ngx
 local md5 = ngx.md5
+local string = string
+local table = table
+local table_concat = table.concat
 local json = require("cjson.safe")
+local string_format = string.format
+local string_sub = string.sub
+local table_insert = table.insert
+local math_random = math.random
 ---@class util
 local util = {
 
@@ -85,7 +92,23 @@ function util.dump(...)
         ngx.say(pretty.write(params[i]) .. '<br/>')
     end
 end
-
+---uuid
+function util.uuid()
+    local seed = { 'e', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' }
+    local tb = {}
+    math.randomseed(ngx.now())
+    for i = 1, 32 do
+        table_insert(tb, seed[math_random(1, 16)])
+    end
+    local sid = table_concat(tb)
+    return string_format('%s-%s-%s-%s-%s',
+            string_sub(sid, 1, 8),
+            string_sub(sid, 9, 12),
+            string_sub(sid, 13, 16),
+            string_sub(sid, 17, 20),
+            string_sub(sid, 21, 32)
+    )
+end
 ---check vals is nil
 function util.is_set(...)
     local params = { ... }

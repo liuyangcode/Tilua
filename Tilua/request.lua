@@ -7,7 +7,9 @@ local read_body = req.read_body
 local util = require("Tilua.util")
 local pl_utils = require("pl.utils")
 local strip = require("pl.stringx").strip
-
+local split = require("pl.stringx").split
+local tablex = require("pl.tablex")
+local map = tablex.map
 local path = require "pl.path"
 local dirname = path.dirname
 local getmtime = path.getmtime
@@ -53,6 +55,42 @@ end
 function request.get_method()
     return _method
 end
+
+local function get_boundary(content_type)
+    local boundary = string.match(content_type, ";%s*boundary=([^,;]+)")
+    boundary = strip(boundary, '"')
+
+    return boundary
+end
+local function is_multipart(content_type)
+    return string.sub(content_type, 1, 19) == 'multipart/form-data'
+end
+
+---parse_disposition_headers
+---@param headers table
+local function parse_disposition_headers(headers)
+    local name ,filename,type,error
+    map(function(v)
+        local ct,field,file_fields = pl_utils.unpack(split(v,";"))
+        if ct then
+            ct = split(ct,":")
+        end
+        if field then
+            field = split(field,"=")
+        end
+        if file_fields then
+            file_fields = split(file_fields,"=")
+            filename = strip(file_fields[2],"\"")
+        end
+
+    end,headers)
+    return {
+        name = name,
+        filename = filename,
+        type = type,
+        error = error
+    }
+end
 local function init_request_args()
     _get = req.get_uri_args() or {}
     _method = var.request_method
@@ -61,11 +99,10 @@ local function init_request_args()
             read_body()
             local post = req.get_post_args()
             _post = util.json_decode(post) or post or {}
-        elseif string.sub(request.header.content_type, 1, 19) == 'multipart/form-data' then
-            local boundary = string.match(string.sub(request.header.content_type, 20), ";%s*boundary=([^,;]+)")
-            local chunk_size = 1024
+        elseif is_multipart(request.header.content_type) then
+            local boundary = get_boundary(request.header.content_type)
+            local chunk_size = _ctx.config.multipart.chunk_size
             if boundary then
-                boundary = strip(boundary, '"')
                 local sock, err = req.socket()
                 if not sock then
                     assert(sock, "ngx.req.socket init failed " .. err)
@@ -81,33 +118,35 @@ local function init_request_args()
                     makepath(upload_tmp_dir)
                 end
 
-                local file_index = 1
+                local multiparts = {}
                 while true do
                     local preamble, _ = read_line()
                     if not preamble or string.sub(preamble, #preamble - 1) == '--' then
                         break
                     else
+                        local disposition_headers = {}
                         while true do
                             local header, _ = read_line()
                             if header == "" or not header then
                                 break
                             else
-                                util.dump(header)
+                                disposition_headers[#disposition_headers + 1] = header
                             end
                         end
-                        local file, _ = io.open(upload_tmp_dir .. file_index, 'a+')
+                        disposition_headers = parse_disposition_headers(disposition_headers)
+                        local uuid = util.uuid()
+                        local file, _ = io.open(upload_tmp_dir .. uuid, 'a+')
                         while true do
                             local body, _ = read_post_body(chunk_size)
                             if not body then
                                 file:close()
-                                util.dump(upload_tmp_dir .. file_index)
+                                util.dump(upload_tmp_dir .. uuid)
                                 break
                             else
                                 file:write(body)
                             end
                         end
                     end
-                    file_index = file_index + 1
                 end
             end
         end

@@ -1,11 +1,10 @@
 local ngx = ngx
 local class = require("pl.class")
 local tablex = require "pl.tablex"
-local response = require('Tilua.response')
 local lw_util = require('Tilua.util')
 local pl_utils = require('pl.utils')
 ---@class dispatch
-class.dispatch()
+local dispatch = class()
 
 function dispatch:_init(app)
     self.app = app
@@ -31,7 +30,7 @@ function dispatch:make_chain_call(midware, handler, ...)
                 if not ok then
                     assert(false, 'midware named' .. midware.aftermidware[i][1] .. ' not found')
                 end
-                async_mid[#async_mid + 1] = midware_class(self.app,midware.aftermidware[i][2])
+                async_mid[#async_mid + 1] = midware_class(self.app, midware.aftermidware[i][2])
             end
             if #async_mid > 0 then
                 resp:after_send(function()
@@ -57,8 +56,8 @@ function dispatch:make_chain_call(midware, handler, ...)
         if not ok then
             assert(false, 'midware named' .. next_midware[1] .. ' not found')
         end
-        mid = midware_class(self.app,next_midware[2])
-        assert( mid.handle, 'midware named:' .. next_midware[1] .. ' handle func required')
+        mid = midware_class(self.app, next_midware[2])
+        assert(mid.handle, 'midware named:' .. next_midware[1] .. ' handle func required')
         local func = pl_utils.bind1(mid.handle, mid)
         return function(...)
             return func(table.unpack({

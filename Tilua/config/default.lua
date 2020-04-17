@@ -35,6 +35,7 @@ local config = {
         files = 10,
         file_extensions = {},
         whitelist = {},
+        chunk_size=1024,
         tmpdir = '/tmp/Tilua-multipart-tmp/'
     },
     session = {
