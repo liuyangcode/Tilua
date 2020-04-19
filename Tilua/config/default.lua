@@ -30,12 +30,25 @@ local config = {
     multipart = {
         field_name_size = 100,
         field_size = '100kb',
+        field_value_size_in_memory = '1kb',
         fields = 10,
         file_size = '10mb',
         files = 10,
         file_extensions = {},
-        whitelist = {},
-        chunk_size=1024,
+        whitelist = {
+            '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.wbmp', '.webp', '.tif', '.psd', '.svg', '.js', '.jsx',
+            '.json',
+            '.css', '.less',
+            '.html', '.htm',
+            '.xml',
+            '.zip',
+            '.gz', '.tgz', '.gzip',
+            '.mp3',
+            '.mp4',
+            '.avi',
+            '.txt'
+        },
+        chunk_size = 1024,
         tmpdir = '/tmp/Tilua-multipart-tmp/'
     },
     session = {

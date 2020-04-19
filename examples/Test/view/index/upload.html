@@ -13,8 +13,9 @@
 <body>
 <form method="post" enctype="multipart/form-DATA" action="/index/upload">
     <input type="file" name="img"/>
-    <input type="file" name="img1"/>
-    <input type="text" name="filename"/>
+    <input name="img" type="file"/>
+    <input id="otherName" name="otherName" type="hidden" value="abcdefg"/>
+    <input name="username" type="text"/>
     <input type="submit" value="提交"/>
 </form>
 </body>

@@ -8,7 +8,9 @@ local util = require("Tilua.util")
 local pl_utils = require("pl.utils")
 local strip = require("pl.stringx").strip
 local split = require("pl.stringx").split
+local string_startsWith = require("pl.stringx").startswith
 local tablex = require("pl.tablex")
+
 local map = tablex.map
 local path = require "pl.path"
 local dirname = path.dirname
@@ -63,34 +65,62 @@ local function get_boundary(content_type)
     return boundary
 end
 local function is_multipart(content_type)
-    return string.sub(content_type, 1, 19) == 'multipart/form-data'
+    return string_startsWith(content_type, 'multipart/form-data')
 end
 
 ---parse_disposition_headers
 ---@param headers table
 local function parse_disposition_headers(headers)
-    local name ,filename,type,error
+    local name, filename, type, error, encoding
     map(function(v)
-        local ct,field,file_fields = pl_utils.unpack(split(v,";"))
-        if ct then
-            ct = split(ct,":")
+        if string_startsWith(v, "Content-Disposition") then
+            -- file
+            local ct, field, file_fields = pl_utils.unpack(split(v, ";"))
+            ct = split(ct, ":")
+            if ct[2] == " form-data" then
+                if field then
+                    field = split(field, "=")
+                    name = strip(field[2], "\"")
+                end
+                if file_fields then
+                    file_fields = split(file_fields, "=")
+                    filename = strip(file_fields[2], "\"")
+                end
+            end
+        elseif string_startsWith(v, "Content-Type") then
+            local ct, charset = pl_utils.unpack(split(v, ";"))
+            ct = split(ct, ":")
+            type = strip(ct[2])
+            if charset and string_startsWith(charset, 'charset') then
+                charset = split(charset, "=")
+                encoding = charset[2]
+            else
+                encoding = "utf8"
+            end
+        elseif string_startsWith(v, "Content-Transfer-Encoding") then
         end
-        if field then
-            field = split(field,"=")
-        end
-        if file_fields then
-            file_fields = split(file_fields,"=")
-            filename = strip(file_fields[2],"\"")
-        end
-
-    end,headers)
+    end, headers)
     return {
         name = name,
-        filename = filename,
-        type = type,
-        error = error
+        origin_filename = filename,
+        type = type or "text/plain",
+        error = error,
+        charset = encoding
     }
 end
+
+local function get_limit_size(typ)
+    local limit_size = _ctx.config.multipart[typ]
+    if util.is_number(limit_size) then
+        return limit_size
+    elseif util.is_string(limit_size) then
+        limit_size = string.lower(limit_size)
+        limit_size = string.gsub(limit_size, 'mb', '000000')
+        limit_size = string.gsub(limit_size, 'kb', '000')
+        return tonumber(limit_size)
+    end
+end
+
 local function init_request_args()
     _get = req.get_uri_args() or {}
     _method = var.request_method
@@ -127,27 +157,56 @@ local function init_request_args()
                         local disposition_headers = {}
                         while true do
                             local header, _ = read_line()
-                            if header == "" or not header then
+                            if header == "--" .. boundary .. "--" or header == "" or not header then
                                 break
                             else
                                 disposition_headers[#disposition_headers + 1] = header
                             end
                         end
-                        disposition_headers = parse_disposition_headers(disposition_headers)
-                        local uuid = util.uuid()
-                        local file, _ = io.open(upload_tmp_dir .. uuid, 'a+')
-                        while true do
+                        if #disposition_headers == 0 then
+                            break
+                        end
+                        local part = parse_disposition_headers(disposition_headers)
+                        if #part.name > _ctx.config.multipart.field_name_size then
+                            part.error = "Reach field_name_size limit"
+                        else
+                            local uuid = util.uuid()
                             local body, _ = read_post_body(chunk_size)
-                            if not body then
-                                file:close()
-                                util.dump(upload_tmp_dir .. uuid)
-                                break
+                            if (not body or #body < get_limit_size("field_value_size_in_memory")) and not part.origin_filename then
+                                part.value = body or ""
                             else
-                                file:write(body)
+                                local ext = path.extension(part.origin_filename)
+                                if not tablex.find(_ctx.config.multipart.whitelist, ext) and not tablex.find(_ctx.config.multipart.file_extensions, ext) then
+                                    part.error = "Invalid filename: " .. part.origin_filename
+                                else
+                                    local upload_file_tmp = io.open(upload_tmp_dir .. uuid, 'a+')
+                                    upload_file_tmp:write(body)
+                                    while true do
+                                        body, _ = read_post_body(chunk_size)
+                                        if not body then
+                                            upload_file_tmp:close()
+                                            part.filename = upload_tmp_dir .. uuid
+                                            break
+                                        else
+                                            upload_file_tmp:write(body)
+                                            part.size = upload_file_tmp:seek("end")
+                                            if part.origin_filename and part.size > get_limit_size('file_size') then
+                                                part.error = "Request file too large, please check multipart config"
+                                                upload_file_tmp:close()
+                                                break
+                                            elseif not part.origin_filename and part.size > get_limit_size('field_size') then
+                                                part.error = "Reach field_size limit, please check multipart config"
+                                                upload_file_tmp:close()
+                                            end
+                                        end
+                                    end
+                                end
                             end
                         end
+                        multiparts[#multiparts + 1] = part
                     end
                 end
+                util.dump(multiparts)
             end
         end
     else
