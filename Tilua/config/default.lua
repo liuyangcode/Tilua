@@ -12,6 +12,7 @@ local config = {
             'Tilua.midware.json_response'
         },
         mvc = {
+            'Tilua.midware.body_parser',
             'Tilua.midware.session',
             {
                 'Tilua.midware.mvc_router',
@@ -26,6 +27,9 @@ local config = {
             'Tilua.midware.json_response',
             'Tilua.midware.html_cache'
         }
+    },
+    bodyparser = {
+
     },
     multipart = {
         field_name_size = 100,

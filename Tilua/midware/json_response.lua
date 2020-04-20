@@ -5,7 +5,7 @@ function json_response:_init(...)
 end
 
 function json_response:handle(next, ...)
-    local request, response = self.app:unpack()
+    local request, response = self.ctx:unpack()
     next(request, ...)
     if type(response.body) == 'table' then
         response:add_header('content_type', "application/json;chartset=uft-8")

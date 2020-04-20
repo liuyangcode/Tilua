@@ -19,7 +19,7 @@ end
 function index:upload(ctx)
     local request, response = ctx:unpack()
     if request.method == 'POST' then
-        response.body = ''
+        response.body = request.body
     else
         self:display()
     end

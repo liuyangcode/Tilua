@@ -4,9 +4,9 @@ local class = require('pl.class')
 local midware = class()
 ---_init
 ---@param app app
-function midware:_init(app)
+function midware:_init(ctx)
     ---@type app
-    self.app = app
+    self.ctx = ctx
 end
 
 function midware:hanlde(...)

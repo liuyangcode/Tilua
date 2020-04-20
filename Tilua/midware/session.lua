@@ -7,9 +7,9 @@ end
 ---handle
 ---@param next function
 function session_start:handle(next, ...)
-    local request, response, _, config = self.app:unpack()
+    local request, response, _, config = self.ctx:unpack()
     session.start(request, config.session)
-    self.app.request.set_session(session)
+    self.ctx.request.set_session(session)
     ---@type response
     next(...)
     response:set_cookie(session.cookie_to_send())
