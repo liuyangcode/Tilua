@@ -158,17 +158,17 @@ function session.start(request, config)
         send_cookie = use_cookies or use_only_cookies
     end
     if use_cookies then
-        id = request.get_cookie(session_name)
+        id = request.cookie[session_name]
         if id then
             send_cookie = 0
         end
     elseif not use_only_cookies then
-        id = request.get(session_name) or request.post(session_name)
+        id = request.body[session_name]
         if id then
             send_cookie = 0
         end
     end
-    local referer = request.get_header('referer')
+    local referer = request.header.referer
     if id and referer and not string.find(referer, referer_check, 1, true) then
         id = nil
     end

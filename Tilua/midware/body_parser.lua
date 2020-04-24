@@ -21,7 +21,7 @@ local map = tablex.map
 local path = require "pl.path"
 local dirname = path.dirname
 local getmtime = path.getmtime
-
+local io_open = io.open
 local makepath = require "pl.dir".makepath
 local path_exists = path.exists
 
@@ -120,53 +120,57 @@ local function read_post_file(part, read)
     local upload_tmp_dir = _config.tmpdir
     local uuid = util.uuid()
     local body, err = read(chunk_size)
-    if err then
-        util.dump(err)
+    local discard_body_part = function
+    ()
+        while true do
+            body, _ = read(chunk_size)
+            if not body then
+                break
+            end
+        end
     end
     if not body then
-        local data = _sock:receive(2)
-
+        discard_body_part()
+    else
+        if part.origin_filename and part.origin_filename ~= "" then
+            local ext = path.extension(part.origin_filename or "")
+            if not tablex.find(_config.whitelist, ext) and not tablex.find(_config.file_extensions, ext) then
+                part.error = "Invalid filename: " .. part.origin_filename
+                discard_body_part()
+            else
+                local upload_file_tmp = io_open(upload_tmp_dir .. uuid, 'a+')
+                upload_file_tmp:write(body)
+                while true do
+                    body, _ = read(chunk_size)
+                    if not body then
+                        upload_file_tmp:close()
+                        part.filename = upload_tmp_dir .. uuid
+                        break
+                    else
+                        upload_file_tmp:write(body)
+                        part.size = upload_file_tmp:seek("end")
+                        if part.origin_filename and part.size > get_limit_size('file_size') then
+                            part.error = "Request file too large, please check multipart config"
+                            upload_file_tmp:close()
+                            discard_body_part()
+                            break
+                        end
+                    end
+                end
+            end
+        elseif not part.origin_filename then
+            local body_temp = body
+            while true do
+                body, _ = read(chunk_size)
+                if not body then
+                    break
+                else
+                    body_temp = body_temp .. body
+                end
+            end
+            part.value = body_temp
+        end
     end
-
-    util.dump(part.name)
-    util.dump(part, "body ---" .. part.name .. (body))
-    --body, err = read()
-    --util.dump(part, "body ---"..chunk_size .. body)
-    --if (not body or #body < get_limit_size("field_value_size_in_memory")) and not part.origin_filename then
-    --    part.value = body or ""
-    --else
-    --    if part.origin_filename and part.origin_filename ~= "" then
-    --        util.dump("1111")
-    --    else
-    --        body, _ = read(chunk_size)
-    --    end
-    --    --local ext = path.extension(part.origin_filename or "")
-    --    --if ext~="" and not tablex.find(_config.whitelist, ext) and not tablex.find(_config.file_extensions, ext) then
-    --    --    part.error = "Invalid filename: " .. part.origin_filename
-    --    --else
-    --    --    local upload_file_tmp = io.open(upload_tmp_dir .. uuid, 'a+')
-    --    --    upload_file_tmp:write(body)
-    --    --    while true do
-    --    --        body, _ = read(chunk_size)
-    --    --        if not body then
-    --    --            upload_file_tmp:close()
-    --    --            part.filename = upload_tmp_dir .. uuid
-    --    --            break
-    --    --        else
-    --    --            upload_file_tmp:write(body)
-    --    --            part.size = upload_file_tmp:seek("end")
-    --    --            if part.origin_filename and part.size > get_limit_size('file_size') then
-    --    --                part.error = "Request file too large, please check multipart config"
-    --    --                upload_file_tmp:close()
-    --    --                break
-    --    --            elseif not part.origin_filename and part.size > get_limit_size('field_size') then
-    --    --                part.error = "Reach field_size limit, please check multipart config"
-    --    --                upload_file_tmp:close()
-    --    --            end
-    --    --        end
-    --    --    end
-    --    --end
-    --end
     return part
 end
 local function parse_multipart(boundary)
@@ -179,14 +183,17 @@ local function parse_multipart(boundary)
         local read_line, err = _sock:receiveuntil("\r\n")
         local read_post_body, _ = _sock:receiveuntil("\r\n--" .. boundary)
         if not read_line then
-            return nil, err
+            return {}
         end
         if not path_exists(_config.tmpdir) then
             makepath(_config.tmpdir)
         end
 
         local multiparts = {}
-        local preamble, _ = read_line()
+        local preamble, err = read_line()
+        if not preamble then
+            return {}
+        end
         local header = ""
         local data
         while true do
@@ -200,38 +207,45 @@ local function parse_multipart(boundary)
                 end
             end
             local part = parse_disposition_headers(disposition_headers)
-            part = read_post_file(part, read_post_body)
+            multiparts[#multiparts + 1] = read_post_file(part, read_post_body)
             data, _ = read_line()
             if data == '--' then
                 break
             end
-            multiparts[#multiparts + 1] = part
         end
         return multiparts
     end
 end
+
+local function parse_args(data)
+    return util.json_decode(data) or ngx.decode_args(data) or {}
+end
+
 function body_parser:handle(next, ...)
     ---@type app
     local ctx = self.ctx
     local request, response = ctx:unpack()
     local request_content_type = request.header.content_type
+    request.body = req.get_uri_args()
     if request_content_type then
         if is_form(request_content_type) then
             request.body = parse_form()
         elseif is_multipart(request_content_type) then
             local boundary = get_boundary(request_content_type)
-            request.body = parse_multipart(boundary)
+            request.body.files = parse_multipart(boundary)
         elseif is_json(request_content_type) then
             request.body = parse_json()
+        else
+            read_body()
+            request.body = parse_args(req.get_body_data())
         end
     else
-        local filename = req.get_body_file()
-        if filename then
-            local content = pl_utils.readfile(filename)
+        read_body()
+        local body_file = req.get_body_file()
+        if body_file then
+            local content = pl_utils.readfile(body_file)
             if content then
-                ctx.body = {
-                    content
-                }
+                request.body = parse_args(content)
             end
         end
     end

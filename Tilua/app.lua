@@ -117,8 +117,8 @@ end
 
 function app:get_db()
     return require("Tilua.db").init_context(self)
-
 end
+
 ---初始化缓存
 function app:init_cache()
     if not _cache then

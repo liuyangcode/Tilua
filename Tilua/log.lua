@@ -1,22 +1,35 @@
-
-
 ---@class log
-local log = {}
-local ngx = ngx
-local ngx_log = ngx.log
+local log = {
+    STDERR = "STDERR",
+    EMERG = "EMERG",
+    ALERT = "ALERT",
+    CRIT = "CRIT",
+    ERR = "ERR",
+    WARN = "WARN",
+    NOTICE = "NOTICE",
+    INFO = "INFO",
+    DEBUG = "DEBUG",
+    NONE = "NONE"
+}
+local _logdata = {}
+function log.record(level, msg, force)
+    if level == log.NONE then return true end
+    if force or level then end
+    _logdata[#_logdata + 1 ] = string.format("%s:%s",level,msg)
+    return true
+end
 
-log.STDERR = ngx.STDERR
-log.EMERG = ngx.EMERG
-log.ALERT = ngx.ALERT
-log.CRIT = ngx.CRIT
-log.ERR = ngx.ERR
-log.WARN = ngx.WARN
-log.NOTICE = ngx.NOTICE
-log.INFO = ngx.INFO
-log.DEBUG = ngx.DEBUG
+function log.debug(msg, ...)
+    log.record(log.DEBUG, msg, ...)
+end
+function log.info(msg, ...)
+    log.record(log.INFO, msg, ...)
+end
+function log.error(msg, ...)
+    log.record(log.ERR, msg, ...)
+end
+function log.flush()
 
-function log.record(level, ...)
-    ngx_log(level, ...)
 end
 
 return log

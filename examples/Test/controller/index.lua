@@ -5,9 +5,12 @@ function index:_init(ctx)
 end
 
 function index:index(ctx)
-    ctx.response.body = {
-        name = "刘洋"
+    local request, response = ctx:unpack()
+    request.body = {
+        c=1
     }
+    request.body.a = 1
+    response.body = ngx.DEBUG
 end
 
 function index:login()

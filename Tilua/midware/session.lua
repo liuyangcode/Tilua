@@ -9,7 +9,7 @@ end
 function session_start:handle(next, ...)
     local request, response, _, config = self.ctx:unpack()
     session.start(request, config.session)
-    self.ctx.request.set_session(session)
+    request.session = session
     ---@type response
     next(...)
     response:set_cookie(session.cookie_to_send())
