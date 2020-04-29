@@ -12,6 +12,7 @@ local _ctx = nil
 local _session = nil
 local _headers = nil
 local _body = {}
+local _path_params = {}
 local _cookie = setmetatable({}, {
     __index = function(t, name)
         return var['cookie_' .. name]
@@ -82,6 +83,10 @@ end
 function request.get_server_name()
     return var.server_name
 end
+function request.get_params()
+    return _path_params
+end
+
 function request.get_server_port()
     return var.server_port
 end
@@ -94,7 +99,9 @@ function request.setter(t, key, value)
     assert(util.callable(setter), "request cannot find property " .. key)
     return setter(value)
 end
-
+function request.set_params(params)
+    _path_params = params
+end
 function request.set_body(value)
     if type(value) == "nil" then
         _body = {}

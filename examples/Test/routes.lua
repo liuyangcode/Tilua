@@ -14,3 +14,8 @@ route.get('~/user/get/{uid}', function(ctx, uid)
 end, {
     before = "[api]"
 })
+
+
+route.get('~/user/find/{uid}', function(ctx,uid)
+    ctx.response.body = uid
+end)

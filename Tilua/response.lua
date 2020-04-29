@@ -1,6 +1,8 @@
 local class = require('pl.class')
 local tablex = require('pl.tablex')
 local ngx = ngx
+local send = ngx.say
+
 local ngx_redirect = ngx.redirect
 ---@class response
 local response = class()
@@ -78,7 +80,7 @@ end
 ---发送正文给客户端
 function response:send_body()
     if self.status == 200 or self.status == 0 then
-        ngx.say(self.body)
+        send(self.body)
         tablex.map(function(f)
             f()
         end, self.after_send_callback)

@@ -1,7 +1,9 @@
 local class = require('pl.class')
 
-
+---@class midware
 local midware = class()
+--设定别名
+midware.alias = ''
 ---_init
 ---@param app app
 function midware:_init(ctx)

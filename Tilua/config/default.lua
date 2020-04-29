@@ -6,16 +6,23 @@ local config = {
     html_cache_time = 60,
     html_cache_rules = {},
     html_cache_file_ext = '.html',
+    midware_alias = {
+        mvc = 'Tilua.midware.mvc_router',
+        session = 'Tilua.midware.session',
+        json = 'Tilua.midware.json_response',
+        body_parser = 'Tilua.midware.body_parser',
+        html_cache = 'Tilua.midware.html_cache'
+    },
     midware_group = {
         api = {
-            'Tilua.midware.session',
-            'Tilua.midware.json_response'
+            'session',
+            'json'
         },
         mvc = {
-            'Tilua.midware.body_parser',
-            'Tilua.midware.session',
+            'body_parser',
+            'session',
             {
-                'Tilua.midware.mvc_router',
+                'mvc',
                 {
                     default_controller = 'index',
                     default_action = 'index',
@@ -24,12 +31,18 @@ local config = {
                     model_layer = 'model'
                 }
             },
-            'Tilua.midware.json_response',
-            'Tilua.midware.html_cache'
+            'json',
+            'html_cache'
         }
     },
     bodyparser = {
 
+    },
+    log = {
+        type = 'file',
+        path = 'log',
+        max_size = 2 * 1024 * 1024,
+        level = 'DEBUG'
     },
     multipart = {
         field_name_size = 100,
@@ -40,7 +53,8 @@ local config = {
         files = 10,
         file_extensions = {},
         whitelist = {
-            '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.wbmp', '.webp', '.tif', '.psd', '.svg', '.js', '.jsx',
+            '.jpg',
+            '.jpeg', '.png', '.gif', '.bmp', '.wbmp', '.webp', '.tif', '.psd', '.svg', '.js', '.jsx',
             '.json',
             '.css', '.less',
             '.html', '.htm',

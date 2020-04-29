@@ -5,32 +5,30 @@ local re_sub = ngx.re.sub
 local string_sub = string.sub
 local var = ngx.var
 local re_match = ngx.re.match
-local log = require('Tilua.log')
 local stringx = require('pl.stringx')
 local tablex = require('pl.tablex')
 local strip = stringx.strip
-local parse_agrs = ngx.decode_args
 local split = require('pl.utils').split
 local lw_util = require('Tilua.util')
-local midware_manager = require("Tilua.midware_manager")
+local midware_manager = require("Tilua.midware.manager")
 
-local rules = {}
+
 
 ---@class route
 local route = class()
-
-function route:_init(_rules)
-    self.rules = _rules or {}
+local rules = {}
+local _rule_caches = {}
+function route:_init(ctx)
+    self.ctx = ctx
 end
 
 function route:check()
-    self.rule_caches = {}
-    tablex.update(self.rules, rules)
-    for location, result in pairs(self.rules) do
+    lw_util.extend(rules,self.ctx.config.route)
+    for location, result in pairs(rules) do
         local method, matchers, url, validation = self:parse_rule(location)
         for i, v in ipairs(method) do
-            self.rule_caches[v] = self.rule_caches[v] or self:get_init_route_rule()
-            self.rule_caches[v][matchers][url] = { self:to_router(result, location), validation }
+            _rule_caches[v] = _rule_caches[v] or self:get_init_route_rule()
+            _rule_caches[v][matchers][url] = { self:to_router(result, location), validation }
         end
     end
 
@@ -179,15 +177,10 @@ function route:bind_params_for_responser(params, values)
     return path_params
 end
 
-function route:get_rule_caches()
-    return self.rule_caches
-end
-
 function route:get_routes(method)
-    local rule_caches = self:get_rule_caches()
     method = string.lower(method or var.request_method)
-    rule_caches = rule_caches[method] or self:get_init_route_rule()
-    return rule_caches
+    _rule_caches = _rule_caches[method] or self:get_init_route_rule()
+    return _rule_caches
 end
 ---验证路径变量
 ---@param params table
@@ -206,23 +199,23 @@ function route:validate_path_params(params, validation)
     return result
 end
 ---run
----@param request request
-function route:run(request)
-    local pathinfo = request:get_path_info()
-
-    log.record(ngx.ERR, 'start match url ', pathinfo)
+function route:run()
+    local request = self.ctx.request
+    ---@type log
+    local log = self.ctx.logger
+    local pathinfo = request.path_info
+    log.record(log.DEBUG, 'start match url '..pathinfo)
     self:check()
     local rule_caches = self:get_routes()
-
     --精确匹配
-    lw_util.extend(rule_caches['='], self.rule_caches['*'] and self.rule_caches['*']['='] or {})
+    lw_util.extend(rule_caches['='], _rule_caches['*'] and _rule_caches['*']['='] or {})
     if rule_caches['='] then
         for location, router in pairs(rule_caches['=']) do
             if location == pathinfo then
                 router, _ = table.unpack(router)
                 return {
                     router.responser,
-                    self:bind_params_for_responser({}, {}),
+                    {},
                     router.midware
                 }
             end
@@ -234,7 +227,7 @@ function route:run(request)
     local longest_match_params
     local longest_match_midware = {}
 
-    lw_util.extend(rule_caches['~'], self.rule_caches['*'] and self.rule_caches['*']['~'] or {})
+    lw_util.extend(rule_caches['~'], _rule_caches['*'] and _rule_caches['*']['~'] or {})
     --正则匹配
     for location, router in pairs(rule_caches['~']) do
         local url, parsed_regex, params = self:parse_path_to_regex(location)
@@ -257,16 +250,18 @@ function route:run(request)
             longest_match_midware = router.midware
         end
     end
+
     if not lw_util.empty(longest_match_path) then
         request.set_routed_uri(longest_match_path)
+        request.params = longest_match_params
         return {
             longest_match_path,
-            longest_match_params,
+            longest_match_params.args,
             longest_match_midware
         }
     end
     --从路径开头匹配 最长匹配
-    lw_util.extend(rule_caches['*'], self.rule_caches['*'] and self.rule_caches['*']['*'] or {})
+    lw_util.extend(rule_caches['*'], _rule_caches['*'] and _rule_caches['*']['*'] or {})
     for location, router in pairs(rule_caches['*']) do
         local find, end_pos = string.find(pathinfo, location)
         router = router[1]

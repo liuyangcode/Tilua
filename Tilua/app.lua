@@ -5,25 +5,23 @@ local table_concat = table.concat
 local stringx = require('pl.stringx')
 local lstrip = stringx.lstrip
 local split = stringx.split
-local ctx = ngx.ctx
-local var = ngx.var
 local pl_utils = require('pl.utils')
 local lw_utils = require('Tilua.util')
-local midware_manager = require('Tilua.midware_manager')
 ---@class app
 ---properties
 local app = class()
 local _cache = nil
 local _dispatcher = nil
 local _route = nil
+local _logger = nil
 local _response = nil
 local _request = nil
 local _config = {}
+local _midware_manager = nil
 ---_init
 ---@param app_instance app
 function app:_init(app_instance)
     --共享全局app实例
-    ctx.app_context = app_instance
     self:catch(function(_, name)
         return self:magic(name)
     end)
@@ -51,6 +49,13 @@ function app:get_dispatcher()
         self:init_dispatcher()
     end
     return _dispatcher
+end
+
+function app:get_midware()
+    if not _midware_manager then
+        _midware_manager = require('Tilua.midware.manager').init(self)
+    end
+    return _midware_manager
 end
 
 function app:get_response()
@@ -101,9 +106,9 @@ function app:get_route()
             assert(false, 'route filter named ' .. route .. ' not found')
         end
         assert(route_filter.run, 'route filter must has a run method')
-        _route = pl_utils.bind1(route_filter.run, route_filter(route_rules))
+        _route = pl_utils.bind1(route_filter.run, route_filter(self))
     elseif lw_utils.callable(route) then
-        _route = pl_utils.bind1(route, route_rules)
+        _route = pl_utils.bind1(route, self)
     elseif type(route) == 'table' then
         assert(route.run, 'route filter must has a run method')
         route.rules = route_rules
@@ -134,8 +139,12 @@ function app:get_cache()
     end
     return _cache
 end
+
 function app:get_logger()
-    return require("Tilua.log")
+    if not _logger then
+        _logger = require("Tilua.log").init(self)
+    end
+    return _logger
 end
 ---应用初始化
 function app:init()
@@ -149,7 +158,7 @@ function app:init()
 
     self:load_config(config or {})
     self:init_cache()
-    midware_manager.init_group(self:C('midware_group'))
+    self.midware:load()
     --加载应用路由定义
     pcall(require, self.app_name .. '.routes')
 end
@@ -186,15 +195,13 @@ end
 function app:unpack()
     return self.request, self.response, self.cache, self.config
 end
----handle
----@param request request
-function app:handle(request)
-    (self:dispatch(self.route(request)))():send()
-end
 
 function app:start()
     self:init()
-    self:handle(self.request.capture())
+    self.request.capture()
+    self:dispatch(self.route())()
+    self.response:send()
+    _logger.flush()
 end
 
 function app.error_handle(err)
