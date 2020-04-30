@@ -17,6 +17,7 @@ local _logger = nil
 local _response = nil
 local _request = nil
 local _config = {}
+local _view = nil 
 local _midware_manager = nil
 ---_init
 ---@param app_instance app
@@ -138,6 +139,13 @@ function app:get_cache()
         self:init_cache()
     end
     return _cache
+end
+
+function app:get_view()
+    if not _view then
+        _view = require("Tilua.view")(self)
+    end
+    return _view
 end
 
 function app:get_logger()

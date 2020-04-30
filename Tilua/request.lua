@@ -96,9 +96,12 @@ end
 
 function request.setter(t, key, value)
     local setter = request["set_" .. key]
-    assert(util.callable(setter), "request cannot find property " .. key)
+    if not util.callable(setter) then
+        return nil
+    end
     return setter(value)
 end
+
 function request.set_params(params)
     _path_params = params
 end

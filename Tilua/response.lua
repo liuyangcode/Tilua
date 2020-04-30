@@ -30,7 +30,15 @@ function response:send_headers()
     return self
 end
 
-function response:render(view, context)
+function response:render(view, context, content_type)
+    local ctx = self.ctx
+    local config = ctx.config
+    if content_type then
+        self.headers.content_type = content_type
+    else
+        self.headers.content_type = config.default_content_type .. ";" .. config.default_charset
+    end
+    self.body = ctx.view:render(view,context)
     return self
 end
 
@@ -46,6 +54,9 @@ function response:add_header(header, ...)
         end
     end
     return false
+end
+function response:attachment()
+
 end
 ---add_cookie
 ---@param name string
@@ -89,9 +100,9 @@ function response:send_body()
     end
     return self
 end
-function response.redirect(...)
-    ngx_redirect(...)
-end
+
+response.redirect = ngx_redirect
+
 ---发送
 function response:send()
     self:send_headers()

@@ -10,10 +10,10 @@ local path_exists = path.exists
 ---@class view
 local view = class()
 local _template = nil
-function view:_init(ctx)
+function view:_init(ctx,context)
     ---@type app
     self.app = ctx
-    self.context = {}
+    self.context = context or {}
     self.template = nil
 end
 
@@ -71,11 +71,12 @@ function view:get_template_cache_path()
     return view_cache_path
 end
 
-function view:render(view)
+function view:render(view,context)
     if (getmtime(self:get_template_cache_file_path(view)) or 0) < getmtime(self:get_template_path() .. view) then
         self.app.logger.record(ngx.ERR, "template cache expired need update")
         self:precompile(view)
     end
+    self.context = context or self.context
     local content = self:fetch(view)
     return (content)
 end

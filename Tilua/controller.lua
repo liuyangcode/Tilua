@@ -1,31 +1,18 @@
 local class = require("pl.class")
 local cjson = require "cjson"
-local app = ngx.ctx.app_context
 ---@class controller
 local controller = class()
 function controller:_init(ctx)
     ---@type app
-    self.app = ctx
-end
-
-function controller:get_view()
-    if self.view then
-        return self.view
-    end
-    self.view = require "Tilua.view"(self.app)
-    return self.view
+    self.ctx = ctx
 end
 
 function controller:assign(...)
-    self:get_view():assign(...)
+    self.ctx.view:assign(...)
 end
 
 function controller.derive()
     return class(controller)
-end
-
-function controller:set_header(name, value)
-    ngx.header[name] = value
 end
 
 function controller:ajax_return(data, type)
@@ -41,10 +28,12 @@ function controller:ajax_return(data, type)
 end
 
 function controller:display(template_file)
+    local ctx = self.ctx
+    local mvc = ctx.midware.mvc
     if not template_file then
-        template_file = app.mvc_router.controller_name .. '/' .. app.mvc_router.action_name .. '.html'
+        template_file = mvc.controller_name .. '/' .. mvc.action_name .. '.html'
     end
-    self.app.response.body = self:get_view():render(template_file)
+    return ctx.view:render(template_file)
 end
 
 function controller:_call()
