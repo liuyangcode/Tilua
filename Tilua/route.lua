@@ -209,7 +209,7 @@ function route:get_routes(flag, method)
     method = string.lower(method or self.ctx.request.method)
     rule_caches = _rule_caches[method] or self:get_init_route_rule()
     lw_util.extend(rule_caches[flag], _rule_caches['*'] and _rule_caches['*'][flag] or {})
-    return rule_caches
+    return rule_caches[flag]
 end
 ---验证路径变量
 ---@param params table
@@ -236,8 +236,8 @@ function route:run()
     log.record(log.DEBUG, 'start match url ' .. pathinfo)
     self:check()
     local rule_caches = self:get_routes('=')
-    if rule_caches['='] then
-        for location, router in pairs(rule_caches['=']) do
+    if rule_caches then
+        for location, router in pairs(rule_caches) do
             if location == pathinfo then
                 router, _ = table.unpack(router)
                 return {
@@ -256,7 +256,7 @@ function route:run()
 
     rule_caches = self:get_routes('~')
     --正则匹配
-    for location, router in pairs(rule_caches['~']) do
+    for location, router in pairs(rule_caches) do
         local url, parsed_regex, params = self:parse_path_to_regex(location)
         local path_params = {}
         local validation
@@ -289,8 +289,9 @@ function route:run()
     end
     --从路径开头匹配 最长匹配
     rule_caches = self:get_routes('*')
-    for location, router in pairs(rule_caches['*']) do
-        local find, end_pos = string.find(pathinfo, location)
+    lw_util.dump(rule_caches)
+    for location, router in pairs(rule_caches) do
+        local find, end_pos = string.find(pathinfo, location,1,true)
         router = router[1]
         if find and #location > longest_match then
             longest_match = #location
