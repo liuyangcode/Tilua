@@ -14,11 +14,13 @@ route.get('~/user/get/{uid}', function(ctx, uid)
 end, {
     before = "[api]"
 })
+
+route.rest('/posts','controller.posts')
 route.get('/user/login.html', function(ctx)
-    local request,response = ctx:unpack()
+    local request, response = ctx:unpack()
     response:render('index/login.html')
 end)
 
-route.get('~/user/find/{uid}', function(ctx,uid)
+route.get('~/user/find/{uid}', function(ctx, uid)
     ctx.response.body = uid
 end)

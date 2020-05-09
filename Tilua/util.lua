@@ -73,7 +73,13 @@ function util.extend(dest, src)
         end
     end
 end
-
+function util.prequire(module)
+    local found, hanlder = pcall(require, module)
+    if found then
+        return hanlder
+    end
+    return nil
+end
 function util.foreach(t, func, ...)
     for k, v in pairsByKeys(t) do
         func(v, k, ...)

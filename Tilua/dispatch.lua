@@ -3,6 +3,7 @@ local class = require("pl.class")
 local tablex = require "pl.tablex"
 local lw_util = require('Tilua.util')
 local pl_utils = require('pl.utils')
+local string_find = string.find
 ---@class dispatch
 local dispatch = class()
 
@@ -58,8 +59,9 @@ function dispatch:run(router)
     if lw_util.is_array(router) then
         local hanlder, params, midware = table.unpack(router)
         if lw_util.is_string(hanlder) then
+            local responser = hanlder
             hanlder = function(...)
-                return self:get_handler()(...)
+                return self:get_handler(responser)(...)
             end
         end
         return self:make_chain_call(midware, hanlder, table.unpack(params or {}))
@@ -69,7 +71,19 @@ function dispatch:run(router)
     end)
 end
 
-function dispatch:get_handler()
+function dispatch:get_handler(hanlder)
+    if string_find(hanlder, '@', 1, true) then
+        local resp = pl_utils.split(hanlder, '@', true)
+        local controller = resp[1]
+        local action = resp[2]
+        if not string_find(controller, self.ctx.app_name .. '.') then
+            controller = self.ctx.app_name .. '.' .. controller
+        end
+        local responser = lw_util.prequire(controller)
+        if responser then
+            return responser[action]
+        end
+    end
     return self.hanlder
 end
 

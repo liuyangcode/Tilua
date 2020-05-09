@@ -89,9 +89,8 @@ function manager.group(name, midwares)
         midwares = manager.parse(midwares)
     elseif lw_util.is_array(midwares) then
         midwares = map(function(v)
-
+            return manager.parse(v)
         end, midwares)
-
     end
     midware_group[name] = midwares
 end
