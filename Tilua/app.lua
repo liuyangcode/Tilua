@@ -17,7 +17,7 @@ local _logger = nil
 local _response = nil
 local _request = nil
 local _config = {}
-local _view = nil 
+local _view = nil
 local _midware_manager = nil
 ---_init
 ---@param app_instance app
@@ -99,24 +99,10 @@ function app:get_route()
     if _route then
         return _route
     end
-    local route = self:C('route_filter')
-    local route_rules = self:C('route')
-    if lw_utils.is_string(route) then
-        local found, route_filter = pcall(require, route)
-        if not found then
-            assert(false, 'route filter named ' .. route .. ' not found')
-        end
-        assert(route_filter.run, 'route filter must has a run method')
-        _route = pl_utils.bind1(route_filter.run, route_filter(self))
-    elseif lw_utils.callable(route) then
-        _route = pl_utils.bind1(route, self)
-    elseif type(route) == 'table' then
-        assert(route.run, 'route filter must has a run method')
-        route.rules = route_rules
-        _route = pl_utils.bind1(route.run, route)
-    end
+    _route = require('Tilua.route').init_context(self)
     return _route
 end
+
 function app:get_model()
     return require("Tilua.model").init_context(self)
 end
@@ -207,20 +193,16 @@ end
 function app:start()
     self:init()
     self.request.capture()
-    self:dispatch(self.route())()
-    self.response:send()
-    _logger.flush()
+    self:dispatch(self.route.run())()
+    self.response.send()
+    self.logger.flush()
 end
 
 function app.error_handle(err)
-    ngx.say(string.gsub(err or "", "\n", "<br>") .. "<br>")
-    ngx.say(string.gsub(debug.traceback(), "\n", "<br>"))
-end
-
-function app.default_dispatch_hanlder()
-    return function()
-        ngx.say('i\'m a default handler')
-    end
+    ngx.print({
+        string.gsub(err or "", "\n", "<br>") .. "<br>",
+        string.gsub(debug.traceback(), "\n", "<br>")
+    })
 end
 
 function app:run()

@@ -1,5 +1,7 @@
 local test = require('Tilua.midware').derive()
-function test:_init(ctx)
+test.alias = 'test'
+function test:_init(ctx,config)
+    self.config = config
     self:super(ctx)
 end
 

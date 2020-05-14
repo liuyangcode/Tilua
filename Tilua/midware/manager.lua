@@ -56,7 +56,7 @@ function manager.instance(midware)
 
     local ok, mid_class = pcall(require, midware_class)
     if not ok then
-        assert(false, 'midware named' .. midware[1] .. ' not found')
+        assert(false, 'midware named ' .. midware[1] .. ' not found')
     end
     local mid =  mid_class(_ctx, midware[2])
     _midwares[mid.alias or alias_name] = mid

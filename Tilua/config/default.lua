@@ -95,7 +95,6 @@ local config = {
     default_charset = 'utf-8', --默认输出编码
     default_content_type = 'text/html', --默认输出编码
 
-    route_filter = 'Tilua.route',
     dispatch = 'Tilua.dispatch',
     route = {
         ['/'] = "[mvc] /"

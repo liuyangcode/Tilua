@@ -1,60 +1,117 @@
-local class = require('pl.class')
-local tablex = require('pl.tablex')
 local ngx = ngx
-local send = ngx.say
+local send = ngx.print
+local lw_util = require('Tilua.util')
 
 local ngx_redirect = ngx.redirect
+local setmetatable = setmetatable
+local add_header = require("ngx.resp").add_header
+local lower = string.lower
+local format = string.format
+local rawget,type = rawget,type
 ---@class response
-local response = class()
+local response = {}
+
+local ctx = nil
+local headers = {}
+local status = 0
+local body = nil
 ---_init
-function response:_init(ctx)
-    self.ctx = ctx
-    self.body = ""
-    self.headers = {}
-    self.status = 200
-    self.after_send_callback = {}
+function response.init_context(context)
+    ctx = context
+    return setmetatable(response, {
+        __index = function(_, prop)
+            prop = lower(prop)
+            local getter = 'get_' .. prop
+            if rawget(response, getter) and lw_util.callable(response[getter]) then
+                return response[getter]()
+            end
+            return nil
+        end,
+        __newindex = function(_, prop, value)
+            prop = lower(prop)
+            local setter = 'set_' .. prop
+            if rawget(response, setter) and lw_util.callable(response[setter]) then
+                return response[setter](value)
+            end
+            return nil
+        end
+    })
 end
 
-function response:after_send(func)
-    self.after_send_callback[#self.after_send_callback + 1] = func
+function response.get_body()
+    return body
+end
+
+function response.set_body(content)
+    local tcontent = type(content)
+    if tcontent == 'string' then
+        headers.content_length = #content
+    elseif tcontent =='nil' then
+        body = ''
+        headers.content_length = 0
+    end
+    body = content
+end
+
+function response.get_header()
+    return headers
 end
 
 ---发送响应头
-function response:send_headers()
+local function send_headers()
     if ngx.headers_sent then
         return
     end
-    for k, v in pairs(self.headers) do
-        ngx.header[k] = v
+    local has_content_type
+    for k, v in pairs(headers) do
+        local tvalue = type(v)
+        if tvalue == "string" then
+            v = (v == "" and " " or v)
+            v = tostring(v)
+        elseif tvalue == 'table' then
+            local new_value = {}
+            for i, val in ipairs(v) do
+                new_value[i] = val == "" and " " or val
+            end
+            v = new_value
+        end
+        if not has_content_type then
+            local lower_name = lower(k)
+            if lower_name == "content-type" or
+                    lower_name == "content_type" then
+                has_content_type = true
+            end
+        end
+        add_header(k, v)
     end
-    return self
+    if not has_content_type then
+        add_header('content-type', ctx.config.default_content_type .. '; charset=' .. ctx.config.default_charset)
+    end
+    return response
 end
 
-function response:render(view, context, content_type)
-    local ctx = self.ctx
-    local config = ctx.config
+function response.render(view, context, content_type)
     if content_type then
-        self.headers.content_type = content_type
-    else
-        self.headers.content_type = config.default_content_type .. ";" .. config.default_charset
+        response.headers.content_type = content_type
     end
-    self.body = ctx.view:render(view,context)
-    return self
+    response.body = ctx.view:render(view, context)
+    return response
 end
 
 ---设置响应头
 ---@param header table|any
-function response:add_header(header, ...)
+function response.add_header(header, ...)
     local vals = { ... }
     if type(header) == 'string' then
-        self.headers[header] = #vals == 1 and vals[1] or vals
+        headers[header] = #vals == 1 and vals[1] or vals
     elseif type(header) == 'table' then
         for k, v in pairs(header) do
-            self:add_header(k, v)
+            response.add_header(k, v)
         end
     end
     return false
 end
+
 function response:attachment()
 
 end
@@ -66,46 +123,69 @@ end
 ---@param domain string
 ---@param httponly boolean
 ---@param secure boolean
-function response:set_cookie(name, value, path, expires, domain, httponly, secure)
-    local set_cookies = self.headers['Set-Cookie'] or {}
-    if type(set_cookies) == 'string' then
-        set_cookies = { set_cookies }
-    end
-    expires = expires or 0
-    if not value then
-        set_cookies[#set_cookies + 1] = name
+function response.set_cookie(name, value, path, expires, domain, httponly, secure)
+    local set_cookies = headers['Set-Cookie'] or {}
+    if not name then
+        set_cookies = {}
     else
-        set_cookies[#set_cookies + 1] = string.format(
-                '%s=%s;path=%s;expires=%s;%s%s%s',
-                name, value,
-                path or '/',
-                expires > 0 and ngx.cookie_time(ngx.time() + expires) or 0,
-                domain and domain .. ';' or '',
-                httponly == true and 'httponly;' or '',
-                secure == true and 'secure;' or ''
-        )
+        if type(set_cookies) == 'string' then
+            set_cookies = { set_cookies }
+        end
+        expires = expires or 0
+        if not value then
+            local tname = type(name)
+            if tname == 'string' then
+                set_cookies[#set_cookies + 1] = name
+            elseif tname == 'table' then
+                set_cookies[#set_cookies + 1] = format(
+                        '%s=%s;path=%s;expires=%s;%s%s%s',
+                        name.name,
+                        name.value,
+                        name.path or '/',
+                        name.expires and name.expires > 0 and ngx.cookie_time(ngx.time() + name.expires) or 0,
+                        name.domain and name.domain .. ';' or '',
+                        name.httponly == true and 'httponly;' or '',
+                        name.secure == true and 'secure;' or ''
+                )
+            end
+        else
+            set_cookies[#set_cookies + 1] = format(
+                    '%s=%s;path=%s;expires=%s;%s%s%s',
+                    name,
+                    value,
+                    path or '/',
+                    expires > 0 and ngx.cookie_time(ngx.time() + expires) or 0,
+                    domain and domain .. ';' or '',
+                    httponly == true and 'httponly;' or '',
+                    secure == true and 'secure;' or ''
+            )
+        end
     end
-    self.headers['Set-Cookie'] = set_cookies
+    headers['Set-Cookie'] = set_cookies
     return true
 end
 ---发送正文给客户端
-function response:send_body()
-    if self.status == 200 or self.status == 0 then
-        send(self.body)
-        tablex.map(function(f)
-            f()
-        end, self.after_send_callback)
-    else
-        ngx.exit(self.status)
+local function send_body()
+    ngx.status = status
+    if status == 200 or status == 0 then
+        send(body)
     end
-    return self
+    return ngx.exit(status)
 end
 
 response.redirect = ngx_redirect
 
 ---发送
-function response:send()
-    self:send_headers()
-    self:send_body()
+function response.send()
+    send_headers()
+    send_body()
 end
-return response
+
+return setmetatable(response, {
+    __call = function(_, context)
+        if ctx then
+            return response
+        end
+        return response.init_context(context)
+    end
+})

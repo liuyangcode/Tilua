@@ -12,7 +12,7 @@ function session_start:handle(next, ...)
     request.session = session
     ---@type response
     next(...)
-    response:set_cookie(session.cookie_to_send())
+    response.set_cookie(session.cookie_to_send())
     session.close()
     return response
 end

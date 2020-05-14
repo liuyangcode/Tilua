@@ -24,21 +24,7 @@ function dispatch:make_chain_call(midware, handler, ...)
     local args = { ... } --参数绑定
     local next = function
     ()
-        local resp = handler(self:prepare_ctx_args_for_responser(args))
-        local async_mid = {}
-        if midware.aftermidware then
-            for i = 1, #midware.aftermidware do
-                async_mid[#async_mid + 1] = self.ctx.manager.instance(midware.aftermidware[i])
-            end
-            if #async_mid > 0 then
-                resp:after_send(function()
-                    tablex.map(function(asyc_midware)
-                        pl_utils.bind1(asyc_midware.handle, asyc_midware)(self.ctx)
-                    end, async_mid)
-                end)
-            end
-        end
-        return resp
+        return  handler(self:prepare_ctx_args_for_responser(args))
     end
     --初始化响应前中间件
     return tablex.reduce(function(res, next_midware)
@@ -50,7 +36,7 @@ function dispatch:make_chain_call(midware, handler, ...)
                 table.unpack(args)
             }))
         end
-    end, lw_util.reverseTable(midware.beforemidware or {}), next)
+    end, lw_util.reverseTable(midware or {}), next)
 end
 
 ---run
