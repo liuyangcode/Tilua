@@ -16,6 +16,7 @@ local route = {}
 
 local rules = {}
 local _rule_caches = {}
+local _path_midwares = {}
 ---@type app
 local ctx = nil
 function route.init_context(context)
@@ -78,7 +79,6 @@ end
 ---post
 function route.post(...)
     add_route('post', ...)
-
 end
 --delete
 function route.delete(...)
@@ -89,6 +89,19 @@ function route.put(...)
     add_route('put', ...)
 end
 
+function route.prefix(path, ...)
+    local midware
+    local fmidware = select(1, ...)
+    local tfmidware = type(fmidware)
+    if tfmidware == 'table' then
+        midware = fmidware
+    elseif tfmidware == 'string' then
+        midware = { ... }
+    else
+        midware = {}
+    end
+    _path_midwares[path] = midware
+end
 ---rest
 ---@param path string
 ---@param handler any
@@ -104,9 +117,9 @@ function route.rest(path, handler, ...)
     }
     for _, v in ipairs(rest) do
         if lw_util.is_string(handler) then
-            route[v[1]](v[4]..path .. v[2], handler .. '@' .. v[3], ...)
+            route[v[1]](v[4] .. path .. v[2], handler .. '@' .. v[3], ...)
         else
-            route[v[1]](v[4]..path .. v[2], handler[v[3]], ...)
+            route[v[1]](v[4] .. path .. v[2], handler[v[3]], ...)
         end
     end
 end

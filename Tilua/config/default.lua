@@ -21,16 +21,7 @@ local config = {
         mvc = {
             'body_parser',
             'session',
-            {
-                'mvc',
-                {
-                    default_controller = 'index',
-                    default_action = 'index',
-                    view_layer = 'view',
-                    controller_layer = 'controller',
-                    model_layer = 'model'
-                }
-            },
+            'mvc',
             'json',
             'html_cache'
         }
@@ -68,23 +59,6 @@ local config = {
         },
         chunk_size = 1024,
         tmpdir = '/tmp/Tilua-multipart-tmp/'
-    },
-    session = {
-        use_strict_mode = true,
-        use_cookies = true,
-        gc_maxlifetime = 300,
-        gc_divisor = 100,
-        name = 'ACCESSTOKEN',
-        save_handler = 'Tilua.session.session_redis_hanler',
-        serialize_handler = nil,
-        use_only_cookies = true,
-        referer_check = "",
-        lazy_write = 1, --延迟写入
-        gc_probability = 1,
-        cookie_path = '/',
-        cookie_domain = '',
-        cookie_expires = 30,
-        cookie_http_only = true
     },
     redis_pool_timeout = 60, --连接池配置 闲置时间 单位s
     redis_pool_size = 100, --连接池大小

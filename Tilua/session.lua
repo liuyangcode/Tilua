@@ -1,4 +1,3 @@
-
 local ngx = ngx
 local md5 = ngx.md5
 local re_match = ngx.re.match
@@ -98,7 +97,7 @@ function session.destroy()
     if session_status ~= 1 then
         return false
     end
-    if id and not save_handler.destroy(session_name,id) then
+    if id and not save_handler.destroy(session_name, id) then
         return false
     end
     return true
@@ -139,10 +138,8 @@ function session.init_config(config)
 end
 ---session启动
 ---@param request request
----@param config table
-function session.start(request, config)
+function session.start(request)
     log.record(log.DEBUG, 'session start with config')
-    session.init_config(config)
     if session_status == 1 then
         return false
     elseif session_status == -1 then
@@ -163,7 +160,7 @@ function session.start(request, config)
             send_cookie = 0
         end
     elseif not use_only_cookies then
-        id = request.body[session_name]
+        id = request.body[session_name] or request.header[session_name]
         if id then
             send_cookie = 0
         end
@@ -226,7 +223,7 @@ function session.init()
         return false
     end
     session.track_init()
-    local val = save_handler.read(session_name,id, gc_maxlifetime)
+    local val = save_handler.read(session_name, id, gc_maxlifetime)
     if val == false then
         session.abort()
         return false
@@ -272,12 +269,12 @@ function session.save_current_state(write)
             if val ~= '{}' then
                 if lazy_write and session_vars and save_handler.update_timestamp
                         and #val == #session_vars and val == session_vars then
-                    ret = save_handler.update_timestamp(session_name,id, val, gc_maxlifetime)
+                    ret = save_handler.update_timestamp(session_name, id, val, gc_maxlifetime)
                 else
-                    ret = save_handler.write(session_name,id, val, gc_maxlifetime)
+                    ret = save_handler.write(session_name, id, val, gc_maxlifetime)
                 end
             else
-                ret = save_handler.write(session_name,id, '{}', gc_maxlifetime)
+                ret = save_handler.write(session_name, id, '{}', gc_maxlifetime)
             end
         end
         if not ret then

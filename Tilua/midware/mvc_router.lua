@@ -5,10 +5,26 @@ local stringx = require "pl.stringx"
 local split = stringx.split
 local strip = stringx.strip
 local table_concat = table.concat
+local update = require("pl.tablex").update
 
 local callable = lw_util.callable
+---@class mvc
 local mvc_router = require "Tilua.midware" .derive()
 mvc_router.alias = 'mvc'
+
+local default_config = {
+    default_controller = 'index',
+    default_action = 'index',
+    view_layer = 'view',
+    controller_layer = 'controller',
+    model_layer = 'model'
+}
+
+function mvc_router:_init(ctx, config)
+    self.config = update(default_config,config or {})
+    self:super(ctx)
+end
+
 function mvc_router:handle(next, ...)
     local request = self.ctx:unpack()
     local pathinfo = request.get_routed_uri()
@@ -41,8 +57,4 @@ function mvc_router:handle(next, ...)
     return next(...)
 end
 
-function mvc_router:_init(app, config)
-    self.config = config
-    self:super(app)
-end
 return mvc_router

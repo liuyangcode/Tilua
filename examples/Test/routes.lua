@@ -1,5 +1,7 @@
 local route = require("Tilua.route")
+route.prefix('/user/',{
 
+})
 route {
     ['=/api/v2'] = function(ctx)
         ---@type response
@@ -54,5 +56,5 @@ end)
 
 route.get('~/user/find/{uid}/{name}', function(ctx, uid, name)
     ctx.response.body = { uid, name, ctx.midware.test.config }
-end, { { 'Test.midware.test', { a = 1, b = 1 } }, 'json' })
+end, { { 'Test.midware.test', { a = 1, b = 1 } }, 'json','session' })
 
