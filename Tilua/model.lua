@@ -119,8 +119,8 @@ end
 function model:magic(name)
     if rawget(self, 'get_' .. name) then
         return self['get_' .. name](self)
-    elseif self['get_' .. name] then
-        return self['get_' .. name](self)
+    elseif rawget(model, 'get_' .. name) then
+        return model['get_' .. name](self)
     end
 end
 
@@ -358,7 +358,6 @@ function model:select(options)
         if type(resultSet) == 'string' then
             return resultSet
         end
-        resultSet = tablex.map(pl_utils.bind1(self._read_data, self), resultSet)
         if options.index then
             local index = split(options.index, ',')
             local cols
@@ -594,7 +593,7 @@ function model:getField(field, sepa)
     if options.cache then
         cache = options.cache
         key = self:get_hash_key(key, options)
-        data = self:S(key, '', cache)
+        local data = self:S(key, '', cache)
         if data then
             return data
         end

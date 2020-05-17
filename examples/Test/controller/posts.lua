@@ -10,9 +10,17 @@ local posts = {}
 ---index
 ---@param ctx app
 function posts.index(ctx)
-    local _, response = ctx:unpack()
-    response.body = 'posts.index'
+    local request, response = ctx:unpack()
+    local req = request.body
+    local page = req.page or 1
+    local limit = req.limit or 10
+    response.body = {
+        code = 0,
+        count = ctx.model.services:getField("count(1) as cnt"),
+        data = ctx.model.services:limit((page - 1) * limit, limit):select()
+    }
 end
+
 function posts.new(ctx)
 
 end

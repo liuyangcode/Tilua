@@ -6,12 +6,12 @@ end
 ---index
 ---@param ctx app
 function index:index(ctx)
-    local request, response = ctx:unpack()
-    --request.body = {
-    --    c=1
-    --}
-    --request.body.a = 1
-    response.body = ctx.midware.mvc.controller_name
+    self:assign('url', ctx.request.body.url or "/index/services")
+    self:display()
+end
+
+function index:services(ctx)
+    self:display()
 end
 
 function index:login()

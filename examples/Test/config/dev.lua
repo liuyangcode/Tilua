@@ -1,6 +1,6 @@
 
 return {
-    redis_host = '10.211.55.6',
+    redis_host = '10.211.55.3',
     redis_port = 6379,
     test_redis = {
         host = '10.211.55.3',

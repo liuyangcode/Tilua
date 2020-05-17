@@ -24,7 +24,7 @@ function route.init_context(context)
     return route
 end
 
-local function check()
+local function load_rule_caches()
     lw_util.extend(rules, ctx.config.route)
     for location, result in pairs(rules) do
         local method, matchers, url, validation = route.parse_rule(location)
@@ -100,7 +100,30 @@ function route.prefix(path, ...)
     else
         midware = {}
     end
-    _path_midwares[path] = midware
+    _path_midwares[path] = midware_manager.parse(midware)
+end
+
+local function get_prefix_matched_midwares(path)
+    local longest_match = ''
+    for prefix, midwares in pairs(_path_midwares) do
+        local find, end_pos = string.find(path, prefix, 1, true)
+        if find and #prefix > #longest_match then
+            longest_match = prefix
+        end
+    end
+    if longest_match ~= '' then
+        return _path_midwares[longest_match]
+    end
+    return nil
+end
+local function combine_prefix_midware(path, midwares)
+    local prefix_midwares = get_prefix_matched_midwares(path)
+    if prefix_midwares then
+        for _, midware in ipairs(prefix_midwares) do
+            table.insert(midwares, midware)
+        end
+    end
+    return midwares
 end
 ---rest
 ---@param path string
@@ -272,7 +295,7 @@ function route.run()
     local log = ctx.logger
     local pathinfo = request.path_info
     log.record(log.DEBUG, 'start match url ' .. pathinfo)
-    check()
+    load_rule_caches()
     local rule_caches = route.get_routes('=')
     if rule_caches then
         for location, router in pairs(rule_caches) do
@@ -281,7 +304,7 @@ function route.run()
                 return {
                     router.responser,
                     {},
-                    router.midware
+                    combine_prefix_midware(pathinfo, router.midware)
                 }
             end
         end
@@ -322,7 +345,7 @@ function route.run()
         return {
             longest_match_path,
             longest_match_params.args,
-            longest_match_midware
+            combine_prefix_midware(pathinfo, longest_match_midware)
         }
     end
     --从路径开头匹配 最长匹配
@@ -342,11 +365,12 @@ function route.run()
         return {
             longest_match_path,
             longest_match_params,
-            longest_match_midware
+            combine_prefix_midware(pathinfo, longest_match_midware)
         }
     end
     return pathinfo
 end
+
 return setmetatable(route, {
     __newindex = function(_, route_rule, responser)
         add_route(route_rule, responser)
