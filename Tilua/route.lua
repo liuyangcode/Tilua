@@ -131,7 +131,7 @@ end
 function route.rest(path, handler, ...)
     local rest = {
         { 'get', '', 'index', '' },
-        { 'get', '/new', 'new', '' },
+        { 'get', '/new', 'new', '=' },
         { 'get', '/{id}', 'show', '~' },
         { 'get', '/{id}/edit', 'edit', '~' },
         { 'post', '', 'create', '' },
@@ -331,8 +331,8 @@ function route.run()
             end
             return url
         end, 'jox')
-        if n > 0 and n > longest_match and route.validate_path_params(path_params, validation) then
-            longest_match = n
+        if n > 0 and #location > longest_match and route.validate_path_params(path_params, validation) then
+            longest_match = #location
             longest_match_params = path_params
             longest_match_path = lw_util.is_string(router.responser) and newpath or router.responser
             longest_match_midware = router.midware

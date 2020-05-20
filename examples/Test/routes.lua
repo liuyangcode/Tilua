@@ -1,6 +1,6 @@
 local route = require("Tilua.route")
 route.prefix('/posts', {
-    'json'
+    'json','body_parser'
 })
 route {
     ['=/api/v2'] = function(ctx)

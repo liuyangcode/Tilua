@@ -688,7 +688,7 @@ end
 ---SQL指令安全过滤
 ---@param str string
 function driver:escapeString(str)
-    return pl_utils.escape(str)
+    return lw_utils.addslashes(str)
 end
 
 function driver:getLastSql(model)

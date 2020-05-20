@@ -5,33 +5,106 @@
     <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
     <title>挡板服务器</title>
     <link href="/static/layui/css/layui.css" rel="stylesheet">
+    <script src="/static/js/jquery.min.js" charset="utf-8"></script>
+    <style type="text/css">
+        .layui-form-label {
+        }
+    </style>
 </head>
 <body>
-<table class="layui-hide" id="test"></table>
+<table class="layui-hide test-table" id="test" lay-filter="test"></table>
+<!-- 注意：如果你直接复制所有代码到本地，上述js路径需要改成你本地的 -->
+<script type="text/html" id="toolbarDemo">
+    <div class="layui-btn-container">
+        <button class="layui-btn layui-btn-sm" lay-event="addService">新增</button>
+    </div>
+</script>
 
+<script type="text/html" id="barDemo">
+    <a class="layui-btn layui-btn-xs" lay-event="edit">编辑</a>
+    <a class="layui-btn layui-btn-danger layui-btn-xs" lay-event="del">删除</a>
+</script>
 
 <script charset="utf-8" src="/static/layui/layui.js"></script>
-<!-- 注意：如果你直接复制所有代码到本地，上述js路径需要改成你本地的 -->
-
 <script>
-    layui.use('table', function () {
+    layui.use(['table', 'element', 'layer'], function () {
         var table = layui.table;
-
+        var layer = layui.layer;
+        var form = layui.form;
         table.render({
             elem: '#test'
             , url: '/posts'
+            , toolbar: '#toolbarDemo' //开启头部工具栏，并为其绑定左侧模板
+            , height: 'full-30'
             , cols: [[
-                {field: 'id', width: 80, title: 'ID', sort: true}
-                , {field: 'username', width: 80, title: '用户名'}
-                , {field: 'sex', width: 80, title: '性别', sort: true}
-                , {field: 'city', width: 80, title: '城市'}
-                , {field: 'sign', title: '签名', minWidth: 150}
-                , {field: 'experience', width: 80, title: '积分', sort: true}
-                , {field: 'score', width: 80, title: '评分', sort: true}
-                , {field: 'classify', width: 80, title: '职业'}
-                , {field: 'wealth', width: 135, title: '财富', sort: true}
+                {fixed: 'left', type: 'radio'},
+                {fixed: 'left', field: 'id', width: 80, title: 'ID'}
+                , {field: 'name', width: 80, title: '名称'}
+                , {field: 'protocol', width: 80, title: '协议'}
+                , {field: 'host', width: 250, title: '主机'}
+                , {field: 'port', title: '端口', width: 70}
+                , {field: 'path', width: 180, title: '路径'}
+                , {field: 'connect_timeout', width: 150, title: '连接超时时间ms'}
+                , {field: 'read_timeout', width: 130, title: '读超时时间ms'}
+                , {field: 'write_timeout', width: 130, title: '写超时时间ms'}
+                , {field: 'created_at', width: 180, title: '创建时间'}
+                , {field: 'updated_at', width: 180, title: '更新时间'}
+                , {fixed: 'right', width: 130, align: 'center', toolbar: '#barDemo'}
             ]]
             , page: true
+        });
+        table.on('tool(test)', function (obj) {
+            var data = obj.data;
+            if (obj.event === 'detail') {
+                layer.msg('ID：' + data.id + ' 的查看操作');
+            } else if (obj.event === 'del') {
+                layer.confirm('真的删除行么', function (index) {
+
+                    $.ajax({
+                        //请求方式
+                        type: "delete",
+                        //请求的媒体类型
+                        //请求地址
+                        url: "/posts/" + obj.data.id,
+                        //数据，json字符串
+                        //请求成功
+                        success: function (result) {
+                            if (result.code == 0) {
+                                obj.del();
+                                layer.close(index);
+                            } else {
+                                layer.alert(result.msg);
+                            }
+                        },
+                        //请求失败，包含具体的错误信息
+                        error: function (e) {
+                            console.log(e.status);
+                            console.log(e.responseText);
+                        }
+                    })
+                });
+            } else if (obj.event === 'edit') {
+                layer.open({
+                    type: 2,
+                    title: "编辑服务",
+                    area: ["540px", '580px'],
+                    content: '/posts/'+data.id+'/edit'
+                });
+            }
+        });
+        //头工具栏事件
+        table.on('toolbar(test)', function (obj) {
+            var checkStatus = table.checkStatus(obj.config.id);
+            switch (obj.event) {
+                case 'addService':
+                    layer.open({
+                        type: 2,
+                        title: "新增服务",
+                        area: ["540px", '580px'],
+                        content: '/posts/new'
+                    });
+                    break;
+            }
         });
     });
 </script>

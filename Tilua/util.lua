@@ -59,7 +59,9 @@ local function pairsByKeys(t)
         return a[i], t[a[i]]
     end
 end
-
+function util.addslashes(str)
+    return ngx.re.gsub(str, "([\'\\\"])", "\\$1", "jo")
+end
 ---extend
 ---@param dest table
 ---@param src table
