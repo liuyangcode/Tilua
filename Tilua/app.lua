@@ -40,8 +40,8 @@ end
 function app:magic(name)
     if rawget(self, 'get_' .. name) then
         return self['get_' .. name](self)
-    elseif self['get_' .. name] then
-        return self['get_' .. name](self)
+    elseif app['get_' .. name] then
+        return app['get_' .. name](self)
     end
 end
 ---获得路由分发器
@@ -153,6 +153,7 @@ function app:init()
     self:load_config(config or {})
     self:init_cache()
     self.midware:load()
+
     --加载应用路由定义
     pcall(require, self.app_name .. '.routes')
 end
@@ -191,7 +192,7 @@ function app:unpack()
 end
 
 function app:start()
-    self:init()
+    --self:init()
     self.request.capture()
     self:dispatch(self.route.run())()
     self.response.send()
