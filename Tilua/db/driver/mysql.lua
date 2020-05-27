@@ -1,4 +1,3 @@
-
 ---@class mysql
 local mysql = require("Tilua.db.driver").derive()
 local mysqlc = require "resty.mysql"
@@ -7,9 +6,9 @@ local lower = string.lower
 local tablex = require("pl.tablex")
 local foreach = tablex.foreach
 local split = stringx.split
-local log = require("Tilua.log")
 function mysql:_init(config)
     self:super(config)
+    self.ctx = ngx.ctx.ctx
 end
 
 function mysql:connect(config, linkNum, autoConnection)
@@ -22,7 +21,7 @@ function mysql:connect(config, linkNum, autoConnection)
         mysqlc:set_timeout(1000)
         local db, err = mysqlc:new()
         if not db then
-            error("failed to instantiate mysql: " .. err)
+            self.ctx.logger:error("failed to instantiate mysql: " .. err)
         end
         local ok, err, errcode, sqlstate = db:connect({
             host = config.hostname,
@@ -34,7 +33,7 @@ function mysql:connect(config, linkNum, autoConnection)
             max_packet_size = 1024 * 1024,
         })
         if not ok then
-            error("failed to connect: " .. err .. ":" .. (errcode or "") .. " " .. (sqlstate or ""))
+            self.ctx.logger:error("failed to connect: ", err, ":", (errcode or ""), " ", (sqlstate or ""))
         end
         self.linkID[linkNum] = db
     end
@@ -44,7 +43,7 @@ end
 function mysql:execute_sql(sql)
     local res, err, errcode, sqlstate = self._linkID:query(sql)
     if not res then
-        error(err .. " errcode " .. (errcode or "") .. " sqlstate:" .. (sqlstate or ""))
+        self.ctx.logger:error(err, " errcode ", (errcode or ""), " sqlstate:", (sqlstate or ""))
     end
     self.numRows = #res
     self.result_sets = res
@@ -59,13 +58,12 @@ end
 function mysql:close()
     local ok, err = self:set_keepalive_mod()
     if not ok then
-        log.record(ngx.ERR, "failed to set keepalive:", err)
+        self.ctx.logger:error( "failed to set keepalive:", err)
     end
     self._linkID = nil
 end
 
 function mysql:getFields(tableName)
-    self:initConnect(true)
     local tmp = split(tableName, ' ')
     tableName = tmp[1]
     local sql
@@ -80,7 +78,6 @@ function mysql:getFields(tableName)
     local result = self:execute_sql(sql)
     local info = {}
     foreach(result, function(val, key)
-
         foreach(val, function(v, k)
             val[lower(k)] = v
         end)

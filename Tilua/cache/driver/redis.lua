@@ -51,9 +51,9 @@ function redis:_init(config, ctx)
     self:super(ctx)
     self.config = {
         timeout = config.timeout and config.timeout * 1000 or 1000,
-        db_index = config.db_index or ctx:C('redis_db_index') or 0,
-        host = config.host or ctx:C('redis_host') or '127.0.0.1',
-        port = config.port or ctx:C('redis_port') or 6379
+        db_index = config.db_index or ctx.config.redis_db_index or 0,
+        host = config.host or ctx.config.redis_host or '127.0.0.1',
+        port = config.port or ctx.config.redis_port or 6379
     }
     self._reqs = ''
     self._redisc = false
@@ -76,7 +76,7 @@ function redis:connect_mod()
 end
 --加入连接池
 function redis:set_keepalive_mod()
-    return self:get_redis():set_keepalive(self.app:C('redis_pool_timeout') * 1000, self.app:C('redis_pool_size'))
+    return self:get_redis():set_keepalive(self.app.config.redis_pool_timeout * 1000, self.app.config.redis_pool_size)
 end
 
 function redis:init_pipeline()

@@ -59,7 +59,7 @@ function view:get_template_cache_file_path(view)
 end
 
 function view:get_template_cache_path()
-    local view_cache_path = self.app.app_path .. table.concat({
+    local view_cache_path = self.app.path .. table.concat({
         'cache',
         'view',
         ''
@@ -73,7 +73,7 @@ end
 
 function view:render(view,context)
     if (getmtime(self:get_template_cache_file_path(view)) or 0) < getmtime(self:get_template_path() .. view) then
-        self.app.logger.record(ngx.ERR, "template cache expired need update")
+        self.app.logger:error("template cache expired need update")
         self:precompile(view)
     end
     self.context = context or self.context
@@ -95,7 +95,7 @@ function view:get_template_cache_path_relative()
 end
 
 function view:get_template_path()
-    local view_path = self.app.app_path .. table.concat({
+    local view_path = self.app.path .. table.concat({
         'view',
         ''
     }, '/')

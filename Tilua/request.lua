@@ -1,27 +1,15 @@
 local ngx = ngx
-local var = ngx.var
-
-local req = ngx.req
+local ngx_req = ngx.req
+local ngx_var = ngx.var
 local util = require("Tilua.util")
+local string_format = string.format
 
-local routed_uri
 ---@class request
 local request = {}
+
 ---@type app
-local _ctx = nil
-local _session = nil
-local _headers = nil
-local _body = {}
 local _path_params = {}
-local _cookie = setmetatable({}, {
-    __index = function(t, name)
-        return var['cookie_' .. name]
-    end
-})
-function request.init_context(ctx)
-    _ctx = ctx
-    return request
-end
+
 ---getter
 ---@param t request
 ---@param key string
@@ -31,67 +19,67 @@ function request.getter(t, key)
     if util.callable(getter) then
 
         return getter()
-    elseif var[key] then
-        return var[key]
+    elseif ngx_var[key] then
+        return ngx_var[key]
     end
     return nil
 end
 function request.get_host()
-    return var.host
+    return ngx_var.host
 end
 function request.get_query_string()
-    return var.query_string
+    return ngx_var.query_string
 end
 function request.get_remote_addr()
-    return var.remote_addr
+    return ngx_var.remote_addr
 end
 function request.get_remote_port()
-    return var.remote_port
+    return ngx_var.remote_port
 end
 function request.get_raw_request()
-    return var.request
+    return ngx_var.request
 end
 ---当前请求的文件路径名，比如/opt/nginx/www/test.php
 ---@return string
 function request.get_filename()
-    return var.request_filename
+    return ngx_var.request_filename
 end
 function request.get_document_root()
-    return var.document_root
+    return ngx_var.document_root
 end
 function request.get_scheme()
-    return var.scheme
+    return ngx_var.scheme
 end
 function request.get_method()
-    return var.request_method
+    return ngx_var.request_method
 end
 function request.get_uri()
-    return var.request_uri
+    return ngx_var.request_uri
 end
 function request.get_path_info()
-    return var.uri
+    return ngx_var.uri
 end
 function request.get_pid()
-    return var.pid
+    return ngx_var.pid
 end
 function request.get_server_version()
-    return var.nginx_version
+    return ngx_var.nginx_version
 end
 function request.get_hostname()
-    return var.hostname
+    return ngx_var.hostname
 end
 function request.get_server_name()
-    return var.server_name
+    return ngx_var.server_name
 end
 function request.get_params()
     return _path_params
 end
 
 function request.get_server_port()
-    return var.server_port
+    return ngx_var.server_port
 end
 function request.get_server_protocol()
-    return var.server_protocol
+    return ngx_var.server_protocol
 end
 
 function request.setter(t, key, value)
@@ -105,55 +93,60 @@ end
 function request.set_params(params)
     _path_params = params
 end
+
 function request.set_body(value)
+    if not ngx.ctx.__request_body then
+        ngx.ctx.__request_body = {}
+    end
     if type(value) == "nil" then
-        _body = {}
+        ngx.ctx.__request_body = {}
     elseif type(value) == 'table' then
         util.foreach(value, function(val, k)
-            _body[k] = val
+            ngx.ctx.__request_body[k] = val
         end)
     end
 end
 
 function request.get_body()
-    return _body
+    return ngx.ctx.__request_body
 end
 
 function request.set_routed_uri(uri)
-    routed_uri = uri
+    ngx.ctx.__request_routed_uri = uri
 end
 
 function request.get_routed_uri()
-    return routed_uri
+    return ngx.ctx.__request_routed_uri
 end
 
 function request.get_cookie(name)
     if not name then
-        return _cookie
+        return setmetatable({}, {
+            __index = function(_, name)
+                return ngx.var['cookie_' .. name]
+            end
+        })
     end
-    return var['cookie_' .. name]
-end
 
-function request.get_session()
-    return _session
-end
-
-function request.set_session(session)
-    _session = session
+    return ngx.var['cookie_' .. name]
 end
 
 function request.get_header(name)
+    local headers = ngx_req.get_headers()
     if name then
-        return _headers[name]
+        return headers[name]
     end
-    return _headers
+    return headers
 end
 
 function request.capture()
-    _headers = req.get_headers()
+    local ctx = ngx.ctx.ctx
+    local localtime = ngx.localtime
+    ctx.logger:write(string_format('\n[%s] %s %s', localtime(), request.get_remote_addr(), request.get_raw_request()))
     return setmetatable(request, {
         __index = request.getter,
         __newindex = request.setter
     })
 end
+
 return request

@@ -1,5 +1,7 @@
-
 local localtime = ngx.localtime
+local string_format = string.format
+local string_find = string.find
+local table_concat = table.concat
 ---@class log
 local log = {
     STDERR = "STDERR",
@@ -13,41 +15,60 @@ local log = {
     DEBUG = "DEBUG",
     NONE = "NONE"
 }
-local _logdata = nil
+local mt = {
+    __index = log
+}
 ---@type app
-local _ctx = nil
 local config = nil
 
-function log.init(ctx)
-    _ctx = ctx
-    config = ctx.config.log
-    _logdata = {
-        string.format('[%s] %s %s', localtime(), ctx.request.remote_addr, ctx.request.raw_request)
-    }
-    return log
+function log:write(...)
+    self:record("", ...)
 end
 
-function log.record(level, msg, force)
+function log:record(level, ...)
     if level == log.NONE then
         return true
     end
-    if force or level then
+    if string_find(config.level,level,1,true) then
+        self.log_data[#self.log_data + 1] = {
+            level = level,
+            msg = table_concat({...})
+        }
     end
-    _logdata[#_logdata + 1] = string.format("%s:%s", level, msg)
     return true
 end
 
-function log.debug(msg, ...)
-    log.record(log.DEBUG, msg, ...)
+function log:debug(...)
+    self:record(log.DEBUG,...)
 end
-function log.info(msg, ...)
-    log.record(log.INFO, msg, ...)
+
+function log:info(...)
+    self:record(log.INFO, ...)
 end
-function log.error(msg, ...)
-    log.record(log.ERR, msg, ...)
+
+function log:error(...)
+    self:record(log.ERR,...)
 end
-function log.flush()
-    --require("Tilua.util").dump(_logdata)
+
+function log:flush()
+    self.handler.flush(self.log_data)
+end
+
+function log.new()
+    return setmetatable({
+        log_data = {}
+    },mt)
+end
+
+function log.init(cfg)
+    _, log.handler = pcall(require, "Tilua.log." .. cfg.type)
+    config = cfg
+    log.handler.init(cfg)
+    --log.log_data = {
+    --    level = "",
+    --    msg = string_format('[%s] %s %s', localtime(), ctx.request.remote_addr, ctx.request.raw_request)
+    --}
+    return log
 end
 
 return log

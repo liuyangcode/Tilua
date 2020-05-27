@@ -294,7 +294,7 @@ end
 function driver:parseWhere(where)
 
     local whereStr = ""
-    if lw_utils.is_string(where)  then
+    if lw_utils.is_string(where) then
         whereStr = where
     else
         local operate = string.upper(where._logic or '')
@@ -704,7 +704,11 @@ end
 function driver:debug(start)
     if self.config.debug then
         self.modelSql[self.model] = self.queryStr
-        log.record(ngx.DEBUG, self.queryStr)
+        if not start then
+            self.ctx.logger:debug(self.queryStr, lw_utils.get_now_ms() - self.ctx.MYSQL_EXCUTE_SQL_START, ' ms')
+        else
+            self.ctx.MYSQL_EXCUTE_SQL_START = lw_utils.get_now_ms()
+        end
     end
 end
 ---初始化数据库连接

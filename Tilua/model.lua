@@ -1,11 +1,9 @@
 local stringx = require "pl.stringx"
 local split = stringx.split
-local strip = stringx.strip
-local Db = require "Tilua.db"
 local tablex = require "pl.tablex"
 local class = require "pl.class"
+local ngx = ngx
 local md5 = ngx.md5
-local json = require "cjson.safe"
 local now = ngx.now
 local pl_utils = require "pl.utils"
 local lw_utils = require("Tilua.util")
@@ -17,32 +15,21 @@ local is_number = lw_utils.is_number
 local is_scalar = lw_utils.is_scalar
 local in_array = lw_utils.in_array
 
----@type app
-local app = nil
 ---@class model
 local model = class()
-
 local _db_fields_cache_hanlder = nil
-function model.init_context(ctx)
-    app = ctx
-    model.catch(model.instance)
-    return model
-end
-function model.instance(m, name)
-    local mod = lw_utils.import(table.concat({
-        app.app_name,
-        'model',
-        name
-    }, '.'))
-    if mod then
-        return mod()
-    end
-    return m(name)
-end
 ---s属性初始化
 ---@protected
 function model:properties()
 
+
+end
+---_init
+---@param name string
+---@param tablePrefix string
+---@param connection any
+---@return model
+function model:_init(name, tablePrefix, connection)
     -- 当前数据库操作对象
     ---@type driver
     self.db = nil
@@ -83,16 +70,9 @@ function model:properties()
     -- 链操作方法列表
     self.methods = { 'strict', 'order', 'alias', 'having', 'group', 'lock', 'distinct', 'auto', 'filter', 'validate', 'result', 'token', 'index', 'force', 'master' }
 
-end
----_init
----@param name string
----@param tablePrefix string
----@param connection any
----@return model
-function model:_init(name, tablePrefix, connection)
-    self:properties()
+    ---@type app
+    self.ctx = ngx.ctx.ctx
     connection = connection or ''
-
     if name then
         if string.find(name, '\\.') then
             local names = split(name, '.')
@@ -108,7 +88,7 @@ function model:_init(name, tablePrefix, connection)
     elseif '' ~= tablePrefix then
         self.tablePrefix = tablePrefix
     elseif not self.tablePrefix then
-        self.tablePrefix = app:C(self.connection .. '.db_prefix') or app:C('db_prefix')
+        self.tablePrefix = self.ctx:C(self.connection .. '.db_prefix') or self.ctx:C('db_prefix')
     end
     self:catch(function(_, name)
         return self:magic(name)
@@ -431,7 +411,7 @@ end
 ---@param key string
 ---@param cache table
 function model:load_query_cache(key, cache)
-    return app.cache.get(key)
+    return self.ctx.cache.get(key)
 end
 
 ---save_query_cache
@@ -440,9 +420,9 @@ end
 ---@param cache table
 function model:save_query_cache(key, data, cache)
     if data == nil then
-        return app.cache.del(key)
+        return self.ctx.cache.del(key)
     end
-    return app.cache.set(key,data,cache.expire )
+    return self.ctx.cache.set(key, data, cache.expire)
 end
 
 function model:find(options)
@@ -1006,7 +986,7 @@ end
 ---@param tableName string
 function model:get_table_fields_cache_key(tableName)
     return table.concat({
-        app.config.db_fields_cache_prefix,
+        self.ctx.config.db_fields_cache_prefix,
         self.db.config.database,
         tableName
     })
@@ -1020,11 +1000,14 @@ function model:cache_table_fields(tableName, fields)
     self.db_fields_cache_hanlder:set(cache_key, fields)
 end
 function model:get_db_fields_cache_hanlder()
-    if not _db_fields_cache_hanlder then
-        local cache_type = app.config.db_fields_cache_type
-        _db_fields_cache_hanlder = app.cache.instance(cache_type)
-    end
-    return _db_fields_cache_hanlder
+    local cache_type = self.ctx.config.db_fields_cache_type
+    self.db_fields_cache_hanlder = self.ctx.cache[cache_type]
+    return self.db_fields_cache_hanlder
+    --if not _db_fields_cache_hanlder then
+    --    local cache_type = self.ctx.config.db_fields_cache_type
+    --    _db_fields_cache_hanlder = self.ctx.cache.instance(cache_type)
+    --end
+    --return _db_fields_cache_hanlder
 end
 
 function model:flush()
@@ -1058,14 +1041,14 @@ function model:flush()
         end
     end
     self.fields._type = type
-    if app.config.db_fields_cache then
+    if self.ctx.config.db_fields_cache then
         self:cache_table_fields('_fields' .. string.lower(tableName), self.fields)
     end
 end
 
 function model:_checkTableInfo()
     if empty(self.fields) then
-        if app.config.db_fields_cache then
+        if self.ctx.config.db_fields_cache then
             local fields = self:get_table_fields_cache('_fields' .. string.lower(self:getTableName()))
             if fields then
                 self.fields = fields
@@ -1090,9 +1073,9 @@ function model:db_instance(linkNum, config, force)
     end
     if not self._db[linkNum] or force then
         if lw_utils.is_string(config) == 'string' and not string.find(config, '/') then
-            config = app:C(config)
+            config = self.ctx:C(config)
         end
-        self._db[linkNum] = app.db.instance(config)
+        self._db[linkNum] = self.ctx.db:instance(config)
     elseif not config then
         self._db[linkNum]:close()
         self._db[linkNum] = nil

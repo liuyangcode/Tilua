@@ -1,4 +1,3 @@
-
 return {
     redis_host = '10.211.55.6',
     redis_port = 6379,
@@ -13,4 +12,5 @@ return {
     db_user = 'app', -- 用户名
     db_pwd = 'app', -- 密码
     db_port = '3306', -- 端口
+    db_debug = true
 }

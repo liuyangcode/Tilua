@@ -1,54 +1,34 @@
 local ngx = ngx
 local midware_sep = "|"
-local midware_group = {}
+
 local midware_group_parsed = {}
 local lw_util = require('Tilua.util')
 local map = require("pl.tablex").map
 local split = require('pl.utils').split
+local bind1 = require('pl.utils').bind1
 local match = ngx.re.match
 local string_gsub = string.gsub
 local pcall = pcall
 ---@class midware_manager
 local manager = {}
 ---@type app
-local _ctx = nil
-local _midwares = nil
-local alias = nil
+local _midwares = {}
+
 function manager.is_group(val)
     local mat, _ = match(val, '[[a-zA-Z_0-9]+]')
     return mat ~= nil
-end
-
----init
----@param ctx app
-function manager.init(ctx)
-    if _ctx then
-        return manager
-    end
-    _ctx = ctx
-    _midwares = {}
-    return setmetatable(manager, {
-        __index = function(t, midware)
-            if _midwares[midware] then
-                return _midwares[midware]
-            end
-        end,
-        __newindex = function(t, key, val)
-            _midwares[key] = val
-        end
-    })
 end
 
 local function get_shortname(name)
     return string_gsub(name, '[.]', '_')
 end
 
-function manager.instance(midware)
-    local midware_class = alias[midware[1]] or midware[1]
+function manager.instance(self, midware)
+    local midware_class = manager.alias[midware[1]] or midware[1]
     local alias_name = ''
-    if alias[midware[1]] then
+    if manager.alias[midware[1]] then
         alias_name = midware[1]
-        midware_class = alias[midware[1]]
+        midware_class = manager.alias[midware[1]]
     else
         midware_class = midware[1]
         alias_name = get_shortname(midware_class)
@@ -58,15 +38,16 @@ function manager.instance(midware)
     if not ok then
         assert(false, 'midware named ' .. midware[1] .. ' not found')
     end
-    local mid =  mid_class(_ctx, midware[2])
-    _midwares[mid.alias or alias_name] = mid
+    local mid = mid_class(self.ctx, midware[2])
+    self.midwares[mid.alias or alias_name] = mid
     assert(mid.handle, 'midware named:' .. midware[1] .. ' handle func required')
     return mid
 end
 
-function manager.load()
-    midware_group = _ctx.config.midware_group
-    alias = _ctx.config.midware_alias
+function manager.load(config)
+    manager.midware_group = config.midware_group
+    manager.alias = config.midware_alias
+    return manager
 end
 
 ---get_group
@@ -78,7 +59,7 @@ function manager.get_group(name)
     if midware_group_parsed[name] then
         return midware_group_parsed[name]
     end
-    midware_group_parsed[name] = manager.parse(midware_group[name])
+    midware_group_parsed[name] = manager.parse(manager.midware_group[name])
     return midware_group_parsed[name]
 end
 ---创建中间件分组
@@ -92,7 +73,7 @@ function manager.group(name, midwares)
             return manager.parse(v)
         end, midwares)
     end
-    midware_group[name] = midwares
+    manager.midware_group[name] = midwares
 end
 ---解析配置字符串到table
 local function parse_config(config)
@@ -154,5 +135,23 @@ function manager.parse(midware_params)
     end
     assert(false, 'params must be a string or two-values-table')
     return {}
+end
+function manager.new(ctx)
+    local mng = {
+        ctx = ctx,
+        midwares = {}
+    }
+    return setmetatable(mng, {
+        __index = function(_, m)
+            if lw_util.callable(manager[m]) then
+                return bind1(manager[m],mng)
+            elseif mng.midwares[m] then
+                return mng.midwares[m]
+            end
+        end,
+        __newindex = function(t, key, val)
+            t.midwares[key] = val
+        end
+    })
 end
 return manager

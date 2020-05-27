@@ -21,12 +21,15 @@ local default_config = {
 }
 
 function mvc_router:_init(ctx, config)
-    self.config = update(default_config,config or {})
+    self.config = update(default_config, config or {})
     self:super(ctx)
 end
 
 function mvc_router:handle(next, ...)
-    local request = self.ctx:unpack()
+    local ctx = self.ctx
+
+    local request = ctx:unpack()
+    ctx.logger:debug("Mvc router midware start route path ", request.get_routed_uri())
     local pathinfo = request.get_routed_uri()
     local controller, action, params = (function
     (controller, action, ...)
@@ -36,7 +39,7 @@ function mvc_router:handle(next, ...)
     self.controller_name = not lw_util.empty(controller) and controller or self.config.default_controller
     self.action_name = not lw_util.empty(action) and action or self.config.default_action
     local found, hanlder = pcall(require, table_concat({
-        self.ctx.app_name,
+        self.ctx.name,
         self.config.controller_layer,
         self.controller_name
     }, '.'))
@@ -45,7 +48,9 @@ function mvc_router:handle(next, ...)
         self.controller = hanlder(self.ctx)
         if rawget(hanlder, self.action_name) and callable(self.controller[self.action_name]) and string.sub(self.action_name, 1, 1) ~= '_' then
             self.action = self.controller[self.action_name]
+            ctx.logger:debug("Mvc router midware end route controller:", self.controller_name, " action:", self.action_name)
         elseif callable(self.controller._call) then
+            ctx.logger:debug("Mvc router midware end route controller:", self.controller_name, " action:_call")
             self.action = self.controller._call
         end
         self.ctx.dispatcher:to_handler(pl_utils.bind1(self.action, self.controller))

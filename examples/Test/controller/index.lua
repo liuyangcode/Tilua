@@ -6,7 +6,6 @@ end
 ---index
 ---@param ctx app
 function index:index(ctx)
-    lw_util.dump(ngx.config.prefix())
     self:assign('url', ctx.request.body.url or "/index/services")
     self:display()
 end
@@ -18,7 +17,6 @@ end
 function index:login()
     self:display()
 end
-
 ---upload
 ---@param ctx app
 function index:upload(ctx)

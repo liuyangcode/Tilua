@@ -8,29 +8,24 @@ local tablex = require('pl.tablex')
 local strip = stringx.strip
 local split = require('pl.utils').split
 local unpack = require('pl.utils').unpack
+
 local lw_util = require('Tilua.util')
 local midware_manager = require("Tilua.midware.manager")
 
 ---@class route
-local route = {}
+local route = {
+    rules = {},
+    rule_caches = {},
+    path_midwares = {}
+}
 
-local rules = {}
-local _rule_caches = {}
-local _path_midwares = {}
----@type app
-local ctx = nil
-function route.init_context(context)
-    ctx = context
-    return route
-end
-
-local function load_rule_caches()
-    lw_util.extend(rules, ctx.config.route)
-    for location, result in pairs(rules) do
+function route.init_rule_caches(config_rules)
+    lw_util.extend(route.rules, config_rules)
+    for location, result in pairs(route.rules) do
         local method, matchers, url, validation = route.parse_rule(location)
         for _, v in ipairs(method) do
-            _rule_caches[v] = _rule_caches[v] or route.get_init_route_rule()
-            _rule_caches[v][matchers][url] = { route.to_router(result, location), validation }
+            route.rule_caches[v] = route.rule_caches[v] or route.get_init_route_rule()
+            route.rule_caches[v][matchers][url] = { route.to_router(result, location), validation }
         end
     end
 end
@@ -47,7 +42,7 @@ local function add_route(verbs, path, handler, ...)
         else
             midware = {}
         end
-        rules[verbs .. ' ' .. path] = {
+        route.rules[verbs .. ' ' .. path] = {
             responser = handler,
             midware = midware
         }
@@ -100,19 +95,19 @@ function route.prefix(path, ...)
     else
         midware = {}
     end
-    _path_midwares[path] = midware_manager.parse(midware)
+    route.path_midwares[path] = midware_manager.parse(midware)
 end
 
 local function get_prefix_matched_midwares(path)
     local longest_match = ''
-    for prefix, midwares in pairs(_path_midwares) do
+    for prefix, midwares in pairs(route.path_midwares) do
         local find, end_pos = string.find(path, prefix, 1, true)
         if find and #prefix > #longest_match then
             longest_match = prefix
         end
     end
     if longest_match ~= '' then
-        return _path_midwares[longest_match]
+        return route.path_midwares[longest_match]
     end
     return nil
 end
@@ -268,10 +263,10 @@ end
 
 function route.get_routes(flag, method)
     local rule_caches = nil
-    method = string.lower(method or ctx.request.method)
-    rule_caches = _rule_caches[method] or route.get_init_route_rule()
-    lw_util.extend(rule_caches[flag], _rule_caches['*'] and _rule_caches['*'][flag] or {})
-    return rule_caches[flag]
+    method = string.lower(method)
+    rule_caches = route.rule_caches[method] or route.get_init_route_rule()
+    lw_util.extend(rule_caches[flag], route.rule_caches['*'] and route.rule_caches['*'][flag] or {})
+    return tablex.copy(rule_caches[flag])
 end
 ---验证路径变量
 ---@param params table
@@ -289,14 +284,14 @@ function route.validate_path_params(params, validation)
     return result
 end
 ---run
-function route.run()
+function route.run(ctx)
     local request = ctx.request
+    local request_method = request.method
     ---@type log
     local log = ctx.logger
     local pathinfo = request.path_info
-    log.record(log.DEBUG, 'start match url ' .. pathinfo)
-    load_rule_caches()
-    local rule_caches = route.get_routes('=')
+    log:record(log.DEBUG, 'start match url ' .. pathinfo)
+    local rule_caches = route.get_routes('=',request_method)
     if rule_caches then
         for location, router in pairs(rule_caches) do
             if location == pathinfo then
@@ -304,7 +299,7 @@ function route.run()
                 return {
                     router.responser,
                     {},
-                    combine_prefix_midware(pathinfo, router.midware)
+                    combine_prefix_midware(pathinfo, tablex.copy(router.midware))
                 }
             end
         end
@@ -315,7 +310,7 @@ function route.run()
     local longest_match_params
     local longest_match_midware = {}
 
-    rule_caches = route.get_routes('~')
+    rule_caches = route.get_routes('~',request_method)
     --正则匹配
     for location, router in pairs(rule_caches) do
         local url, parsed_regex, params = route.parse_path_to_regex(location)
@@ -335,7 +330,7 @@ function route.run()
             longest_match = #location
             longest_match_params = path_params
             longest_match_path = lw_util.is_string(router.responser) and newpath or router.responser
-            longest_match_midware = router.midware
+            longest_match_midware = tablex.copy(router.midware)
         end
     end
 
@@ -349,7 +344,7 @@ function route.run()
         }
     end
     --从路径开头匹配 最长匹配
-    rule_caches = route.get_routes('*')
+    rule_caches = route.get_routes('*',request_method)
     for location, router in pairs(rule_caches) do
         local find, end_pos = string.find(pathinfo, location, 1, true)
         router = router[1]
@@ -357,9 +352,10 @@ function route.run()
             longest_match = #location
             longest_match_params = route.bind_params_for_responser({}, { string_sub(pathinfo, end_pos + 1) })
             longest_match_path = router.responser
-            longest_match_midware = router.midware
+            longest_match_midware = tablex.copy(router.midware)
         end
     end
+
     if not lw_util.empty(longest_match_path) then
         request.set_routed_uri(pathinfo)
         return {
@@ -368,6 +364,8 @@ function route.run()
             combine_prefix_midware(pathinfo, longest_match_midware)
         }
     end
+
+
     return pathinfo
 end
 

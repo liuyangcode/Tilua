@@ -33,7 +33,7 @@ function controller:display(template_file)
     if not template_file then
         template_file = mvc.controller_name .. '/' .. mvc.action_name .. '.html'
     end
-    return ctx.response.render(template_file)
+    return ctx.response:render(template_file)
 end
 
 function controller:_call()

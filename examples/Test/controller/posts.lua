@@ -6,7 +6,7 @@
 --PUT	/posts/:id	post	app.controllers.posts.update
 --DELETE	/posts/:id	post	app.controllers.posts.destroy
 local posts = {}
-
+local lw_utils = require("Tilua.util")
 ---index
 ---@param ctx app
 function posts.index(ctx)
@@ -22,7 +22,7 @@ function posts.index(ctx)
 end
 
 function posts.new(ctx)
-    ctx.response.render("posts/new.html")
+    ctx.response:render("posts/new.html")
 end
 
 function posts.show(ctx, id)
@@ -33,7 +33,7 @@ function posts.edit(ctx, id)
     local request, response = ctx:unpack()
     local req = request.body
     local services = ctx.model.services
-    response.render('posts/edit.html',services:find(id))
+    response:render('posts/edit.html',services:find(id))
 end
 
 function posts.create(ctx)

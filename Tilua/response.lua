@@ -7,14 +7,9 @@ local setmetatable = setmetatable
 local add_header = require("ngx.resp").add_header
 local lower = string.lower
 local format = string.format
-local rawget,type = rawget,type
+local rawget, type = rawget, type
 ---@class response
 local response = {}
-
-local ctx = nil
-local headers = {}
-local status = 0
-local body = nil
 ---_init
 function response.init_context(context)
     ctx = context
@@ -38,32 +33,28 @@ function response.init_context(context)
     })
 end
 
-function response.get_body()
-    return body
+function response:get_body()
+    return self.body
 end
 
-function response.set_body(content)
+function response:set_body(content)
     local tcontent = type(content)
     if tcontent == 'string' then
-        headers.content_length = #content
-    elseif tcontent =='nil' then
-        body = ''
-        headers.content_length = 0
+        self.headers.content_length = #content
+    elseif tcontent == 'nil' then
+        self.body = ''
+        self.headers.content_length = 0
     end
-    body = content
-end
-
-function response.get_header()
-    return headers
+    self.body = content
 end
 
 ---发送响应头
-local function send_headers()
+function response:send_headers()
     if ngx.headers_sent then
         return
     end
     local has_content_type
-    for k, v in pairs(headers) do
+    for k, v in pairs(self.headers) do
         local tvalue = type(v)
         if tvalue == "string" then
             v = (v == "" and " " or v)
@@ -85,28 +76,28 @@ local function send_headers()
         add_header(k, v)
     end
     if not has_content_type then
-        add_header('content-type', ctx.config.default_content_type .. '; charset=' .. ctx.config.default_charset)
+        add_header('content-type', self.ctx.config.default_content_type .. '; charset=' .. self.ctx.config.default_charset)
     end
-    return response
+    return self
 end
 
-function response.render(view, context, content_type)
+function response:render(view, context, content_type)
     if content_type then
-        response.headers.content_type = content_type
+        self.headers.content_type = content_type
     end
-    response.body = ctx.view:render(view, context)
-    return response
+    self.body = self.ctx.view:render(view, context)
+    return self
 end
 
 ---设置响应头
 ---@param header table|any
-function response.add_header(header, ...)
+function response:add_header(header, ...)
     local vals = { ... }
     if type(header) == 'string' then
-        headers[header] = #vals == 1 and vals[1] or vals
+        self.headers[header] = #vals == 1 and vals[1] or vals
     elseif type(header) == 'table' then
         for k, v in pairs(header) do
-            response.add_header(k, v)
+            self:add_header(k, v)
         end
     end
     return false
@@ -123,8 +114,8 @@ end
 ---@param domain string
 ---@param httponly boolean
 ---@param secure boolean
-function response.set_cookie(name, value, path, expires, domain, httponly, secure)
-    local set_cookies = headers['Set-Cookie'] or {}
+function response:set_cookie(name, value, path, expires, domain, httponly, secure)
+    local set_cookies = self.headers['Set-Cookie'] or {}
     if not name then
         set_cookies = {}
     else
@@ -161,31 +152,35 @@ function response.set_cookie(name, value, path, expires, domain, httponly, secur
             )
         end
     end
-    headers['Set-Cookie'] = set_cookies
+    self.headers['Set-Cookie'] = set_cookies
     return true
 end
 ---发送正文给客户端
-local function send_body()
-    ngx.status = status
-    if status == 200 or status == 0 then
-        send(body)
+function response:send_body()
+    ngx.status = self.status
+    if self.status == 200 or self.status == 0 then
+        send(self.body)
     end
-    return ngx.exit(status)
+    return ngx.exit(self.status)
 end
 
 response.redirect = ngx_redirect
 
----发送
-function response.send()
-    send_headers()
-    send_body()
+function response.new(ctx)
+    return setmetatable({
+        ctx = ctx,
+        headers = {},
+        status = 0,
+        body = nil,
+    }, {
+        __index = response
+    })
 end
 
-return setmetatable(response, {
-    __call = function(_, context)
-        if ctx then
-            return response
-        end
-        return response.init_context(context)
-    end
-})
+---发送
+function response:send()
+    self:send_headers()
+    self:send_body()
+end
+
+return response

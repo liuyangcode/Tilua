@@ -13,6 +13,7 @@ end
 function cache.init(ctx)
     context = ctx
     cache.catch(cache.magic)
+    return cache
 end
 function cache.magic(ctx, name)
     if context.config[name] then

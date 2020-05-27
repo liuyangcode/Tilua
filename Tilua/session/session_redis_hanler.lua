@@ -1,7 +1,4 @@
-local cache = require('Tilua.cache')
-local hanlder = nil
-local log = require "Tilua.log"
-
+---@class session_redis_hanler
 local session_redis_hanler = {
     serializer = {
         encode = function(data)
@@ -13,45 +10,51 @@ local session_redis_hanler = {
     }
 }
 
-function session_redis_hanler.open()
-    hanlder = cache.instance({
-        type = 'redis'
-    })
+function session_redis_hanler.open(self)
     return true
 end
 
-function session_redis_hanler.close()
+function session_redis_hanler.close(self)
     return true
 end
-function session_redis_hanler.read(name, id, gc_maxlifetime)
-    local val, err = hanlder:get(name .. id, true)
+function session_redis_hanler.read(self,name, id, gc_maxlifetime)
+    local val, err = self.hanlder:get(name .. id, true)
     return val or ''
 end
-function session_redis_hanler.write(name, id, val, gc_maxlifetime)
-    log.record(log.ERR, 'session_redis_hanler.write', id, val, gc_maxlifetime)
-    local val, err = hanlder:set(name .. id, val, gc_maxlifetime)
+function session_redis_hanler.write(self,name, id, val, gc_maxlifetime)
+    self.log:error('session_redis_hanler.write', id, val, gc_maxlifetime)
+    local val, err = self.hanlder:set(name .. id, val, gc_maxlifetime)
     return val
 end
-function session_redis_hanler.destroy(name, id)
-    local ok, err = hanlder:del(name .. id)
-    log.record(log.ERR, 'session_redis_hanler.destroy', name, id)
+function session_redis_hanler.destroy(self,name, id)
+    local ok, err = self.hanlder:del(name .. id)
+    self.log:error('session_redis_hanler.destroy', name, id)
     return ok
 end
-function session_redis_hanler.gc()
+function session_redis_hanler.gc(self)
     return true
 end
 
-function session_redis_hanler.create_id()
+function session_redis_hanler.create_id(self)
 
 end
 
-function session_redis_hanler.validate_id(id)
+function session_redis_hanler.validate_id(self,id)
     return id
 end
-function session_redis_hanler.update_timestamp(name, id, val, gc_maxlifetime)
-    log.record(log.ERR, 'session_redis_hanler.updateTimestamp', id, val, gc_maxlifetime)
-    local val, err = hanlder:expire(name .. id, gc_maxlifetime)
+function session_redis_hanler.update_timestamp(self,name, id, val, gc_maxlifetime)
+    self.log:error( 'session_redis_hanler.updateTimestamp', id, val, gc_maxlifetime)
+    local val, err = self.hanlder:expire(name .. id, gc_maxlifetime)
     return true
+end
+
+function session_redis_hanler.new(ctx)
+    return setmetatable({
+        log = ctx.logger,
+        hanlder = ctx.cache.redis
+    }, {
+        __index = session_redis_hanler
+    })
 end
 
 return session_redis_hanler

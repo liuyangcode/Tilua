@@ -1,6 +1,6 @@
 local route = require("Tilua.route")
 route.prefix('/posts', {
-    'json','body_parser'
+    'json', 'body_parser'
 })
 route {
     ['=/api/v2'] = function(ctx)
@@ -9,7 +9,6 @@ route {
         response.body = { 1, 2, 3 }
     end
 }
-
 route.get('~/user/get/{uid}', function(ctx, uid)
     local user = ctx.model.user
     local data = user:save({
@@ -22,7 +21,11 @@ route.get('~/user/get/{uid}', function(ctx, uid)
     })
     ctx.response.body = user:getLastSql()
 end, "[api]")
+route.get('/test', function(ctx)
+    local request, response = ctx:unpack()
 
+    response.body = request.pid
+end)
 route.rest('/posts', 'controller.posts')
 
 route.get('/user/login.html', function(ctx)

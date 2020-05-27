@@ -157,6 +157,11 @@ function util.in_array(array, val)
     return tablex.find(array, val) ~= nil
 end
 
+function util.get_now_ms()
+    ngx.update_time()
+    return ngx.now()*1000
+end
+
 function util.is_number(val)
     return type(val) == 'number'
 end

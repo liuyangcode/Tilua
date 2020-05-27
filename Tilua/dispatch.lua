@@ -62,8 +62,8 @@ function dispatch:get_handler(hanlder)
         local resp = pl_utils.split(hanlder, '@', true)
         local controller = resp[1]
         local action = resp[2]
-        if not string_find(controller, self.ctx.app_name .. '.') then
-            controller = self.ctx.app_name .. '.' .. controller
+        if not string_find(controller, self.ctx.name .. '.') then
+            controller = self.ctx.name .. '.' .. controller
         end
         local responser = lw_util.prequire(controller)
         if responser then
