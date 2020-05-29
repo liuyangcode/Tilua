@@ -194,7 +194,7 @@ end
 
 ---关闭数据库
 function driver:close()
-    self._linkID = nil
+
 end
 
 ---error

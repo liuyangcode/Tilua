@@ -4,12 +4,17 @@ local table_concat = table.concat
 local stringx = require('pl.stringx')
 local split = stringx.split
 local lw_utils = require('Tilua.util')
+local deepcopy = require('pl.tablex').deepcopy
+
 ---@class app
 ---properties
 local app = class()
 local logger_class = nil
 local model_class = nil
 local midware_manager = nil
+local request = nil
+---全局配置文件
+local configs = {}
 ---_init
 function app:_init()
     --共享全局app实例
@@ -21,6 +26,7 @@ end
 ---@return dispatch
 function app:dispatch(...)
     local dispatcher = self.config.dispatch
+    self.logger:debug('init dispatch named:',dispatcher)
     assert(not lw_utils.empty(dispatcher), 'no dispatcher defined')
     local found, dispatch = pcall(require, dispatcher)
     if not found then
@@ -110,7 +116,7 @@ function app:get_model()
 end
 
 function app:get_logger()
-    self.logger = logger_class.new(self)
+    self.logger = logger_class.new(self.config.log)
     return self.logger
 end
 
@@ -131,8 +137,14 @@ local function init_application(app_instance)
     local ctx = ngx.ctx
     local context = app_instance()
     ctx.ctx = context
-    context.request.capture()
-    context:dispatch(context.route.run(context))()
+    if context.on_app_init then
+        context.on_app_init(context)
+    end
+end
+
+function app:get_request()
+    self.request = request.capture(self)
+    return self.request
 end
 ---应用初始化
 function app.init(app_instance)
@@ -142,10 +154,11 @@ function app.init(app_instance)
         init_application(app_instance)
     end
 end
-
-function app.request_end()
+function app:get_config()
+    return configs[self.name]
+end
+function app.request_end(inst)
     local ctx = ngx.ctx.ctx
-    ctx.db:close()
     ctx.logger:flush()
 end
 
@@ -159,31 +172,38 @@ end
 ---worker初始化
 ---@param app_instance app
 function app.startup(app_instance)
-    local _config = {}
+    local app_config = {}
+    local appname = app_instance.name
     --加载系统默认配置
-    lw_utils.extend(_config, require "Tilua.config.default")
+    lw_utils.extend(app_config,deepcopy(require "Tilua.config.default"))
     local _, config = pcall(require, table_concat({
-        app_instance.name,
+        appname,
         "config",
         app_instance.status
     }, '.'))
     if config then
-        lw_utils.extend(_config, config or {})
+        lw_utils.extend(app_config, config or {})
     end
-    app.config = _config
     app.cache = require "Tilua.cache" .init(app_instance)
-    midware_manager = require('Tilua.midware.manager').load(_config)
-    app.request = require('Tilua.request')
+    midware_manager = require('Tilua.midware.manager').load(app_config)
+    request = require('Tilua.request')
     app.route = require('Tilua.route')
+    app.route.set_app_name(appname)
     model_class = require('Tilua.model')
-    _config.log.path = path.join(app_instance.path, _config.log.path)
-    logger_class = require("Tilua.log").init(_config.log)
-    pcall(require, app_instance.name .. '.routes')
-    app.route.init_rule_caches(_config.route)
+    app_config.log.path = path.join(app_instance.path, app_config.log.path)
+    logger_class = require("Tilua.log").init(app_config.log)
+    --加载应用自定义路由
+    pcall(require, appname .. '.routes')
+    --解析路由
+    app.route.init_rule_caches(app_config.route)
+    configs[appname] = app_config
+    if app_instance.on_startup then
+        app_instance.on_startup()
+    end
 end
 
 function app:C(name)
-    local config = app.config
+    local config = deepcopy(configs[self.name])
     if not name then
         return config
     end
@@ -209,6 +229,9 @@ end
 
 function app.run()
     local ctx = ngx.ctx.ctx
+    ctx:dispatch(ctx.route.run(ctx))()
+
+    ctx.db:close()
     if (ctx.debug) then
         xpcall(function(app)
             app.response:send()

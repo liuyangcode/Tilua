@@ -3,28 +3,25 @@
 --- Created by liuyang.
 --- DateTime: 2020/5/26 9:06 上午
 ---
-local pl_file = require("pl.file")
 local pl_date = require("pl.Date")
 local path = require("pl.path")
-local lw_utils = require('Tilua.util')
 
 local file = {}
-local log_path = ""
-local log_file = ""
 function file.init(config)
     ngx.update_time()
-    log_path = config.path
+    local log_path = config.path
     if not path.isdir(log_path) then
         local ok, err = path.mkdir(log_path)
         assert(ok, 'failed to create log path ' .. log_path)
     end
-    log_file = log_path .. '/' .. pl_date.Format("yyyy_mm_dd"):tostring(os.time()) .. '.log'
 end
 
-function file.flush(logs)
+function file.flush(log)
+    local log_file = log.config.path .. '/' .. pl_date.Format("yyyy_mm_dd"):tostring(os.time()) .. '.log'
+
     local _file = io.open(log_file, "a+")
     io.output(_file)
-    for i, v in ipairs(logs) do
+    for i, v in ipairs(log.log_data) do
         if v.level == "" then
             io.write(v.msg .. "\n")
         else

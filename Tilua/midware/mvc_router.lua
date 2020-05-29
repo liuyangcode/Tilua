@@ -29,8 +29,8 @@ function mvc_router:handle(next, ...)
     local ctx = self.ctx
 
     local request = ctx:unpack()
-    ctx.logger:debug("Mvc router midware start route path ", request.get_routed_uri())
-    local pathinfo = request.get_routed_uri()
+    ctx.logger:debug("Mvc router midware start route path ", request.routed_uri)
+    local pathinfo = request.routed_uri
     local controller, action, params = (function
     (controller, action, ...)
         return controller, action, { ... }

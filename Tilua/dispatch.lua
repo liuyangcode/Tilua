@@ -24,7 +24,24 @@ function dispatch:make_chain_call(midware, handler, ...)
     local args = { ... } --参数绑定
     local next = function
     ()
-        return  handler(self:prepare_ctx_args_for_responser(args))
+        local response = handler(self:prepare_ctx_args_for_responser(args))
+        if not self.ctx.response.body then
+            -- response does not have body to send
+            local tresponse = type(response)
+            if tresponse == 'table' then
+                if #response == 2 and type(response[1]) == 'string' and type(response[2]) == 'table' then
+                    -- return view like {'index/index.html',{}}
+                    self.ctx.response:render(response[1], response[2])
+                elseif not response.new then
+                    --retun a table but not a response instance
+                    self.ctx.response.body = response
+                end
+            elseif tresponse == 'string' then
+                ---return view like 'index/index.html' without context
+                self.ctx.response:render(response, {})
+            end
+        end
+        return self.ctx.response
     end
     --初始化响应前中间件
     return tablex.reduce(function(res, next_midware)
@@ -77,6 +94,10 @@ end
 ---@param handler function
 function dispatch:to_handler(handler)
     self.hanlder = handler
+end
+
+function dispatch.derive()
+    return class(dispatch)
 end
 
 return dispatch

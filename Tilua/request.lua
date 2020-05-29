@@ -3,27 +3,11 @@ local ngx_req = ngx.req
 local ngx_var = ngx.var
 local util = require("Tilua.util")
 local string_format = string.format
+local setmetatable,rawget = setmetatable,rawget
 
 ---@class request
 local request = {}
 
----@type app
-local _path_params = {}
-
----getter
----@param t request
----@param key string
-function request.getter(t, key)
-
-    local getter = rawget(request, "get_" .. key)
-    if util.callable(getter) then
-
-        return getter()
-    elseif ngx_var[key] then
-        return ngx_var[key]
-    end
-    return nil
-end
 function request.get_host()
     return ngx_var.host
 end
@@ -71,10 +55,6 @@ end
 function request.get_server_name()
     return ngx_var.server_name
 end
-function request.get_params()
-    return _path_params
-end
-
 function request.get_server_port()
     return ngx_var.server_port
 end
@@ -82,53 +62,18 @@ function request.get_server_protocol()
     return ngx_var.server_protocol
 end
 
-function request.setter(t, key, value)
-    local setter = request["set_" .. key]
-    if not util.callable(setter) then
-        return nil
-    end
-    return setter(value)
-end
-
-function request.set_params(params)
-    _path_params = params
-end
-
-function request.set_body(value)
-    if not ngx.ctx.__request_body then
-        ngx.ctx.__request_body = {}
-    end
+function request.set_body(self, value)
     if type(value) == "nil" then
-        ngx.ctx.__request_body = {}
+        self._body = {}
     elseif type(value) == 'table' then
         util.foreach(value, function(val, k)
-            ngx.ctx.__request_body[k] = val
+            self._body[k] = val
         end)
     end
 end
 
-function request.get_body()
-    return ngx.ctx.__request_body
-end
-
-function request.set_routed_uri(uri)
-    ngx.ctx.__request_routed_uri = uri
-end
-
-function request.get_routed_uri()
-    return ngx.ctx.__request_routed_uri
-end
-
-function request.get_cookie(name)
-    if not name then
-        return setmetatable({}, {
-            __index = function(_, name)
-                return ngx.var['cookie_' .. name]
-            end
-        })
-    end
-
-    return ngx.var['cookie_' .. name]
+function request.get_body(self)
+    return self._body
 end
 
 function request.get_header(name)
@@ -139,14 +84,45 @@ function request.get_header(name)
     return headers
 end
 
-function request.capture()
-    local ctx = ngx.ctx.ctx
+---capture
+---@param ctx app
+---@return request
+function request.capture(ctx)
     local localtime = ngx.localtime
-    ctx.logger:write(string_format('\n[%s] %s %s', localtime(), request.get_remote_addr(), request.get_raw_request()))
-    return setmetatable(request, {
-        __index = request.getter,
-        __newindex = request.setter
+    local req = {
+        _body = {},
+        header = ngx_req.get_headers(),
+        params = {},
+        ctx = ctx,
+        routed_uri = "",
+        cookie = setmetatable({}, {
+            __index = function(_, name)
+                return ngx.var['cookie_' .. name]
+            end
+        })
+    }
+
+    local new_request = setmetatable(req, {
+        __index = function(_, key)
+            local getter = rawget(request, "get_" .. key)
+            if util.callable(getter) then
+                return getter(req)
+            elseif request[key] then
+                return request[key]
+            else
+                return ngx_var[key]
+            end
+        end,
+        __newindex = function(_, name, value)
+            local setter = request["set_" .. name]
+            if not util.callable(setter) then
+                return nil
+            end
+            return setter(req, value)
+        end
     })
+    ctx.logger:write(string_format('\n[%s] %s %s', localtime(), new_request.get_remote_addr(), new_request.raw_request))
+    return new_request
 end
 
 return request

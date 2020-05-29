@@ -13,6 +13,7 @@ return {
     db_pwd = 'app', -- 密码
     db_port = '3306', -- 端口
     db_debug = true,
+    dispatch = 'Tilua.proxy_dispatch',
     log = {
         level = "DEBUG,ERROR"
     }

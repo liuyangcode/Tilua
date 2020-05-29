@@ -34,6 +34,8 @@ function mysql:connect(config, linkNum, autoConnection)
         })
         if not ok then
             self.ctx.logger:error("failed to connect: ", err, ":", (errcode or ""), " ", (sqlstate or ""))
+        elseif self.debug then
+            self.ctx.logger:debug("Mysql Connect success!Server version:",(db:server_ver() or "") ," reused times:",db:get_reused_times())
         end
         self.linkID[linkNum] = db
     end
@@ -44,26 +46,25 @@ function mysql:execute_sql(sql)
     local res, err, errcode, sqlstate = self._linkID:query(sql)
     if not res then
         self.ctx.logger:error(err, " errcode ", (errcode or ""), " sqlstate:", (sqlstate or ""))
+        error(err.." errcode "..(errcode or "").." sqlstate:"..(sqlstate or ""),2)
+        return nil
     end
     self.numRows = #res
     self.result_sets = res
     return res
 end
 
----将连接放入连接池
-function mysql:set_keepalive_mod()
-    return self._linkID and self._linkID:set_keepalive(10000, 1000)
-end
-
 function mysql:close()
-    local ok, err = self:set_keepalive_mod()
+    local ok, err = self._linkID:set_keepalive(60000, 100)
     if not ok then
-        self.ctx.logger:error( "failed to set keepalive:", err)
+        self.ctx.logger:error( "failed to set keepalive because ",err)
+    else
+        self.ctx.logger:debug( "set connection keepalive success")
     end
-    self._linkID = nil
 end
 
 function mysql:getFields(tableName)
+    self:initConnect(true)
     local tmp = split(tableName, ' ')
     tableName = tmp[1]
     local sql

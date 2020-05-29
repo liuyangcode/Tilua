@@ -22,7 +22,7 @@ function session_redis_hanler.read(self,name, id, gc_maxlifetime)
     return val or ''
 end
 function session_redis_hanler.write(self,name, id, val, gc_maxlifetime)
-    self.log:error('session_redis_hanler.write', id, val, gc_maxlifetime)
+    self.log:debug('session_redis_hanler.write sessionid:', id," values:", val," lifetime:", gc_maxlifetime)
     local val, err = self.hanlder:set(name .. id, val, gc_maxlifetime)
     return val
 end

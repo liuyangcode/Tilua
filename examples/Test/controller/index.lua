@@ -13,6 +13,12 @@ end
 function index:services(ctx)
     self:display()
 end
+function index:routes(ctx)
+    self:display()
+end
+function index:targets(ctx)
+    self:display()
+end
 
 function index:login()
     self:display()
