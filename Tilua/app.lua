@@ -72,6 +72,7 @@ function app:get_cache()
     }
     self.cache = setmetatable(caches, {
         __index = function(m, name)
+            lw_utils.dump(m)
             if type(name) == 'string' then
                 name = { type = name }
             end
@@ -221,6 +222,7 @@ function app:unpack()
 end
 
 function app.error_handle(err)
+    local ctx = ngx.ctx.ctx
     ngx.print({
         string.gsub(err or "", "\n", "<br>") .. "<br>",
         string.gsub(debug.traceback(), "\n", "<br>")

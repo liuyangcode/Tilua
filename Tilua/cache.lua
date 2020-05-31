@@ -7,7 +7,7 @@ local instances = {}
 local context = nil
 
 function cache:_init(ctx)
-    self.app = ctx
+    self.ctx = ctx
 end
 
 function cache.init(ctx)

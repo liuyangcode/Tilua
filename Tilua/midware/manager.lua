@@ -12,7 +12,6 @@ local pcall = pcall
 ---@class midware_manager
 local manager = {}
 ---@type app
-local _midwares = {}
 
 function manager.is_group(val)
     local mat, _ = match(val, '[[a-zA-Z_0-9]+]')

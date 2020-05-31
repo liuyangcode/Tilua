@@ -76,7 +76,7 @@ function redis:connect_mod()
 end
 --加入连接池
 function redis:set_keepalive_mod()
-    return self:get_redis():set_keepalive(self.app.config.redis_pool_timeout * 1000, self.app.config.redis_pool_size)
+    return self:get_redis():set_keepalive(self.ctx.config.redis_pool_timeout * 1000, self.ctx.config.redis_pool_size)
 end
 
 function redis:init_pipeline()
@@ -153,12 +153,15 @@ function redis:set(name, value, expire)
 end
 
 function redis:do_command(cmd, ...)
-    if self._reqs~='' and self._reqs then
+    if self._reqs ~= '' and self._reqs then
         table.insert(self._reqs, { cmd, ... })
         return
     end
     local ok, err = self:connect_mod()
-    assert(ok, 'redis connect failed ' .. (err or ''))
+    if not ok then
+        self.ctx.logger:error("redis connect failed ", err, " with config ", lw_util.json_encode(self.config))
+        error(table.concat({ "redis connect failed ", err, " with config ", lw_util.json_encode(self.config) }), 2)
+    end
 
     local fun = self:get_redis()[cmd]
     local result, err = fun(self:get_redis(), ...)
