@@ -13,6 +13,7 @@ return {
     db_pwd = 'app', -- 密码
     db_port = '3306', -- 端口
     db_debug = true,
+    app89 = "mysql://app:app@10.211.55.6:3306/test?debug=true#utf8",
     log = {
         level = "DEBUG,ERROR"
     }

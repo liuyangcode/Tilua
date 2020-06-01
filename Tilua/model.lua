@@ -21,15 +21,6 @@ local _db_fields_cache_hanlder = nil
 ---s属性初始化
 ---@protected
 function model:properties()
-
-
-end
----_init
----@param name string
----@param tablePrefix string
----@param connection any
----@return model
-function model:_init(name, tablePrefix, connection)
     -- 当前数据库操作对象
     ---@type driver
     self.db = nil
@@ -54,7 +45,7 @@ function model:_init(name, tablePrefix, connection)
     -- 最近错误信息
     self.error = ''
     -- 字段信息
-    self.fields = {}
+    self.fields = nil
     -- 数据信息
     self.data = {}
     -- 查询表达式参数
@@ -69,9 +60,17 @@ function model:_init(name, tablePrefix, connection)
     self.patchValidate = false
     -- 链操作方法列表
     self.methods = { 'strict', 'order', 'alias', 'having', 'group', 'lock', 'distinct', 'auto', 'filter', 'validate', 'result', 'token', 'index', 'force', 'master' }
-
+end
+---_init
+---@param name string
+---@param tablePrefix string
+---@param connection any
+---@return model
+---@param ctx app
+function model:_init(ctx,name, tablePrefix, connection)
+    self:properties()
     ---@type app
-    self.ctx = ngx.ctx.ctx
+    self.ctx = ctx
     connection = connection or ''
     if name then
         if string.find(name, '\\.') then
@@ -106,7 +105,7 @@ end
 
 function model:_facade(data)
     local fields
-    if not self.fields then
+    if self.fields then
         if not self.options.field then
             fields = self.options.field
             self.options.field = nil
@@ -316,20 +315,18 @@ function model:select(options)
     elseif false == options then
         self.options.fetch_sql = true
     end
-    options = self:_parseOptions()
+    options = self:_parseOptions(options)
     local key
     if options.cache then
         cache = options.cache
         key = cache.key or lw_utils.get_hash(options)
-
-        --if type(cache.key) == 'table' then
-        --    key = '' --- hash options
-        --end
-        local data = self:cache(key, '', cache)
+        local data = self.ctx.cache.get(key)
         if data then
             return data
         end
     end
+
+
     local resultSet = self.db:select(options)
     if not resultSet then
         return false
@@ -352,8 +349,9 @@ function model:select(options)
             resultSet = cols
         end
     end
+
     if cache then
-        self:S(key, resultSet, cache)
+        self.ctx.cache.set(key,resultSet,cache.expire or -1)
     end
     return resultSet
 end
@@ -991,23 +989,21 @@ function model:get_table_fields_cache_key(tableName)
         tableName
     })
 end
+
 function model:get_table_fields_cache(tableName)
     local cache_key = self:get_table_fields_cache_key(tableName)
     return self.db_fields_cache_hanlder:get(cache_key)
 end
+
 function model:cache_table_fields(tableName, fields)
     local cache_key = self:get_table_fields_cache_key(tableName)
     self.db_fields_cache_hanlder:set(cache_key, fields)
 end
+
 function model:get_db_fields_cache_hanlder()
     local cache_type = self.ctx.config.db_fields_cache_type
     self.db_fields_cache_hanlder = self.ctx.cache[cache_type]
     return self.db_fields_cache_hanlder
-    --if not _db_fields_cache_hanlder then
-    --    local cache_type = self.ctx.config.db_fields_cache_type
-    --    _db_fields_cache_hanlder = self.ctx.cache.instance(cache_type)
-    --end
-    --return _db_fields_cache_hanlder
 end
 
 function model:flush()
@@ -1047,7 +1043,7 @@ function model:flush()
 end
 
 function model:_checkTableInfo()
-    if empty(self.fields) then
+    if not self.fields then
         if self.ctx.config.db_fields_cache then
             local fields = self:get_table_fields_cache('_fields' .. string.lower(self:getTableName()))
             if fields then
@@ -1072,10 +1068,7 @@ function model:db_instance(linkNum, config, force)
         return self.db
     end
     if not self._db[linkNum] or force then
-        if lw_utils.is_string(config) == 'string' and not string.find(config, '/') then
-            config = self.ctx:C(config)
-        end
-        self._db[linkNum] = self.ctx.db:instance(config)
+        self._db[linkNum] = self.ctx.db.instance(config)
     elseif not config then
         self._db[linkNum]:close()
         self._db[linkNum] = nil

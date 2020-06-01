@@ -50,7 +50,7 @@ end
 function redis:_init(config, ctx)
     self:super(ctx)
     self.config = {
-        timeout = config.timeout and config.timeout * 1000 or 1000,
+        timeout = config.timeout and ctx.config.redis_timeout * 1000 or 1000,
         db_index = config.db_index or ctx.config.redis_db_index or 0,
         host = config.host or ctx.config.redis_host or '127.0.0.1',
         port = config.port or ctx.config.redis_port or 6379

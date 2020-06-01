@@ -266,11 +266,9 @@ function session.new(cfg, ctx)
         _session = {},
         _cookies = {},
         save_handler = cfg.save_handler,
-        serialize_handler = nil,
+        serialize_handler = cfg.save_handler.serializer,
         config = cfg or nil
     }
-    sess.serialize_handler = sess.save_handler.serializer
-
     return setmetatable(sess, {
         __index = session
     })

@@ -21,7 +21,7 @@ function driver:properties()
     -- PDO操作实例
     self.PDOStatement = null
     -- 当前操作所属的模型名
-    self.model = ''
+    self.model = nil
     -- 当前SQL指令
     self.queryStr = ''
     self.modelSql = {}
@@ -703,7 +703,9 @@ function driver:getLastInsID()
 end
 function driver:debug(start)
     if self.config.debug then
-        self.modelSql[self.model] = self.queryStr
+        if self.model then
+            self.modelSql[self.model] = self.queryStr
+        end
         if not start then
             self.ctx.logger:debug(self.queryStr, lw_utils.get_now_ms() - self.ctx.MYSQL_EXCUTE_SQL_START, ' ms')
         else

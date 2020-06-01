@@ -4,53 +4,61 @@
 --- DateTime: 2020/5/30 6:34 下午
 ---
 local lw_util = require('Tilua.util')
+local bind1 = require("pl.utils").bind1
+local rawget,type,setmetatable = rawget,type,setmetatable
 
 local manager = {}
 
-function manager.instance()
+function manager:instance(name)
+    if type(name) == 'string' then
+        name = { type = name }
+    end
 
+    local hash = lw_util.get_hash(name)
+    if self.instances[hash] then
+        return self.instances[hash]
+    end
+
+    local ok, driver = pcall(require, "Tilua.cache.driver." .. name.type)
+    assert(ok, 'unsupported cache type ' .. name.type)
+    self.instances[hash] = driver(name, self.ctx)
+    return self.instances[hash]
 end
 
 ---get
 ---@param key string
-function manager.get(key)
-    return cache.instance(context.config.data_cache_type):get(context.config.data_cache_prefix .. key)
+function manager:get(key)
+    return manager.instance(self, self.ctx.config.data_cache_type):get(self.ctx.config.data_cache_prefix .. key)
 end
 ---set
 ---@param name string
 ---@param value any
 ---@param expire number
-function manager.set(name, value, expire)
-    return cache.instance(context.config.data_cache_type):set(context.config.data_cache_prefix .. name, value, expire)
+function manager:set(name, value, expire)
+    return manager.instance(self, self.ctx.config.data_cache_type):set(self.ctx.config.data_cache_prefix .. name, value, expire)
 end
 
 ---del
 ---@param name string
-function manager.del(name)
-    return cache.instance(context.config.data_cache_type):del(context.config.data_cache_prefix .. name)
+function manager:del(name)
+    return manager.instance(self, self.ctx.config.data_cache_type):del(self.ctx.config.data_cache_prefix .. name)
 end
 
 function manager.new(ctx)
-    local manager_inst = {
+    return setmetatable({
         ctx = ctx,
         instances = {}
-    }
-    return setmetatable(manager_inst, {
+    }, {
         __index = function(this, name)
-            if type(name) == 'string' then
-                name = { type = name }
+            local rawp = rawget(manager, name)
+            local trawp = type(rawp)
+            if trawp == 'function' then
+                return bind1(rawp, this)
+            elseif trawp == 'string' then
+                return manager[rawp]
+            else
+                return manager.instance(this, name)
             end
-            local hash = lw_util.get_hash(name)
-            if this.instances[hash] then
-                return this.instances[hash]
-            end
-            local ok, driver = pcall(require, "Tilua.cache.driver." .. name.type)
-            assert(ok, 'unsupported cache type ' .. name.type)
-            this.instances[hash] = driver(name, self)
-            return this.instances[hash]
-        end,
-        __call = function()
-
         end
     })
 end

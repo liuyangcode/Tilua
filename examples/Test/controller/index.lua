@@ -1,5 +1,6 @@
 local index = require("Tilua.controller").derive()
 local lw_util = require("Tilua.util")
+local manager = require("Tilua.cache.manager")
 function index:_init(ctx)
     self:super(ctx)
 end
@@ -22,6 +23,13 @@ end
 
 function index:login()
     self:display()
+end
+function index:test(ctx)
+    ---@type model
+    local routes = ctx.model.routes
+    ctx.response.body = routes:select({
+        cache = {}
+    })
 end
 ---upload
 ---@param ctx app

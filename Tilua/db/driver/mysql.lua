@@ -55,11 +55,13 @@ function mysql:execute_sql(sql)
 end
 
 function mysql:close()
-    local ok, err = self._linkID:set_keepalive(60000, 100)
-    if not ok then
-        self.ctx.logger:error( "failed to set keepalive because ",err)
-    else
-        self.ctx.logger:debug( "set connection keepalive success")
+    if self._linkID then
+        local ok, err = self._linkID:set_keepalive(60000, 100)
+        if not ok then
+            self.ctx.logger:error( "failed to set keepalive because ",err)
+        else
+            self.ctx.logger:debug( "set connection keepalive success")
+        end
     end
 end
 

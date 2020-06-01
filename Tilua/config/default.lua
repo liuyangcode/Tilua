@@ -65,6 +65,7 @@ local config = {
     redis_host = '172.17.0.2',
     redis_port = 6379,
     redis_db_index = 0,
+    redis_timeout = 10,
 
     default_charset = 'utf-8', --默认输出编码
     default_content_type = 'text/html', --默认输出编码

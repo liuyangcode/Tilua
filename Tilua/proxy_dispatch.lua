@@ -11,14 +11,19 @@ end
 function proxy_dispatch:run()
     self.ctx.logger:debug("proxy_dispatch:run")
     local balancer = require("ngx.balancer")
-    local host = "32.254.48.88"
+    local host = "32.254.123.123"
     local port = 80
 
+    local state, code = balancer.get_last_failure()
+
+    self.ctx.logger:debug("balancer.get_last_failure", state, code)
+
     local ok, err = balancer.set_current_peer(host, port)
-    balancer.set_timeouts(60,60,60)
+    balancer.set_timeouts(10, 10, 10)
     if not ok then
         ngx.log(ngx.ERR, "failed to set the current peer: ", err)
         return ngx.exit(500)
     end
 end
+
 return proxy_dispatch

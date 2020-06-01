@@ -10,28 +10,6 @@ local format = string.format
 local rawget, type = rawget, type
 ---@class response
 local response = {}
----_init
-function response.init_context(context)
-    ctx = context
-    return setmetatable(response, {
-        __index = function(_, prop)
-            prop = lower(prop)
-            local getter = 'get_' .. prop
-            if rawget(response, getter) and lw_util.callable(response[getter]) then
-                return response[getter]()
-            end
-            return nil
-        end,
-        __newindex = function(_, prop, value)
-            prop = lower(prop)
-            local setter = 'set_' .. prop
-            if rawget(response, setter) and lw_util.callable(response[setter]) then
-                return response[setter](value)
-            end
-            return nil
-        end
-    })
-end
 
 function response:get_body()
     return self.body

@@ -5,13 +5,15 @@ local stringx = require('pl.stringx')
 local split = stringx.split
 local lw_utils = require('Tilua.util')
 local deepcopy = require('pl.tablex').deepcopy
+local model_manager = require("Tilua.model.manager")
+local db_manager = require("Tilua.db.manager")
+local midware_manager = require("Tilua.model.manager")
+local cache_manager = require("Tilua.cache.manager")
 
 ---@class app
----properties
 local app = class()
 local logger_class = nil
-local model_class = nil
-local midware_manager = nil
+
 local request = nil
 ---全局配置文件
 local configs = {}
@@ -26,7 +28,7 @@ end
 ---@return dispatch
 function app:dispatch(...)
     local dispatcher = self.config.dispatch
-    self.logger:debug('init dispatch named:',dispatcher)
+    self.logger:debug('init dispatch named:', dispatcher)
     assert(not lw_utils.empty(dispatcher), 'no dispatcher defined')
     local found, dispatch = pcall(require, dispatcher)
     if not found then
@@ -52,7 +54,6 @@ function app:get_midware()
     return self.midware
 end
 function app:get_response()
-    self.logger:debug('app:get_response')
     self.response = require("Tilua.response").new(self)
     return self.response
 end
@@ -66,64 +67,23 @@ function app:get_html_cache_interceptor()
     return self.cache_interceptor
 end
 
+---@return cache
 function app:get_cache()
-    local caches = {
-        caches = {}
-    }
-    self.cache = setmetatable(caches, {
-        __index = function(m, name)
-            lw_utils.dump(m)
-            if type(name) == 'string' then
-                name = { type = name }
-            end
-            local hash = lw_utils.get_hash(name)
-            if caches.caches[hash] then
-                return caches.caches[hash]
-            end
-            local ok, driver = pcall(require, "Tilua.cache.driver." .. name.type)
-            assert(ok, 'unsupported cache type ' .. name.type)
-            caches.caches[hash] = driver(name, self)
-            return caches.caches[hash]
-        end
-    })
+    self.cache = cache_manager.new(self)
     return self.cache
 end
-
+function app:get_db()
+    self.db = db_manager.new(self)
+    return self.db
+end
 function app:get_model()
-    local models = {
-        models = {}
-    }
-    self.model = setmetatable(models, {
-        __index = function(m, name)
-            self.logger:debug("start Init Model named ", name)
-            local mod = lw_utils.import(table.concat({
-                self.name,
-                'model',
-                name
-            }, '.'))
-            if mod then
-                models.models[name] = mod()
-                return models.models[name]
-            end
-            if models.models[name] then
-                self.logger:debug("Model named ", name, " has already inited ")
-                return models.models[name]
-            end
-            models.models[name] = model_class(name)
-            return models.models[name]
-        end
-    })
+    self.model = model_manager.new(self)
     return self.model
 end
 
 function app:get_logger()
     self.logger = logger_class.new(self.config.log)
     return self.logger
-end
-
-function app:get_db()
-    self.db = require("Tilua.db").new(self)
-    return self.db
 end
 
 function app:get_view()
@@ -162,7 +122,6 @@ function app.request_end(inst)
     local ctx = ngx.ctx.ctx
     ctx.logger:flush()
 end
-
 function app.body_filter()
 end
 function app.header_filter()
@@ -176,7 +135,7 @@ function app.startup(app_instance)
     local app_config = {}
     local appname = app_instance.name
     --加载系统默认配置
-    lw_utils.extend(app_config,deepcopy(require "Tilua.config.default"))
+    lw_utils.extend(app_config, deepcopy(require "Tilua.config.default"))
     local _, config = pcall(require, table_concat({
         appname,
         "config",
@@ -185,12 +144,10 @@ function app.startup(app_instance)
     if config then
         lw_utils.extend(app_config, config or {})
     end
-    app.cache = require "Tilua.cache" .init(app_instance)
     midware_manager = require('Tilua.midware.manager').load(app_config)
     request = require('Tilua.request')
     app.route = require('Tilua.route')
     app.route.set_app_name(appname)
-    model_class = require('Tilua.model')
     app_config.log.path = path.join(app_instance.path, app_config.log.path)
     logger_class = require("Tilua.log").init(app_config.log)
     --加载应用自定义路由
@@ -222,7 +179,6 @@ function app:unpack()
 end
 
 function app.error_handle(err)
-    local ctx = ngx.ctx.ctx
     ngx.print({
         string.gsub(err or "", "\n", "<br>") .. "<br>",
         string.gsub(debug.traceback(), "\n", "<br>")
@@ -232,7 +188,6 @@ end
 function app.run()
     local ctx = ngx.ctx.ctx
     ctx:dispatch(ctx.route.run(ctx))()
-
     ctx.db:close()
     if (ctx.debug) then
         xpcall(function(app)

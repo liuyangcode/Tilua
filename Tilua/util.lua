@@ -159,7 +159,7 @@ end
 
 function util.get_now_ms()
     ngx.update_time()
-    return ngx.now()*1000
+    return ngx.now() * 1000
 end
 
 function util.is_number(val)
@@ -190,7 +190,25 @@ function util.empty(val)
     end
     return false
 end
-
+--"mysql://username:passwd@32.254.48.88:10/DbName?param1=val1&param2=val2#utf8"
+function util.parse_url(url)
+    local regex = "([a-zA-Z]+)://([a-zA-Z0-9_]+):([^@]+)@([^:]+):?([0-9]*)/([^?]+)\\??([^#]*)#(.+)"
+    local m, _ = ngx.re.match(url, regex, "jo")
+    if not m then
+        return nil
+    end
+    return {
+        scheme = m[1],
+        user = m[2],
+        pass = m[3],
+        host = m[4],
+        port = m[5],
+        path = "/" .. m[6],
+        query = m[7],
+        params = ngx.decode_args(m[7]),
+        fragment = m[8]
+    }
+end
 ---判断所有传入的值是否有空
 function util.emptys(...)
     local result = true
