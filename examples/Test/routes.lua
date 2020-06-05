@@ -1,10 +1,22 @@
 local route = require("Tilua.route")
-route.prefix('/posts', {
-    'json', 'body_parser'
-})
-route.prefix('/routes', {
-    'json', 'body_parser'
-})
+--route.prefix('/posts', {
+--    'json', 'body_parser'
+--})
+--route.prefix('/routes', {
+--    'json', 'body_parser'
+--})
+--route.prefix('/targets', {
+--    'json', 'body_parser'
+--})
+
+route.group(function()
+    route.rest('/posts', 'controller.posts')
+    route.rest('/targets', 'controller.targets')
+    route.rest('/routes', 'controller.routes')
+    route.rest('/upstreams', 'controller.upstreams')
+
+end, 'json', 'body_parser')
+
 route {
     ['=/api/v2'] = function(ctx)
         ---@type response
@@ -12,10 +24,6 @@ route {
         response.body = { 1, 2, 3 }
     end
 }
-
-
-route.rest('/posts', 'controller.posts')
-route.rest('/routes', 'controller.routes')
 
 route.get('/user/login.html', function(ctx)
     local request, response = ctx:unpack()

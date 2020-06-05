@@ -3,27 +3,17 @@
 --- Created by liuyang.
 --- DateTime: 2020/5/29 4:36 下午
 ---
-
+local json_encode = require("Tilua.util").json_encode
 local proxy_dispatch = require("Tilua.dispatch").derive()
 function proxy_dispatch:_init(ctx)
     self:super(ctx)
 end
-function proxy_dispatch:run()
-    self.ctx.logger:debug("proxy_dispatch:run")
-    local balancer = require("ngx.balancer")
-    local host = "32.254.123.123"
-    local port = 80
+function proxy_dispatch:run(router)
+    local service, params, midware,route = table.unpack(router)
+    self.ctx.logger:debug(" proxy_dispatch:run", json_encode(service))
 
-    local state, code = balancer.get_last_failure()
 
-    self.ctx.logger:debug("balancer.get_last_failure", state, code)
 
-    local ok, err = balancer.set_current_peer(host, port)
-    balancer.set_timeouts(10, 10, 10)
-    if not ok then
-        ngx.log(ngx.ERR, "failed to set the current peer: ", err)
-        return ngx.exit(500)
-    end
 end
 
 return proxy_dispatch

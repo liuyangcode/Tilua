@@ -6,9 +6,8 @@ local lower = string.lower
 local tablex = require("pl.tablex")
 local foreach = tablex.foreach
 local split = stringx.split
-function mysql:_init(config)
-    self:super(config)
-    self.ctx = ngx.ctx.ctx
+function mysql:_init(...)
+    self:super(...)
 end
 
 function mysql:connect(config, linkNum, autoConnection)
@@ -21,7 +20,7 @@ function mysql:connect(config, linkNum, autoConnection)
         mysqlc:set_timeout(1000)
         local db, err = mysqlc:new()
         if not db then
-            self.ctx.logger:error("failed to instantiate mysql: " .. err)
+            self.logger:error("failed to instantiate mysql: " .. err)
         end
         local ok, err, errcode, sqlstate = db:connect({
             host = config.hostname,
@@ -33,9 +32,9 @@ function mysql:connect(config, linkNum, autoConnection)
             max_packet_size = 1024 * 1024,
         })
         if not ok then
-            self.ctx.logger:error("failed to connect: ", err, ":", (errcode or ""), " ", (sqlstate or ""))
+            self.logger:error("failed to connect: ", err, ":", (errcode or ""), " ", (sqlstate or ""))
         elseif self.debug then
-            self.ctx.logger:debug("Mysql Connect success!Server version:",(db:server_ver() or "") ," reused times:",db:get_reused_times())
+            self.logger:debug("Mysql Connect success!Server version:", (db:server_ver() or ""), " reused times:", db:get_reused_times())
         end
         self.linkID[linkNum] = db
     end
@@ -45,8 +44,8 @@ end
 function mysql:execute_sql(sql)
     local res, err, errcode, sqlstate = self._linkID:query(sql)
     if not res then
-        self.ctx.logger:error(err, " errcode ", (errcode or ""), " sqlstate:", (sqlstate or ""))
-        error(err.." errcode "..(errcode or "").." sqlstate:"..(sqlstate or ""),2)
+        self.logger:error(err, " errcode ", (errcode or ""), " sqlstate:", (sqlstate or ""))
+        error(err .. " errcode " .. (errcode or "") .. " sqlstate:" .. (sqlstate or ""), 2)
         return nil
     end
     self.numRows = #res
@@ -58,9 +57,9 @@ function mysql:close()
     if self._linkID then
         local ok, err = self._linkID:set_keepalive(60000, 100)
         if not ok then
-            self.ctx.logger:error( "failed to set keepalive because ",err)
+            self.logger:error("failed to set keepalive because ", err)
         else
-            self.ctx.logger:debug( "set connection keepalive success")
+            self.logger:debug("set mysql host ",self.config.hostname," connection keepalive success!")
         end
     end
 end

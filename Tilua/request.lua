@@ -44,7 +44,7 @@ function request.get_path_info()
     return ngx_var.uri
 end
 function request.get_pid()
-    return ngx_var.pid
+    return ngx_var.pid()
 end
 function request.get_server_version()
     return ngx_var.nginx_version

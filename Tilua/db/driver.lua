@@ -13,24 +13,19 @@ local is_number = lw_utils.is_number
 local is_scalar = lw_utils.is_scalar
 local foreach = lw_utils.foreach
 local in_array = lw_utils.in_array
-local log = require('Tilua.log')
 ---@class driver
 local driver = class()
 
 function driver:properties()
-    -- PDO操作实例
-    self.PDOStatement = null
     -- 当前操作所属的模型名
     self.model = nil
     -- 当前SQL指令
     self.queryStr = ''
     self.modelSql = {}
     -- 最后插入ID
-    self.lastInsID = null
+    self.lastInsID = nil
     -- 返回或者影响记录数
     self.numRows = 0
-    -- 事物操作PDO实例
-    self.transPDO = null
     -- 事务指令数
     self.transTimes = 0
     -- 错误信息
@@ -38,7 +33,7 @@ function driver:properties()
     -- 数据库连接ID 支持多个连接
     self.linkID = {}
     -- 当前连接ID
-    self._linkID = null
+    self._linkID = nil
     -- 数据库连接参数配置
     self.config = {
         type = '', -- 数据库类型
@@ -76,11 +71,13 @@ function driver:properties()
     self.executeTimes = 0
 end
 
-function driver:_init(config)
+function driver:_init(config, context, logger)
     self:properties()
     if config then
         tablex.update(self.config, config)
     end
+    self.logger = logger
+    self.ctx = context
 end
 
 function driver.derive()
@@ -707,9 +704,9 @@ function driver:debug(start)
             self.modelSql[self.model] = self.queryStr
         end
         if not start then
-            self.ctx.logger:debug(self.queryStr, lw_utils.get_now_ms() - self.ctx.MYSQL_EXCUTE_SQL_START, ' ms')
+            self.logger:debug(self.queryStr, lw_utils.get_now_ms() - self.MYSQL_EXCUTE_SQL_START, ' ms')
         else
-            self.ctx.MYSQL_EXCUTE_SQL_START = lw_utils.get_now_ms()
+            self.MYSQL_EXCUTE_SQL_START = lw_utils.get_now_ms()
         end
     end
 end

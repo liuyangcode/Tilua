@@ -1,6 +1,4 @@
 local config = {
-    data_cache_type = 'redis',
-    data_cache_prefix = 'Tilua:',
     html_cache = true,
     html_cache_path = "html",
     html_cache_time = 60,
@@ -60,8 +58,11 @@ local config = {
         chunk_size = 1024,
         tmpdir = '/tmp/Tilua-multipart-tmp/'
     },
+    data_cache_type = 'redis',
+    data_cache_prefix = 'Tilua:',
     redis_pool_timeout = 60, --连接池配置 闲置时间 单位s
     redis_pool_size = 100, --连接池大小
+
     redis_host = '172.17.0.2',
     redis_port = 6379,
     redis_db_index = 0,

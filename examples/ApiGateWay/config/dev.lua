@@ -6,6 +6,8 @@ return {
         port = 6379,
         type = 'redis'
     },
+    route = {
+    },
     db_type = 'mysql', -- 数据库类型
     db_host = '10.211.55.6', -- 服务器地址
     db_name = 'test', -- 数据库名

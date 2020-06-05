@@ -6,26 +6,27 @@
 local require = require
 local lw_utils = require('Tilua.util')
 local bind1 = require("pl.utils").bind1
-local rawget, type, setmetatable, string_lower = rawget, type, setmetatable, string.lower
+local deepcopy = require("pl.tablex").deepcopy
+local rawget, type, setmetatable, string_lower, string_sub = rawget, type, setmetatable, string.lower, string.sub
 ---@db_manager
 local manager = {}
 
 function manager:instance(config)
     config = manager.parse_config(self, config)
-    assert(config,"db config is not valid")
+    assert(config, "db config is not valid")
     local hash = lw_utils.get_hash(config)
     if not self.instances[hash] then
         local driver_type = string_lower(config.type)
         assert(driver_type == 'mysql', 'not support db driver' .. driver_type)
         self.logger:debug("start init db driver named ", driver_type, " with config ", lw_utils.json_encode(config))
         local db_driver = require("Tilua.db.driver." .. driver_type)
-        self.instances[hash] = db_driver(config)
+        self.instances[hash] = db_driver(config, self.ctx, self.logger)
     end
     return self.instances[hash]
 end
 
 function manager:parse_config(config)
-    local app_config = self.ctx.config
+    local app_config = self.ctx
     local tconfig = type(config)
     if tconfig == 'string' and config ~= '' then
         local dsn = lw_utils.parse_url(config)
@@ -36,7 +37,7 @@ function manager:parse_config(config)
                 password = dsn.pass,
                 hostname = dsn.host,
                 hostport = dsn.port,
-                database = string.sub(dsn.path,2),
+                database = string_sub(dsn.path, 2),
                 charset = dsn.fragment,
                 debug = dsn.params.debug or false
             }
@@ -45,7 +46,7 @@ function manager:parse_config(config)
         local _tconfig = type(_config)
         if _config then
             if _tconfig == 'table' then
-                return _config
+                return deepcopy(_config)
             elseif _tconfig == 'string' then
                 return manager.parse_config(self, _config)
             elseif _tconfig == 'function' then
@@ -59,7 +60,7 @@ function manager:parse_config(config)
     elseif tconfig == 'function' then
         return config(self)
     elseif tconfig == 'nil' or (tconfig == 'string' and #config == 0) then
-        local db_config = self.ctx.config
+        local db_config = self.ctx
         return {
             type = db_config.db_type,
             username = db_config.db_user,
@@ -68,10 +69,6 @@ function manager:parse_config(config)
             hostport = db_config.db_port,
             database = db_config.db_name,
             charset = db_config.db_charset,
-            --deploy = app:C('db_deploy_type'),
-            --rw_separate = app:C('db_rw_separate'),
-            --master_num = app:C('db_master_num'),
-            --slave_no = app:C('db_slave_no'),
             debug = db_config.db_debug
         }
     end
@@ -85,7 +82,7 @@ end
 
 function manager.new(ctx)
     return setmetatable({
-        ctx = ctx,
+        ctx = ctx.ctx,
         logger = ctx.logger,
         instances = {}
     }, {

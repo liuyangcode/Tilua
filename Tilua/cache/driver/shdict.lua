@@ -1,5 +1,3 @@
-
-
 local shdict = require "Tilua.cache".derive()
 local ngx_shared = ngx.shared
 local json = require("cjson.safe")
@@ -9,9 +7,8 @@ local commands = {
                  "capacity", "free_space"
 }
 
-function shdict:_init(config, ctx)
-    self:super(ctx)
-    self.config = config
+function shdict:_init(...)
+    self:super(...)
     self.dict = ngx_shared[self.config.dict]
 end
 

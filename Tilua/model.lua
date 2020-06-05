@@ -106,7 +106,7 @@ end
 function model:_facade(data)
     local fields
     if self.fields then
-        if not self.options.field then
+        if self.options.field then
             fields = self.options.field
             self.options.field = nil
             if 'string' == type(fields) then
@@ -763,10 +763,10 @@ end
 function model:getDbFields()
     local tableName
     if self.options.table then
-        if type(options.table) == 'table' then
-            local table = tablex.keys(options.table)[1]
+        if type(self.options.table) == 'table' then
+            local table = tablex.keys(self.options.table)[1]
         else
-            tableName = options.table
+            tableName = self.options.table
             if string.find(table, '/') then
                 return false
             end
@@ -809,40 +809,6 @@ function model:table(tableName)
     end
     return self
 end
-
----USING支持 用于多表删除
----@param using any
-function model:using(using)
-    local prefix = self.tablePrefix
-    if type(using) == 'table' then
-        options.using = using
-    elseif using then
-        --todo $using = preg_replace_callback("/__([A-Z0-9_-]+)__/sU", function ($match) use ($prefix) {return $prefix . strtolower($match[1]);}, $using);
-        self.options.using = using
-    end
-    return self
-end
-
----查询SQL组装 join
----@param join any
----@param joinType string
-function model:join(join, joinType)
-    joinType = joinType or 'INNER'
-    local prefix = self.tablePrefix
-    if type(join) then
-        --todo
-    else
-    end
-    return self
-end
-
----查询SQL组装 union
----@param union any
----@param all boolean
-function model:union(union, all)
-    --TODO
-end
-
 ---查询缓存
 ---@param key any
 ---@param expire number
@@ -949,23 +915,6 @@ function model:fetchSql(fetch)
     return self
 end
 
----参数绑定
----@param key string 参数名
----@return model
-function model:bind(key, ...)
-    if type(key) == 'table' then
-        self.options.bind = key
-    else
-        local params = { ... }
-        if #params > 1 then
-            self.options.bind[key] = params
-        else
-            self.options.bind[key] = value
-        end
-    end
-    return self
-end
-
 ---设置模型的属性值
 ---@param name string 名称
 ---@param value any 值
@@ -976,6 +925,7 @@ function model:setProperty(name, value)
     end
     return self
 end
+
 function model:buildSql()
     return '( ' .. self:fetchSql(true):select() .. ' )'
 end

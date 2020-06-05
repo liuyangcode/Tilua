@@ -4,6 +4,7 @@ local table_concat = table.concat
 local stringx = require('pl.stringx')
 local split = stringx.split
 local lw_utils = require('Tilua.util')
+local bind1 = require("pl.utils").bind1
 local deepcopy = require('pl.tablex').deepcopy
 local model_manager = require("Tilua.model.manager")
 local db_manager = require("Tilua.db.manager")
@@ -68,22 +69,36 @@ function app:get_html_cache_interceptor()
 end
 
 ---@return cache
-function app:get_cache()
-    self.cache = cache_manager.new(self)
-    return self.cache
-end
-function app:get_db()
-    self.db = db_manager.new(self)
-    return self.db
-end
-function app:get_model()
-    self.model = model_manager.new(self)
-    return self.model
+function app.get_cache(ctx)
+    ctx.cache = cache_manager.new(ctx.config, ctx.logger)
+    if ctx.on_app_handled then
+        ctx:on_app_handled(bind1(ctx.cache.close, ctx.cache))
+    end
+    return ctx.cache
 end
 
-function app:get_logger()
-    self.logger = logger_class.new(self.config.log)
-    return self.logger
+function app.get_db(ctx)
+    ctx.db = db_manager.new({
+        ctx = ctx.config,
+        logger = ctx.logger
+    })
+    if ctx.on_app_handled then
+        ctx:on_app_handled(bind1(ctx.db.close, ctx.db))
+    end
+    return ctx.db
+end
+
+function app.get_model(ctx)
+    ctx.model = model_manager.new(ctx)
+    return ctx.model
+end
+
+function app.get_logger(ctx)
+    ctx.logger = logger_class.new(ctx.config.log)
+    if ctx.on_request_end then
+        ctx:on_request_end(bind1(ctx.logger.flush, ctx.logger))
+    end
+    return ctx.logger
 end
 
 function app:get_view()
@@ -115,17 +130,56 @@ function app.init(app_instance)
         init_application(app_instance)
     end
 end
+
 function app:get_config()
     return configs[self.name]
 end
+
+function app:on_request_end(callback)
+    if not self.request_end_callbacks then
+        self.request_end_callbacks = {}
+    end
+    table.insert(self.request_end_callbacks, callback)
+    return self
+end
+
 function app.request_end(inst)
     local ctx = ngx.ctx.ctx
-    ctx.logger:flush()
+    if ctx.on_app_end then
+        ctx:on_app_end(ctx)
+    end
+    if ctx then
+        lw_utils.foreach(ctx.request_end_callbacks, function(callback)
+            callback()
+        end)
+    end
 end
+--output filters may be called multiple times for a single request
 function app.body_filter()
+    local ngx = ngx
+    local ctx = ngx.ctx.ctx
+    if ctx.on_body_filter then
+        ctx:on_body_filter(ngx.arg[1])
+    end
+    ctx.logger:debug(ctx.name," App body filter phase ")
 end
+
 function app.header_filter()
+    local ctx = ngx.ctx.ctx
+    if ctx.on_header_filter then
+        ctx:on_header_filter()
+    end
+    ctx.logger:debug(ctx.name," App header filter phase ")
 end
+
+function app:on_app_handled(func)
+    if not self.after_app_handled_callbacks then
+        self.after_app_handled_callbacks = {}
+    end
+    table.insert(self.after_app_handled_callbacks, func)
+    return self
+end
+
 function app.init_worker(app_instance)
     --init_worker
 end
@@ -156,7 +210,7 @@ function app.startup(app_instance)
     app.route.init_rule_caches(app_config.route)
     configs[appname] = app_config
     if app_instance.on_startup then
-        app_instance.on_startup()
+        app_instance.on_startup(app_config)
     end
 end
 
@@ -187,8 +241,11 @@ end
 
 function app.run()
     local ctx = ngx.ctx.ctx
+    assert(ctx, 'no application context found')
     ctx:dispatch(ctx.route.run(ctx))()
-    ctx.db:close()
+    lw_utils.foreach(ctx.after_app_handled_callbacks, function(callback)
+        callback()
+    end)
     if (ctx.debug) then
         xpcall(function(app)
             app.response:send()

@@ -47,15 +47,10 @@ local function is_redis_null(res)
     return false
 end
 
-function redis:_init(config, ctx)
-    self:super(ctx)
-    self.config = {
-        timeout = config.timeout and ctx.config.redis_timeout * 1000 or 1000,
-        db_index = config.db_index or ctx.config.redis_db_index or 0,
-        host = config.host or ctx.config.redis_host or '127.0.0.1',
-        port = config.port or ctx.config.redis_port or 6379
-    }
+function redis:_init(...)
+    self:super(...)
     self._reqs = ''
+    self.connected = false
     self._redisc = false
     self.handler = {}
 end
@@ -71,12 +66,29 @@ function redis:get_redis()
 end
 
 function redis:connect_mod()
+    if self.connected then
+        return
+    end
     self:get_redis():set_timeout(self.config.timeout)
-    return self:get_redis():connect(self.config.host, self.config.port)
+    local ok, err = self:get_redis():connect(self.config.host, self.config.port)
+    self.logger:debug('cache redis ', self.config.host, ' connection has been used ', self:get_redis():get_reused_times()," times ")
+    assert(ok, 'redis ', self.config.host, ' connect failed ', (err or ''))
+    self.connected = true
 end
---加入连接池
-function redis:set_keepalive_mod()
-    return self:get_redis():set_keepalive(self.ctx.config.redis_pool_timeout * 1000, self.ctx.config.redis_pool_size)
+
+function redis:close()
+    if self:get_redis() then
+        if self.config.pool_size > 0 then
+            local ok, err = self:get_redis():set_keepalive(self.config.pool_timeout, self.config.pool_size)
+            if not ok then
+                self.logger:err("failed to put redis connection in pool because ", err)
+            else
+                self.logger:debug('success to put redis connection in pool ')
+            end
+        else
+            self:get_redis():close()
+        end
+    end
 end
 
 function redis:init_pipeline()
@@ -92,8 +104,7 @@ function redis:commit_pipeline()
         self._reqs = nil
     end
 
-    local ok, err = self:connect_mod()
-    assert(ok, 'redis ' .. self.config.host .. ' connect failed ' .. (err or ''))
+    self:connect_mod()
 
     self:init_pipeline()
     for _, vals in ipairs(reqs) do
@@ -111,8 +122,6 @@ function redis:commit_pipeline()
         results = {}
         ngx.log(ngx.WARN, "is null")
     end
-
-    self:set_keepalive_mod()
 
     for i, value in ipairs(results) do
         if is_redis_null(value) then
@@ -157,12 +166,7 @@ function redis:do_command(cmd, ...)
         table.insert(self._reqs, { cmd, ... })
         return
     end
-    local ok, err = self:connect_mod()
-    if not ok then
-        self.ctx.logger:error("redis connect failed ", err, " with config ", lw_util.json_encode(self.config))
-        error(table.concat({ "redis connect failed ", err, " with config ", lw_util.json_encode(self.config) }), 2)
-    end
-
+    self:connect_mod()
     local fun = self:get_redis()[cmd]
     local result, err = fun(self:get_redis(), ...)
     if not result or err then
@@ -172,7 +176,6 @@ function redis:do_command(cmd, ...)
     if is_redis_null(result) then
         result = nil
     end
-    self:set_keepalive_mod()
     return result, err
 end
 

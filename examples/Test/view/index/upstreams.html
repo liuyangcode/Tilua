@@ -12,16 +12,7 @@
     </style>
 </head>
 <body>
-
-<div class="demoTable">
-    搜索ID：
-    <div class="layui-inline">
-        <input class="layui-input" name="id" id="demoReload" autocomplete="off">
-    </div>
-    <button class="layui-btn" data-type="reload">搜索</button>
-</div>
-<table class="layui-hide test-table" id="test" lay-filter="test">
-</table>
+<table class="layui-hide test-table" id="test" lay-filter="test"></table>
 <!-- 注意：如果你直接复制所有代码到本地，上述js路径需要改成你本地的 -->
 <script type="text/html" id="toolbarDemo">
     <div class="layui-btn-container">
@@ -42,22 +33,24 @@
         var form = layui.form;
         table.render({
             elem: '#test'
-            , url: '/targets'
+            , url: '/upstreams'
             , toolbar: '#toolbarDemo' //开启头部工具栏，并为其绑定左侧模板
             , height: 'full-30'
             , cols: [[
                 {fixed: 'left', type: 'radio'},
                 {fixed: 'left', field: 'id', width: 80, title: 'ID'}
-                , {field: 'host', width: 250, title: '主机'}
-                , {field: 'port', title: '端口', width: 70}
-                , {field: 'weight', width: 80, title: '权重'}
-                , {field: 'upstreamid', width: 120, title: '负载编号'}
-
+                , {field: 'name', width: 130, title: '负载主机'}
+                , {field: 'algorithm', width: 120, title: '负载算法'}
+                , {field: 'hash_on', title: '哈希数据类型', width: 120}
+                , {field: 'hash_on_header', width: 180, title: '请求头哈希键名'}
+                , {field: 'hash_on_cookie', width: 180, title: 'Cookie哈希键名'}
+                , {field: 'hash_fallback', width: 150, title: '备选哈希数据类型'}
+                , {field: 'hash_fallback_header', width: 150, title: '备选请求头哈希键名'}
+                , {field: 'host_header', width: 150, title: '代理请求头Host'}
                 , {field: 'created_at', width: 180, title: '创建时间'}
                 , {field: 'updated_at', width: 180, title: '更新时间'}
                 , {fixed: 'right', width: 130, align: 'center', toolbar: '#barDemo'}
             ]]
-            ,id: 'testReload'
             , page: true
         });
         table.on('tool(test)', function (obj) {
@@ -72,7 +65,7 @@
                         type: "delete",
                         //请求的媒体类型
                         //请求地址
-                        url: "/targets/" + obj.data.id,
+                        url: "/upstreams/" + obj.data.id,
                         //数据，json字符串
                         //请求成功
                         success: function (result) {
@@ -93,9 +86,9 @@
             } else if (obj.event === 'edit') {
                 layer.open({
                     type: 2,
-                    title: "编辑服务",
-                    area: ["540px", '330px'],
-                    content: '/targets/' + data.id + '/edit'
+                    title: "编辑负载",
+                    area: ["540px", '580px'],
+                    content: '/upstreams/'+data.id+'/edit'
                 });
             }
         });
@@ -106,32 +99,12 @@
                 case 'addService':
                     layer.open({
                         type: 2,
-                        title: "新增服务",
-                        area: ["540px", '330px'],
-                        content: '/targets/new'
+                        title: "新增负载",
+                        area: ["540px", '580px'],
+                        content: '/upstreams/new'
                     });
                     break;
             }
-        });
-
-
-        var $ = layui.$, active = {
-            reload: function () {
-                var demoReload = $('#demoReload');
-                //执行重载
-                table.reload('testReload', {
-                    page: {
-                        curr: 1 //重新从第 1 页开始
-                    }
-                    , where: {
-                            id: demoReload.val()
-                    }
-                }, 'data');
-            }
-        };
-        $('.demoTable button').on('click', function () {
-            var type = $(this).data('type');
-            active[type] ? active[type].call(this) : '';
         });
     });
 </script>

@@ -5,48 +5,75 @@
 ---
 local lw_util = require('Tilua.util')
 local bind1 = require("pl.utils").bind1
-local rawget,type,setmetatable = rawget,type,setmetatable
+local rawget, type, setmetatable = rawget, type, setmetatable
 
 local manager = {}
 
+function manager:get_cache_config(cache_type)
+    if cache_type == 'redis' then
+        return {
+            config = {
+                timeout = self.ctx.redis_timeout * 1000 or 1000,
+                db_index = self.ctx.redis_db_index or 0,
+                host = self.ctx.redis_host or '127.0.0.1',
+                port = self.ctx.redis_port or 6379,
+                pool_timeout = self.ctx.redis_pool_timeout * 1000,
+                pool_size = self.ctx.redis_pool_size
+            },
+            driver = "Tilua.cache.driver.redis"
+        }
+    elseif self.ctx[cache_type] then
+        return self.ctx[cache_type]
+    end
+end
+
+function manager:close()
+    self.logger:debug('cache instances start to release ')
+    lw_util.foreach(self.instances, function(inst)
+        inst:close()
+    end)
+end
+
 function manager:instance(name)
-    if type(name) == 'string' then
-        name = { type = name }
+    local config = {}
+    local tconfig = type(name)
+    if tconfig == 'string' then
+        config = manager.get_cache_config(self, name)
     end
 
-    local hash = lw_util.get_hash(name)
+    local hash = lw_util.get_hash(config.config)
     if self.instances[hash] then
         return self.instances[hash]
     end
-
-    local ok, driver = pcall(require, "Tilua.cache.driver." .. name.type)
-    assert(ok, 'unsupported cache type ' .. name.type)
-    self.instances[hash] = driver(name, self.ctx)
+    local driver = lw_util.import(config.driver)
+    assert(driver, 'unsupported cache type ' .. config.driver)
+    self.instances[hash] = driver(config.config, self.ctx, self.logger)
     return self.instances[hash]
 end
 
 ---get
 ---@param key string
 function manager:get(key)
-    return manager.instance(self, self.ctx.config.data_cache_type):get(self.ctx.config.data_cache_prefix .. key)
+    return manager.instance(self, self.ctx.data_cache_type):get(self.ctx.data_cache_prefix .. key)
 end
 ---set
 ---@param name string
 ---@param value any
 ---@param expire number
 function manager:set(name, value, expire)
-    return manager.instance(self, self.ctx.config.data_cache_type):set(self.ctx.config.data_cache_prefix .. name, value, expire)
+    return manager.instance(self, self.ctx.data_cache_type):set(self.ctx.data_cache_prefix .. name, value, expire)
 end
 
 ---del
 ---@param name string
 function manager:del(name)
-    return manager.instance(self, self.ctx.config.data_cache_type):del(self.ctx.config.data_cache_prefix .. name)
+    return manager.instance(self, self.ctx.data_cache_type):del(self.ctx.data_cache_prefix .. name)
 end
 
-function manager.new(ctx)
+function manager.new(context, logger)
     return setmetatable({
-        ctx = ctx,
+        ctx = context,
+        logger = logger,
         instances = {}
     }, {
         __index = function(this, name)

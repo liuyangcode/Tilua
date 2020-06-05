@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
+    <title>挡板服务器</title>
+    <link href="/static/layui/css/layui.css" rel="stylesheet">
+    <script src="/static/js/jquery.min.js" charset="utf-8"></script>
+    <style type="text/css">
+        .layui-form-label {
+            width: 80px;
+        }
+    </style>
+</head>
+<body style="width: 500px;padding: 10px;">
+<div id="add_form">
+    <form class="layui-form">
+        <input type="hidden" name="id" value="{{id}}">
+        <div class="layui-form-item">
+            <label class="layui-form-label">主机</label>
+            <div class="layui-input-block">
+                <input type="text" name="host" required lay-verify="required" placeholder="请输入主机" autocomplete="off"
+                       class="layui-input" value="{{host}}">
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">端口</label>
+            <div class="layui-input-block">
+                <input type="text" name="port" required lay-verify="required" placeholder="请输入服务端口号" autocomplete="off"
+                       class="layui-input" value="{{port}}">
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">权重</label>
+            <div class="layui-input-block">
+                <input type="text" name="weight" required lay-verify="required" placeholder="请输入权重" autocomplete="off"
+                       class="layui-input" value="{{weight}}">
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">负载ID</label>
+            <div class="layui-input-block">
+                <input type="text" name="upstreamid" required lay-verify="required" placeholder="请输入权重" autocomplete="off"
+                       class="layui-input" value="{{upstreamid}}">
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <div class="layui-input-block">
+                <button class="layui-btn" lay-submit lay-filter="formDemo">立即提交</button>
+                <button type="reset" class="layui-btn layui-btn-primary">重置</button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script charset="utf-8" src="/static/layui/layui.js"></script>
+<script>
+    layui.use(['form'], function () {
+        var form = layui.form;
+        //监听提交
+        form.on('submit(formDemo)', function (data) {
+            $.ajax({
+                //请求方式
+                type: "PUT",
+                //请求地址
+                url: "/targets/"+data.field.id,
+                data: JSON.stringify(data.field),
+                contentType: "application/json;charset=UTF-8",
+                //请求成功
+                success: function (result) {
+                    if (result.code == 0) {
+                        if (parent) {
+                            var index = parent.layer.getFrameIndex(window.name); //先得到当前iframe层的索引
+                            parent.layer.close(index); //再执行关闭
+                            parent.layui.table.reload('test')
+                        }
+                    } else {
+                        layer.alert(JSON.stringify(result));
+                    }
+                },
+                //请求失败，包含具体的错误信息
+                error: function (e) {
+                    console.log(e.status);
+                    console.log(e.responseText);
+                }
+            });
+            return false;
+        });
+    });
+</script>
+</body>
+</html>

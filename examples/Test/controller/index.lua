@@ -20,7 +20,9 @@ end
 function index:targets(ctx)
     self:display()
 end
-
+function index:upstreams(ctx)
+    self:display()
+end
 function index:login()
     self:display()
 end
