@@ -71,8 +71,8 @@ function redis:connect_mod()
     end
     self:get_redis():set_timeout(self.config.timeout)
     local ok, err = self:get_redis():connect(self.config.host, self.config.port)
+    assert(ok, 'redis '..self.config.host..' connect failed err:'..(err or ''))
     self.logger:debug('cache redis ', self.config.host, ' connection has been used ', self:get_redis():get_reused_times()," times ")
-    assert(ok, 'redis ', self.config.host, ' connect failed ', (err or ''))
     self.connected = true
 end
 

@@ -16,66 +16,100 @@
 <div id="add_form">
     <form class="layui-form">
         <input type="hidden" name="id" value="{{id}}">
+
         <div class="layui-form-item">
-            <label class="layui-form-label">服务名称</label>
+            <label class="layui-form-label">匹配协议</label>
             <div class="layui-input-block">
-                <input type="text" name="name" required lay-verify="required" placeholder="请输入服务名称" autocomplete="off"
-                       class="layui-input" value="{{name}}">
+                <input type="checkbox" name="protocols" lay-skin="primary" value="HTTP" title="HTTP" {% if string.find(protocols,'HTTP') then %} checked {% end  %}/>
+                <input type="checkbox" name="protocols" lay-skin="primary" value="HTTPS" title="HTTPS" {% if string.find(protocols,'HTTPS') then %} checked {% end  %}>
+            </div>
+        </div>
+        <div class="layui-form-item" pane="">
+            <label class="layui-form-label">匹配请求方法</label>
+            <div class="layui-input-block">
+                <input type="checkbox" name="methods" lay-skin="primary" title="GET" value="GET"  {% if string.find(methods,'GET') then %} checked {% end  %}>
+                <input type="checkbox" name="methods" lay-skin="primary" title="POST" value="POST"{% if string.find(methods,'GET') then %} checked {% end  %}>
+                <input type="checkbox" name="methods" lay-skin="primary" title="PUT" value="PUT"{% if string.find(methods,'PUT') then %} checked {% end  %}>
+                <input type="checkbox" name="methods" lay-skin="primary" title="DELETE" value="DELETE"{% if string.find(methods,'DELETE') then %} checked {% end  %}>
+                <input type="checkbox" name="methods" lay-skin="primary" title="HEAD" value="HEAD"{% if string.find(methods,'HEAD') then %} checked {% end  %}>
             </div>
         </div>
         <div class="layui-form-item">
-            <label class="layui-form-label">协议</label>
+            <label class="layui-form-label">匹配主机</label>
             <div class="layui-input-block">
-                <select name="protocol" lay-verify="required">
-                    <option value=""></option>
-                    <option value="http" {% if protocol=='http' then %} selected{% end %}>http</option>
-                    <option value="https"{% if protocol=='https' then %} selected{% end %}>https</option>
+                <div class="layui-input-inline" style="width: 300px">
+                    {% for _, host in ipairs(hosts) do %}
+                    <input type="text" name="hosts" placeholder="请输入主机"
+                           autocomplete="off" value="{{host}}"
+                           class="layui-input" style='margin-top: 10px'/>
+                    {% end  %}
+                </div>
+                <div class="layui-form-mid layui-word-aux">
+                    <button type="button" class="layui-btn layui-btn-sm" onclick="addPath(this,'hosts')"><i
+                            class="layui-icon layui-icon-addition"></i></button>
+                    <button type="button" class="layui-btn layui-btn-sm" onclick="removePath(this)"><i
+                            class="layui-icon layui-icon-subtraction"></i></button>
+                </div>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">匹配路径</label>
+            <div class="layui-input-block">
+                <div class="layui-input-inline" id="paths" style="width: 300px">
+                    {% for _, path in ipairs(paths) do %}
+                    <input type="text" name="paths" placeholder="请输入路径" value="{{path}}" autocomplete="off" class="layui-input"  style='margin-top: 10px'>
+                    {% end  %}
+                </div>
+                <div class="layui-form-mid layui-word-aux">
+                    <button type="button" class="layui-btn layui-btn-sm" onclick="addPath(this,'paths')"><i
+                            class="layui-icon layui-icon-addition"></i></button>
+                    <button type="button" class="layui-btn layui-btn-sm" onclick="removePath(this)"><i
+                            class="layui-icon layui-icon-subtraction"></i></button>
+                </div>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">匹配请求头</label>
+            <div class="layui-input-block">
+                <textarea placeholder="例如，accessToken:teestss,多个请求头用逗号分隔" class="layui-textarea"
+                          name="headers">{{headers}}</textarea>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">是否保留请求主机</label>
+            <div class="layui-input-block">
+                <input type="checkbox" name="preserve_host" lay-skin="switch" lay-filter="switchTest" title="开关" {% if preserve_host==1 then  %}checked{% end %}>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">是否保留匹配前缀</label>
+            <div class="layui-input-block">
+                <input type="checkbox" name="strip_path" lay-skin="switch" lay-filter="switchTest" title="开关"  {% if strip_path==1 then  %}checked{% end %}>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">请求处理类型</label>
+            <div class="layui-input-block">
+                <select name="proxy_type" lay-verify="required">
+                    <option value="proxy" {% if proxy_type=='proxy' then  %}selected{% end %}>代理</option>
+                    <option value="baffle"{% if proxy_type=='baffle' then  %}selected{% end %}>挡板</option>
                 </select>
             </div>
         </div>
         <div class="layui-form-item">
-            <label class="layui-form-label">服务端口</label>
+            <label class="layui-form-label">资源id</label>
             <div class="layui-input-block">
-                <input type="text" name="port" required lay-verify="required" placeholder="请输入服务端口号" autocomplete="off"
-                       class="layui-input" value="{{port}}">
+                <input type="text" name="serviceid" placeholder="请输入关联服务ID" autocomplete="off" value="{{serviceid}}"
+                       class="layui-input">
             </div>
         </div>
-        <div class="layui-form-item">
-            <label class="layui-form-label">主机</label>
+        <div class="layui-form-item" pane="">
+            <label class="layui-form-label">路径处理方式</label>
             <div class="layui-input-block">
-                <input type="text" name="host" required lay-verify="required" placeholder="请输入主机" autocomplete="off"
-                       class="layui-input" value="{{host}}">
-            </div>
-        </div>
-        <div class="layui-form-item">
-            <label class="layui-form-label">路径</label>
-            <div class="layui-input-block">
-                <input type="text" name="path" required lay-verify="required" placeholder="请输入路径" autocomplete="off"
-                       class="layui-input" value="{{path}}">
-            </div>
-        </div>
-        <div class="layui-form-item">
-            <label class="layui-form-label">连接超时时间</label>
-            <div class="layui-input-block">
-                <input type="text" name="connect_timeout" required lay-verify="required" placeholder="单位ms"
-                       autocomplete="off"
-                       class="layui-input" value="{{read_timeout}}">
-            </div>
-        </div>
-        <div class="layui-form-item">
-            <label class="layui-form-label">读超时时间</label>
-            <div class="layui-input-block">
-                <input type="text" name="read_timeout" required lay-verify="required" placeholder="单位ms"
-                       autocomplete="off"
-                       class="layui-input" value="{{read_timeout}}">
-            </div>
-        </div>
-        <div class="layui-form-item">
-            <label class="layui-form-label">写超时时间</label>
-            <div class="layui-input-block">
-                <input type="text" name="write_timeout" required lay-verify="required" placeholder="单位ms"
-                       autocomplete="off"
-                       class="layui-input" value="{{write_timeout}}">
+                <select name="path_handle">
+                    <option value="v0"{% if path_handle=='v0' then  %}selected{% end %}>追加</option>
+                    <option value="v1"{% if path_handle=='v1' then  %}selected{% end %}>连接</option>
+                </select>
             </div>
         </div>
         <div class="layui-form-item">
@@ -89,6 +123,12 @@
 
 <script charset="utf-8" src="/static/layui/layui.js"></script>
 <script>
+    function removePath(item) {
+        $(item).parent().prev().children().last().remove();
+    }
+    function addPath(item, field, value) {
+        $(item).parent().prev().append("<input type=\"text\" value='" + (value || "") + "' name=\"" + field + "\"  autocomplete=\"off\" class=\"layui-input\" style='margin-top: 10px'>\n");
+    }
     layui.use(['form'], function () {
         var form = layui.form;
         //监听提交
@@ -97,9 +137,8 @@
                 //请求方式
                 type: "PUT",
                 //请求地址
-                url: "/posts/"+data.field.id,
-                data: JSON.stringify(data.field),
-                contentType: "application/json;charset=UTF-8",
+                url: "/routes/"+data.field.id,
+                data: $('form').serialize(),
                 //请求成功
                 success: function (result) {
                     if (result.code == 0) {

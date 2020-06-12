@@ -8,13 +8,15 @@ local string = string
 local table = table
 local table_concat = table.concat
 local json = require("cjson.safe")
+local split = require("pl.utils").split
+local assert_arg = require("pl.utils").assert_arg
 local string_format = string.format
 local string_sub = string.sub
 local table_insert = table.insert
 local math_random = math.random
 ---@class util
 local util = {
-
+    split = split
 }
 
 ---choose
@@ -26,6 +28,47 @@ function util.choose(condition, value_true, value_false)
         return value_true
     end
     return value_false
+end
+
+---parse_expression like token:qwerereqrqwrq,12123,123123;another-header:test
+---@param exp string
+---@param exp_sep string optional value default is ";"
+---@param key_value_sep string optional value default is ":"
+---@param value_sep string optional,default is ","
+function util.parse_expression(exp, exp_sep, key_value_sep, value_sep)
+    local values = {}
+    exp = exp or ""
+    exp_sep = exp_sep or ";"
+    key_value_sep = key_value_sep or ":"
+    value_sep = value_sep or ","
+    exp = split(exp, exp_sep, true)
+    for i = 1, #exp do
+        if exp[i] ~= '' then
+            local name, item_values = table.unpack(split(exp[i], key_value_sep, true))
+            if item_values then
+                item_values = split(item_values or "", value_sep, true)
+                values[name] = #item_values > 1 and item_values or item_values[1]
+            else
+                values[name] = ''
+            end
+        end
+    end
+    return values
+end
+
+---index table value by dot index like 'a.b.c'
+---@param res table
+---@param index string
+function util.index_value(res,index)
+    assert_arg(1,res,'table')
+    local properties = split(index, '.',true)
+    for i = 1, #properties do
+        if not res[properties[i]] then
+            return nil
+        end
+        res = res[properties[i]]
+    end
+    return res
 end
 
 function util.json_encode(data)
@@ -66,7 +109,8 @@ end
 ---@param dest table
 ---@param src table
 function util.extend(dest, src)
-    assert(util.is_array(src) and util.is_array(dest), 'util.extend second parametes must be table')
+    assert_arg(1,dest,'table')
+    assert_arg(1,src,'table')
     for k, v in pairs(src) do
         if util.is_array(v) and util.is_array(dest[k]) then
             tablex.update(dest[k], v)
@@ -149,7 +193,6 @@ end
 function util.is_scalar(val)
     return util.is_boolean(val) or util.is_string(val) or util.is_number(val)
 end
-
 ---in_array
 ---@param array table
 ---@param val any

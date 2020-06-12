@@ -20,6 +20,12 @@ end
 function index:targets(ctx)
     self:display()
 end
+function index:baffle(ctx)
+    self:display()
+end
+function index:midwares(ctx)
+    self:display()
+end
 function index:upstreams(ctx)
     self:display()
 end

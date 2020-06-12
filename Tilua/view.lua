@@ -72,7 +72,9 @@ function view:get_template_cache_path()
 end
 
 function view:render(view,context)
-    if (getmtime(self:get_template_cache_file_path(view)) or 0) < getmtime(self:get_template_path() .. view) then
+    local view_mtime = getmtime(self:get_template_path() .. view)
+    assert(view_mtime,"[view.render] Template file named "..self:get_template_path() .. view.." not exists!")
+    if (getmtime(self:get_template_cache_file_path(view)) or 0) < view_mtime then
         self.app.logger:error("template cache expired need update")
         self:precompile(view)
     end

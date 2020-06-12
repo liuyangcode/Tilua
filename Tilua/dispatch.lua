@@ -24,7 +24,7 @@ function dispatch:make_chain_call(midware, handler, ...)
     local args = { ... } --参数绑定
     local next = function
     ()
-        local response = handler(self:prepare_ctx_args_for_responser(args))
+        local response, context = handler(self:prepare_ctx_args_for_responser(args))
         if not self.ctx.response.body then
             -- response does not have body to send
             local tresponse = type(response)
@@ -38,7 +38,9 @@ function dispatch:make_chain_call(midware, handler, ...)
                 end
             elseif tresponse == 'string' then
                 ---return view like 'index/index.html' without context
-                self.ctx.response:render(response, {})
+                self.ctx.response:render(response, context or {})
+            elseif tresponse == 'number' then
+                self.ctx.response.status = response
             end
         end
         return self.ctx.response
@@ -70,7 +72,7 @@ function dispatch:run(router)
         return self:make_chain_call(midware, hanlder, table.unpack(params or {}))
     end
     return self:make_chain_call({}, function(...)
-        return 'no matches route for path ' .. router
+        return 404
     end)
 end
 

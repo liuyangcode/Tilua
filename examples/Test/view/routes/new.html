@@ -10,9 +10,11 @@
         .layui-form-label {
             width: 120px;
         }
-        .layui-input-inline{
+
+        .layui-input-inline {
             width: 300px;
         }
+
         .layui-input-block {
             margin-left: 150px;
         }
@@ -47,22 +49,29 @@
                            autocomplete="off"
                            class="layui-input"/>
                 </div>
-                <div class="layui-form-mid layui-word-aux" ><button type="button" class="layui-btn layui-btn-sm"  onclick="addPath(this,'hosts')" ><i class="layui-icon layui-icon-addition"></i> </button></div>
+                <div class="layui-form-mid layui-word-aux">
+                    <button type="button" class="layui-btn layui-btn-sm" onclick="addPath(this,'hosts')"><i
+                            class="layui-icon layui-icon-addition"></i></button>
+                </div>
             </div>
         </div>
         <div class="layui-form-item">
             <label class="layui-form-label">匹配路径</label>
             <div class="layui-input-block">
-                <div class="layui-input-inline" id="paths"  style="width: 300px">
+                <div class="layui-input-inline" id="paths" style="width: 300px">
                     <input type="text" name="paths" placeholder="请输入路径" autocomplete="off" class="layui-input">
                 </div>
-                <div class="layui-form-mid layui-word-aux" ><button type="button" class="layui-btn layui-btn-sm" onclick="addPath(this,'paths')" ><i class="layui-icon layui-icon-addition"></i> </button></div>
+                <div class="layui-form-mid layui-word-aux">
+                    <button type="button" class="layui-btn layui-btn-sm" onclick="addPath(this,'paths')"><i
+                            class="layui-icon layui-icon-addition"></i></button>
+                </div>
             </div>
         </div>
         <div class="layui-form-item">
             <label class="layui-form-label">匹配请求头</label>
             <div class="layui-input-block">
-                <textarea placeholder="例如，accessToken:teestss,多个请求头用逗号分隔" class="layui-textarea" name="headers"></textarea>
+                <textarea placeholder="例如，accessToken:teestss,多个请求头用逗号分隔" class="layui-textarea"
+                          name="headers"></textarea>
             </div>
         </div>
         <div class="layui-form-item">
@@ -79,10 +88,35 @@
             </div>
         </div>
         <div class="layui-form-item">
-            <label class="layui-form-label">关联服务ID</label>
+            <label class="layui-form-label">请求处理类型</label>
             <div class="layui-input-block">
-                <input type="text" name="service"  placeholder="请输入关联服务ID" autocomplete="off"
+                <select name="proxy_type" lay-verify="required">
+                    <option value="proxy">代理</option>
+                    <option value="baffle">挡板</option>
+                </select>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">资源id</label>
+            <div class="layui-input-block">
+                <input type="text" name="serviceid" placeholder="请输入关联服务ID" autocomplete="off"
                        class="layui-input">
+            </div>
+        </div>
+        <div class="layui-form-item" pane="">
+            <label class="layui-form-label">路径处理方式</label>
+            <div class="layui-input-block">
+                <select name="path_handle">
+                    <option value="v0">追加</option>
+                    <option value="v1">连接</option>
+                </select>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">验证规则</label>
+            <div class="layui-input-block">
+                <textarea placeholder="例如，env:in,uat,pro多个验证规则用;分隔" class="layui-textarea"
+                          name="validations"></textarea>
             </div>
         </div>
         <div class="layui-form-item">
@@ -96,9 +130,10 @@
 
 <script charset="utf-8" src="/static/layui/layui.js"></script>
 <script>
-    function addPath(item,field){
-        $(item).parent().prev().append("<input type=\"text\" name=\""+field+"\"  autocomplete=\"off\" class=\"layui-input\" style='margin-top: 10px'>\n");
+    function addPath(item, field) {
+        $(item).parent().prev().append("<input type=\"text\" name=\"" + field + "\"  autocomplete=\"off\" class=\"layui-input\" style='margin-top: 10px'>\n");
     }
+
     layui.use(['form'], function () {
         var form = layui.form;
         //监听提交

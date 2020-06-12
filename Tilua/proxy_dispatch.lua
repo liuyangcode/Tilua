@@ -4,15 +4,140 @@
 --- DateTime: 2020/5/29 4:36 下午
 ---
 local json_encode = require("Tilua.util").json_encode
+local json_decode = require("Tilua.util").json_decode
+
+local reverseTable = require("Tilua.util").reverseTable
+local bind1 = require("pl.utils").bind1
 local proxy_dispatch = require("Tilua.dispatch").derive()
+local trim = require("pl.stringx").strip
+
+local reduce = require("pl.tablex").reduce
 function proxy_dispatch:_init(ctx)
     self:super(ctx)
 end
+
+function proxy_dispatch:prepare_ctx_args_for_responser(args)
+    return self.ctx, table.unpack(args)
+end
+---make_chain_call
+---@param midware table
+---@param handler function
+function proxy_dispatch:make_chain_call(midware, handler, ...)
+    local mid
+    local args = { ... } --参数绑定
+    local next = function
+    ()
+        local response, context = handler(self.ctx)
+        if not self.ctx.response.body then
+            -- response does not have body to send
+            local tresponse = type(response)
+            if tresponse == 'table' then
+                if #response == 2 and type(response[1]) == 'string' and type(response[2]) == 'table' then
+                    -- return view like {'index/index.html',{}}
+                    self.ctx.response:render(response[1], response[2])
+                elseif not response.new then
+                    --retun a table but not a response instance
+                    self.ctx.response.body = response
+                end
+            elseif tresponse == 'string' then
+                ---return view like 'index/index.html' without context
+                self.ctx.response.body = response
+            elseif tresponse == 'number' then
+                self.ctx.response.status = response
+            end
+        end
+        return self.ctx.response
+    end
+    --初始化响应前中间件
+    return reduce(function(res, next_midware)
+        mid = self.ctx.midware.instance(next_midware)
+        local func = bind1(mid.handle, mid)
+        return function(...)
+            return func(res)
+        end
+    end, reverseTable(midware or {}), next)
+end
 function proxy_dispatch:run(router)
-    local service, params, midware,route = table.unpack(router)
-    self.ctx.logger:debug(" proxy_dispatch:run", json_encode(service))
+    local ctx = self.ctx
+    self.ctx.logger:debug("upstream uri ", json_encode(router))
+    local model = ctx.model
+    if not router.proxy then
+        ngx.exit(404)
+        return
+    end
+    if router.proxy.type == 'baffle' then
+        self:make_chain_call(router.midware, function()
+            local baffle = model.baffle:find(router.proxy.serviceid)
+            local response = ctx.response
+            local header = json_decode(baffle.header)
+            for _, h in ipairs(header) do
+                for k, v in pairs(h) do
+                    response.headers[k] = v
+                end
+            end
+            return baffle.body
+        end)()
+        ctx.response:send()
+        return ;
+    else
+        local service = model.services:cache(not self.ctx.debug):find(router.proxy.serviceid)
+        local matched_route = router.router.route
+        local upstream_base
+        if not service then
+            ngx.exit(404)
+            return
+        end
 
+        if service.path == ngx.null then
+            upstream_base = '/'
+        else
+            upstream_base = '/' .. trim(service.path, '/')
+        end
 
+        local upstream = model.upstreams:cache(not self.ctx.debug):where({
+            name = service.host
+        })                    :find()
+        if upstream then
+            local targets = model.targets:cache(not self.ctx.debug):where({
+                upstreamid = upstream.id
+            })                   :select()
+        end
+
+        ngx.var.upstream_scheme = service.protocol
+        local striped_path = trim(router.params.args[1], '/')
+        if matched_route.strip_path == 1 then
+            if matched_route.path_handle == 'v1' then
+                ngx.var.upstream_uri = upstream_base .. striped_path
+            else
+                ngx.var.upstream_uri = upstream_base .. "/" .. striped_path
+            end
+        else
+            if matched_route.path_handle == 'v1' then
+                ngx.var.upstream_uri = upstream_base .. striped_path
+            else
+                ngx.var.upstream_uri = upstream_base .. "/" .. striped_path
+            end
+        end
+
+        self.ctx.logger:debug("upstream uri ", ngx.var.upstream_uri)
+
+        ngx.var.upstream_connection = ctx.request.header.connection or ''
+        if matched_route.preserve_host == 1 then
+            ngx.var.upstream_host = ctx.request.http_host or ctx.request.host .. ":" .. ctx.request.server_port
+        elseif upstream then
+            ngx.var.upstream_host = upstream.host_header ~= "" and upstream.host_header or "TiluaApiGateway"
+        else
+            ngx.var.upstream_host = "TiluaApiGateway"
+        end
+
+        ngx.ctx.peer = {
+            host = '32.254.48.88',
+            port = '80',
+            connect_timeout = service.connect_timeout,
+            send_timeout = service.write_timeout,
+            read_timeout = service.read_timeout
+        }
+    end
 
 end
 

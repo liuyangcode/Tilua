@@ -31,17 +31,18 @@ end
 function route.init_rule_caches(config_rules)
     lw_util.extend(route.rules[route.cur_app], config_rules)
     for location, result in pairs(route.rules[route.cur_app]) do
+        ngx.log(ngx.ERR,location)
         local method, matchers, url, validation = route.parse_rule(location)
         for _, v in ipairs(method) do
             route.rule_caches[route.cur_app][v] = route.rule_caches[route.cur_app][v] or route.get_init_route_rule()
-            route.rule_caches[route.cur_app][v][matchers][url] = { route.to_router(result, location), validation }
+            table.insert(route.rule_caches[route.cur_app][v][matchers],{ route.to_router(result, url), validation })
         end
     end
 end
 
-function route.add_route_rule(cur_app,verbs,matchers,path,router)
+function route.add_route_rule(cur_app, verbs, matchers, path, router)
     route.rule_caches[cur_app][verbs] = route.rule_caches[cur_app][verbs] or route.get_init_route_rule()
-    route.rule_caches[cur_app][verbs][matchers][path] = router
+    table.insert(route.rule_caches[cur_app][verbs][matchers],router)
 end
 
 local function add_route(verbs, path, handler, ...)
@@ -59,25 +60,30 @@ local function add_route(verbs, path, handler, ...)
         if group_midwares then
             tablex.move(midware, group_midwares, #midware + 1, 1)
         end
-        route.rules[route.cur_app][verbs .. ' ' .. path] = {
-            responser = handler,
-            midware = midware
-        }
+        if #midware > 0 then
+            route.rules[route.cur_app][verbs .. ' ' .. path] = {
+                responser = handler,
+                path = path,
+                midware = midware
+            }
+        else
+            route.rules[route.cur_app][verbs .. ' ' .. path] = handler
+        end
     else
         local responser = path
         local route_rule = verbs
         if lw_util.is_string(responser) then
-            add_route('', route_rule, responser, {})
+            add_route('', route_rule, responser)
         elseif lw_util.callable(responser) then
-            add_route('', route_rule, responser, {})
+            add_route('', route_rule, responser)
         elseif lw_util.is_array(responser) then
             lw_util.foreach(responser, function(hanlder, verb)
                 if verb == '*' then
-                    add_route('', route_rule, hanlder, {})
+                    add_route('', route_rule, hanlder)
                 else
                     verb = split(verb, ',')
                     lw_util.foreach(verb, function(v)
-                        add_route(v, route_rule, hanlder, {})
+                        add_route(v, route_rule, hanlder)
                     end)
                 end
             end)
@@ -85,7 +91,7 @@ local function add_route(verbs, path, handler, ...)
     end
 end
 
-function route.add_route(cur_app,verbs, path, handler, ...)
+function route.add_route(cur_app, verbs, path, handler, ...)
     route.cur_app = cur_app
     add_route(verbs, path, handler, ...)
 end
@@ -194,6 +200,7 @@ function route.to_router(router, path)
     elseif lw_util.callable(router) then
         standard_handler.responser = router
     end
+    standard_handler.path = path
     return standard_handler
 end
 
@@ -298,7 +305,9 @@ function route.get_routes(cur_app, flag, method)
     local rule_caches = nil
     method = string.lower(method)
     rule_caches = route.rule_caches[cur_app][method] or route.get_init_route_rule()
-    lw_util.extend(rule_caches[flag], route.rule_caches[cur_app]['*'] and route.rule_caches[cur_app]['*'][flag] or {})
+    for _, v in ipairs(route.rule_caches[cur_app]['*'] and route.rule_caches[cur_app]['*'][flag] or {}) do
+        table.insert(rule_caches[flag], v)
+    end
     return tablex.deepcopy(rule_caches[flag])
 end
 ---验证路径变量
@@ -316,6 +325,40 @@ function route.validate_path_params(params, validation)
     end)
     return result
 end
+
+---验证路由是否匹配
+---@param ctx table
+---@param validations table
+function route.validate(ctx, validations)
+    if not validations then
+        return true
+    end
+    if type(validations) == 'function' then
+        return validations(ctx)
+    end
+    local string_lower = string.lower
+    for k, validation in pairs(validations) do
+        local value = lw_util.index_value(ctx, k)
+        local tvalidation = type(validation)
+        if tvalidation ~= 'table' then
+            if value ~= validation then
+                return false
+            end
+        else
+            local exp, values = table.unpack(validation)
+
+            exp = string_lower(exp)
+            if (exp == 'in' and not tablex.find(values, value)) or (exp == 'notin' and tablex.find(values, value)) then
+                return false
+            elseif (exp == 'eq' and value ~= values) or (exp == 'neq' and value == values) then
+                return false
+            end
+        end
+    end
+    ctx.logger:debug(lw_util.json_encode(validations))
+
+    return true
+end
 ---run
 function route.run(ctx)
     local request = ctx.request
@@ -323,13 +366,12 @@ function route.run(ctx)
     ---@type log
     local log = ctx.logger
     local pathinfo = request.path_info
-    log:debug('route:start route pathinfo:' , pathinfo )
-
+    log:debug('route:start route pathinfo:', pathinfo)
     local rule_caches = route.get_routes(ctx.name, '=', request_method)
     if rule_caches then
-        for location, router in pairs(rule_caches) do
-            if location == pathinfo then
-                router, _ = unpack(router)
+        for _, router in ipairs(rule_caches) do
+            router, _ = unpack(router)
+            if router.path == pathinfo then
                 return {
                     router.responser,
                     {},
@@ -348,13 +390,13 @@ function route.run(ctx)
 
     rule_caches = route.get_routes(ctx.name, '~', request_method)
     --正则匹配
-    for location, router in pairs(rule_caches) do
-        local url, parsed_regex, params = route.parse_path_to_regex(location)
-        local path_params = {}
+    for _, router in ipairs(rule_caches) do
         local validation
+        router, validation = unpack(router)
+        local url, parsed_regex, params = route.parse_path_to_regex(router.path)
+        local path_params = {}
         local newpath, n, _ = re_sub(pathinfo, parsed_regex, function(m)
             path_params = route.bind_params_for_responser(params, m)
-            router, validation = unpack(router)
             if lw_util.callable(router.responser) then
                 return ''
             elseif lw_util.is_string(router.responser) then
@@ -362,8 +404,8 @@ function route.run(ctx)
             end
             return url
         end, 'jox')
-        if n > 0 and #location > longest_match and route.validate_path_params(path_params, validation) then
-            longest_match = #location
+        if n > 0 and #router.path > longest_match and route.validate_path_params(path_params, validation) then
+            longest_match = #router.path
             matched_params = path_params
             matched_path = lw_util.is_string(router.responser) and newpath or router.responser
             matched_midware = tablex.copy(router.midware)
@@ -381,14 +423,16 @@ function route.run(ctx)
             matched_router
         }
     end
+
     longest_match = 0
     --从路径开头匹配 最长匹配
     rule_caches = route.get_routes(ctx.name, '*', request_method)
 
-    for location, router in pairs(rule_caches) do
-        local start_pos, end_pos = string_find(pathinfo, location, 1, true)
-        router = router[1]
-        if start_pos == 1 and end_pos > longest_match then
+    for _, router in ipairs(rule_caches) do
+        local validation
+        router, validation = unpack(router)
+        local start_pos, end_pos = string_find( pathinfo,router.path, 1, true)
+        if start_pos == 1 and end_pos > longest_match and route.validate(ctx, validation) then
             longest_match = end_pos
             matched_params = route.bind_params_for_responser({}, { string_sub(pathinfo, end_pos + 1) })
             matched_path = router.responser

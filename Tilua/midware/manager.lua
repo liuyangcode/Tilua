@@ -74,16 +74,6 @@ function manager.group(name, midwares)
     end
     manager.midware_group[name] = midwares
 end
----解析配置字符串到table
-local function parse_config(config)
-    config = split(config, ',')
-    return map(function(val)
-        val = split(val, '=')
-        return {
-            [val[1]] = val[2]
-        }
-    end, config)
-end
 ---parse_midware_from_string
 ---@param midware_params string
 ---@return table
@@ -109,7 +99,7 @@ function manager.parse(midware_params)
                 else
                     midware_arr[#midware_arr + 1] = {
                         v[1],
-                        parse_config(v[2])
+                        lw_util.parse_expression(v[2],',','=')
                     }
                 end
             end

@@ -106,7 +106,7 @@ function app:get_view()
     return self.view
 end
 
-local function init_application(app_instance)
+local function init_application(app_instance, context_ref)
     local ngx = ngx
     ngx.update_time()
 
@@ -116,6 +116,8 @@ local function init_application(app_instance)
     if context.on_app_init then
         context.on_app_init(context)
     end
+    context_ref.ctx = context
+    return context
 end
 
 function app:get_request()
@@ -124,11 +126,15 @@ function app:get_request()
 end
 ---应用初始化
 function app.init(app_instance)
+    local context = {}
     if app_instance.debug then
-        xpcall(init_application, app.error_handle, app_instance)
+        xpcall(function()
+            init_application(app_instance, context)
+        end, app.error_handle)
     else
-        init_application(app_instance)
+        init_application(app_instance, context)
     end
+    return context.ctx
 end
 
 function app:get_config()
@@ -149,7 +155,7 @@ function app.request_end(inst)
         ctx:on_app_end(ctx)
     end
     if ctx then
-        lw_utils.foreach(ctx.request_end_callbacks, function(callback)
+        lw_utils.foreach(ctx.request_end_callbacks or {}, function(callback)
             callback()
         end)
     end
@@ -161,7 +167,7 @@ function app.body_filter()
     if ctx.on_body_filter then
         ctx:on_body_filter(ngx.arg[1])
     end
-    ctx.logger:debug(ctx.name," App body filter phase ")
+    ctx.logger:debug(ctx.name, " App body filter phase ")
 end
 
 function app.header_filter()
@@ -169,7 +175,7 @@ function app.header_filter()
     if ctx.on_header_filter then
         ctx:on_header_filter()
     end
-    ctx.logger:debug(ctx.name," App header filter phase ")
+    ctx.logger:debug(ctx.name, " App header filter phase ")
 end
 
 function app:on_app_handled(func)
@@ -219,11 +225,7 @@ function app:C(name)
     if not name then
         return config
     end
-    local properties = split(name, '.')
-    for i = 1, #properties do
-        config = config[properties[i]]
-    end
-    return config
+    return lw_utils.index_value(config, name)
 end
 
 ---unpack
@@ -242,15 +244,18 @@ end
 function app.run()
     local ctx = ngx.ctx.ctx
     assert(ctx, 'no application context found')
-    ctx:dispatch(ctx.route.run(ctx))()
-    lw_utils.foreach(ctx.after_app_handled_callbacks, function(callback)
-        callback()
-    end)
+
     if (ctx.debug) then
-        xpcall(function(app)
-            app.response:send()
-        end, app.error_handle, ctx)
+        xpcall(function()
+            ctx:dispatch(ctx.route.run(ctx))()
+            ctx.response:send()
+        end, app.error_handle)
     else
+        ctx:dispatch(ctx.route.run(ctx))()
+
+        lw_utils.foreach(ctx.after_app_handled_callbacks or {}, function(callback)
+            callback()
+        end)
         ctx.response:send()
     end
 end

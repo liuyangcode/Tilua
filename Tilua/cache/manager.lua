@@ -5,27 +5,10 @@
 ---
 local lw_util = require('Tilua.util')
 local bind1 = require("pl.utils").bind1
+local deepcopy = require("pl.tablex").deepcopy
 local rawget, type, setmetatable = rawget, type, setmetatable
 
 local manager = {}
-
-function manager:get_cache_config(cache_type)
-    if cache_type == 'redis' then
-        return {
-            config = {
-                timeout = self.ctx.redis_timeout * 1000 or 1000,
-                db_index = self.ctx.redis_db_index or 0,
-                host = self.ctx.redis_host or '127.0.0.1',
-                port = self.ctx.redis_port or 6379,
-                pool_timeout = self.ctx.redis_pool_timeout * 1000,
-                pool_size = self.ctx.redis_pool_size
-            },
-            driver = "Tilua.cache.driver.redis"
-        }
-    elseif self.ctx[cache_type] then
-        return self.ctx[cache_type]
-    end
-end
 
 function manager:close()
     self.logger:debug('cache instances start to release ')
@@ -35,48 +18,73 @@ function manager:close()
 end
 
 function manager:instance(name)
-    local config = {}
+    local config = nil
     local tconfig = type(name)
     if tconfig == 'string' then
-        config = manager.get_cache_config(self, name)
+        config = deepcopy(self.ctx[name])
+    elseif tconfig == 'table' then
+        config = deepcopy(name)
     end
-
-    local hash = lw_util.get_hash(config.config)
+    assert(config, 'cache manager instance failed config is not correct')
+    local hash = lw_util.get_hash(config)
     if self.instances[hash] then
         return self.instances[hash]
     end
+    self.logger:debug('[Cache Manager] instance cache with config:', lw_util.json_encode(config))
+
     local driver = lw_util.import(config.driver)
     assert(driver, 'unsupported cache type ' .. config.driver)
-    self.instances[hash] = driver(config.config, self.ctx, self.logger)
+    self.instances[hash] = driver(config, self.ctx, self.logger)
     return self.instances[hash]
 end
 
 ---get
 ---@param key string
 function manager:get(key)
-    return manager.instance(self, self.ctx.data_cache_type):get(self.ctx.data_cache_prefix .. key)
+    if not self.handler then
+        self.handler = manager.instance(self, self.ctx.data_cache_handler)
+    end
+    return self.handler:get(self.handler.config.prefix .. key)
 end
 ---set
 ---@param name string
 ---@param value any
 ---@param expire number
 function manager:set(name, value, expire)
-    return manager.instance(self, self.ctx.data_cache_type):set(self.ctx.data_cache_prefix .. name, value, expire)
+    if not self.handler then
+        self.handler = manager.instance(self, self.ctx.data_cache_handler)
+    end
+    return self.handler:set(self.handler.config.prefix .. name, value, expire)
 end
 
+---exists
+---@param name string
+function manager:exists(name)
+    if not self.handler then
+        self.handler = manager.instance(self, self.ctx.data_cache_handler)
+    end
+    return self.handler:exists(self.handler.config.prefix .. name)
+end
 ---del
 ---@param name string
 function manager:del(name)
-    return manager.instance(self, self.ctx.data_cache_type):del(self.ctx.data_cache_prefix .. name)
+    if not self.handler then
+        self.handler = manager.instance(self, self.ctx.data_cache_handler)
+    end
+    return self.handler:del(self.handler.config.prefix .. name)
 end
 
 function manager.new(context, logger)
     return setmetatable({
         ctx = context,
         logger = logger,
+        handler = nil,
         instances = {}
     }, {
         __index = function(this, name)
+            if name == 'handler' then
+                return nil
+            end ;
             local rawp = rawget(manager, name)
             local trawp = type(rawp)
             if trawp == 'function' then

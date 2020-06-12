@@ -211,7 +211,8 @@ function driver:parseSet(data)
     local set = {}
     local this = self
     foreach(data, function(val, key)
-        if val[1] and 'exp' == val[1] then
+        local tval = type(val)
+        if tval=='table' and 'exp' == val[1] then
             set[#set + 1] = this:parseKey(key) .. '=' .. val[2]
         elseif val == 'null' then
             set[#set + 1] = this:parseKey(key) .. '= NULL'

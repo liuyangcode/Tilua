@@ -16,13 +16,13 @@
 <!-- 注意：如果你直接复制所有代码到本地，上述js路径需要改成你本地的 -->
 <script type="text/html" id="toolbarDemo">
     <div class="layui-btn-container">
-        <button class="layui-btn layui-btn-sm" lay-event="addService">新增路由</button>
-        <button class="layui-btn layui-btn-sm" lay-event="addPlugin">新增插件</button>
+        <button class="layui-btn layui-btn-sm" lay-event="addService">新增</button>
     </div>
 </script>
 
 <script type="text/html" id="barDemo">
     <a class="layui-btn layui-btn-xs" lay-event="edit">编辑</a>
+    <a class="layui-btn layui-btn-xs" lay-event="show">查看</a>
     <a class="layui-btn layui-btn-danger layui-btn-xs" lay-event="del">删除</a>
 </script>
 
@@ -34,44 +34,19 @@
         var form = layui.form;
         table.render({
             elem: '#test'
-            , url: '/routes'
+            , url: '/baffle'
             , toolbar: '#toolbarDemo' //开启头部工具栏，并为其绑定左侧模板
             , height: 'full-30'
             , cols: [[
                 {fixed: 'left', type: 'radio'},
                 {fixed: 'left', field: 'id', width: 80, title: 'ID'}
-                , {
-                    field: 'proxy_type', width: 120, title: '路由类型', templet: function (d) {
-                        if (d.proxy_type == 'baffle') {
-                            return "挡板";
-                        }
-                        return "反向代理";
-                    }
-                }
-                , {field: 'protocols', width: 250, title: '匹配协议'}
-                , {field: 'methods', width: 250, title: '匹配请求方法'}
-                , {field: 'hosts', title: '匹配主机列表', width: 250}
-                , {field: 'paths', width: 180, title: '匹配请求路径'}
-                , {field: 'headers', width: 180, title: '匹配请求头'}
-                , {
-                    field: 'preserve_host', width: 180, title: '是否保留请求主机', templet: function (d) {
-                        if (d.preserve_host == 0) {
-                            return "不保留";
-                        }
-                        return "保留";
-                    }
-                }
-                , {
-                    field: 'strip_path', width: 180, title: '是否保留匹配前缀', templet: function (d) {
-                        if (d.strip_path == 0) {
-                            return "不保留";
-                        }
-                        return "保留";
-                    }
-                }
+                , {field: 'name', width: 180, title: '名称'}
+                , {field: 'header', width: 250, title: '响应头'}
+                , {field: 'body', width: 250, title: '响应正文'}
                 , {field: 'created_at', width: 180, title: '创建时间'}
                 , {field: 'updated_at', width: 180, title: '更新时间'}
-                , {fixed: 'right', width: 130, align: 'center', toolbar: '#barDemo'}
+                , {field: 'status', width: 120, title: '状态'}
+                , {fixed: 'right', width: 250, align: 'center', toolbar: '#barDemo'}
             ]]
             , page: true
         });
@@ -87,7 +62,7 @@
                         type: "delete",
                         //请求的媒体类型
                         //请求地址
-                        url: "/routes/" + obj.data.id,
+                        url: "/baffle/" + obj.data.id,
                         //数据，json字符串
                         //请求成功
                         success: function (result) {
@@ -108,9 +83,16 @@
             } else if (obj.event === 'edit') {
                 layer.open({
                     type: 2,
-                    title: "编辑路由",
+                    title: "编辑资源",
                     area: ["540px", '580px'],
-                    content: '/routes/' + data.id + '/edit'
+                    content: '/baffle/'+data.id+'/edit'
+                });
+            }else if(obj.event === 'show') {
+                layer.open({
+                    type: 2,
+                    title: "查看",
+                    area: ["540px", '580px'],
+                    content: '/baffle/'+data.id+''
                 });
             }
         });
@@ -121,21 +103,9 @@
                 case 'addService':
                     layer.open({
                         type: 2,
-                        title: "新增路由",
-                        area: ["540px", '580px'],
-                        content: '/routes/new'
-                    });
-                    break;
-                case 'addPlugin':
-                    if (checkStatus.data.length ==0) {
-                        layer.alert("请先选择路由！")
-                        return
-                    }
-                    layer.open({
-                        type: 2,
-                        title: "新增插件",
-                        area: ["540px", '580px'],
-                        content: '/routes/addPlugin?id='+checkStatus.data[0].id
+                        title: "新增资源",
+                        area: ["540px", '420px'],
+                        content: '/baffle/new'
                     });
                     break;
             }

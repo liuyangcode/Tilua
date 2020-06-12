@@ -58,22 +58,21 @@ local config = {
         chunk_size = 1024,
         tmpdir = '/tmp/Tilua-multipart-tmp/'
     },
-    data_cache_type = 'redis',
-    data_cache_prefix = 'Tilua:',
-    redis_pool_timeout = 60, --连接池配置 闲置时间 单位s
-    redis_pool_size = 100, --连接池大小
-
-    redis_host = '172.17.0.2',
-    redis_port = 6379,
-    redis_db_index = 0,
-    redis_timeout = 10,
-
+    data_cache_handler = 'redis',
+    redis = {
+        pool_timeout = 60, --连接池配置 闲置时间 单位s
+        pool_size = 100, --连接池大小
+        host = '172.17.0.2',
+        port = 6379,
+        db_index = 0,
+        timeout = 10,
+        prefix = 'Tilua:',
+        driver = 'Tilua.cache.driver.redis'
+    },
     default_charset = 'utf-8', --默认输出编码
     default_content_type = 'text/html', --默认输出编码
-
     dispatch = 'Tilua.dispatch',
     route = {
-        ['/'] = "[mvc] /"
     },
     SHDICIT_NAME = 'app_test_cache',
     db_type = 'mysql', -- 数据库类型
@@ -87,11 +86,7 @@ local config = {
     db_fields_cache = true, -- 启用字段缓存
     db_fields_cache_type = 'redis',
     db_fields_cache_prefix = 'Tilua:',
-    db_charset = 'utf8', -- 数据库编码默认采用utf8
-    db_deploy_type = 0, -- 数据库部署方式:0 集中式(单一服务器),1 分布式(主从服务器)
-    db_rw_separate = false, -- 数据库读写是否分离 主从式有效
-    db_master_num = 1, -- 读写分离后 主服务器数量
-    db_slave_no = '', -- 指定从服务器序号
+    db_charset = 'utf8' -- 数据库编码默认采用utf8
 
 }
 

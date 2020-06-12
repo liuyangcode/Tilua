@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
+    <title>挡板服务器</title>
+    <link href="/static/layui/css/layui.css" rel="stylesheet">
+    <script src="/static/js/jquery.min.js" charset="utf-8"></script>
+    <style type="text/css">
+        .layui-form-label {
+            width: 80px;
+        }
+    </style>
+</head>
+<body style="width: 500px;padding: 10px;">
+<div id="add_form">
+    <form class="layui-form">
+        <input type="hidden" name="id" value="{{id}}">
+
+        <div class="layui-form-item">
+            <label class="layui-form-label">名称</label>
+            <div class="layui-input-block">
+                <input type="text" name="name" required lay-verify="required" placeholder="请输入资源名称" autocomplete="off"
+                       class="layui-input" value="{{name}}">
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">响应头</label>
+            <div class="layui-input-block">
+                <div class="layui-input-inline" id="header" style="width: 100%">
+                </div>
+                <div class="layui-form-mid layui-word-aux">
+                    <button type="button" class="layui-btn layui-btn-sm" onclick="addPath(this,'header')"><i
+                            class="layui-icon layui-icon-addition"></i></button>
+                    <button type="button" class="layui-btn layui-btn-sm" onclick="removePath(this)"><i
+                            class="layui-icon layui-icon-subtraction"></i></button>
+                </div>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">响应正文</label>
+            <div class="layui-input-block">
+                <textarea placeholder="请输入响应正文" class="layui-textarea" name="body">{{body}}</textarea>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <div class="layui-input-block">
+                <button class="layui-btn" lay-submit lay-filter="formDemo">立即提交</button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script charset="utf-8" src="/static/layui/layui.js"></script>
+<script>
+    function removePath(item) {
+        $(item).parent().prev().children().last().remove();
+    }
+    function addPath(item, field, value) {
+        $(item).parent().prev().append("<input type=\"text\" value='" + (value || "") + "' name=\"" + field + "\"  autocomplete=\"off\" class=\"layui-input\" style='margin-top: 10px'>\n");
+    }
+
+    layui.use(['form'], function () {
+        var header = JSON.parse($('<div />').html("{{header}}").text());
+        for (var val in header) {
+            for (var k in header[val]) {
+                $("#header").append("<input type=\"text\" value='" + k+":"+header[val][k]+ "' name=\"header\"  autocomplete=\"off\" class=\"layui-input\" style='margin-top: 10px'>\n");
+            }
+        }
+        var form = layui.form;
+        //监听提交
+        form.on('submit(formDemo)', function (data) {
+            $.ajax({
+                //请求方式
+                type: "PUT",
+                //请求地址
+                url: "/baffle/" + data.field.id,
+                data: $('form').serialize(),
+                //请求成功
+                success: function (result) {
+                    if (result.code == 0) {
+                        if (parent) {
+                            var index = parent.layer.getFrameIndex(window.name); //先得到当前iframe层的索引
+                            parent.layer.close(index); //再执行关闭
+                            parent.layui.table.reload('test')
+                        }
+                    } else {
+                        layer.alert(JSON.stringify(result));
+                    }
+                },
+                //请求失败，包含具体的错误信息
+                error: function (e) {
+                    console.log(e.status);
+                    console.log(e.responseText);
+                }
+            });
+            return false;
+        });
+    });
+</script>
+</body>
+</html>
