@@ -18,7 +18,6 @@ end
 
 function file.flush(log)
     local log_file = log.config.path .. '/' .. pl_date.Format("yyyy_mm_dd"):tostring(os.time()) .. '.log'
-
     local _file = io.open(log_file, "a+")
     io.output(_file)
     for i, v in ipairs(log.log_data) do

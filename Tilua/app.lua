@@ -10,7 +10,7 @@ local model_manager = require("Tilua.model.manager")
 local db_manager = require("Tilua.db.manager")
 local midware_manager = require("Tilua.model.manager")
 local cache_manager = require("Tilua.cache.manager")
-
+local template = require "resty.template"
 ---@class app
 local app = class()
 local logger_class = nil
@@ -189,10 +189,40 @@ end
 function app.init_worker(app_instance)
     --init_worker
 end
+
+local function init_view_engine(root)
+    local view_path = path.join(root, 'view', '')
+    local view_cache_path = path.join(root, 'cache', 'view', '')
+    local html_cache_path = path.join(root, 'cache', 'html', '')
+
+    local makepath = require "pl.dir".makepath
+    local path_exists = path.exists
+    if not path_exists(view_cache_path) then
+        local _, err = makepath(view_cache_path)
+        assert(not err, 'dir ' .. view_cache_path .. ' write ' .. err)
+    end
+    if not path_exists(html_cache_path) then
+        local _, err = makepath(html_cache_path)
+        assert(not err, 'dir ' .. html_cache_path .. ' write ' .. err)
+    end
+    local view_engine = template.new({
+        root = root
+    })
+    return {
+        template = view_engine,
+        view = view_path,
+        root = root,
+        cache_key_prefix = view_path,
+        view_cache_path = path.join('cache','view',''),
+        view_cache_abs_path = view_cache_path,
+        html_cache_path = html_cache_path
+    }
+end
 ---worker初始化
 ---@param app_instance app
 function app.startup(app_instance)
     local app_config = {}
+    local makepath = require "pl.dir".makepath
     local appname = app_instance.name
     --加载系统默认配置
     lw_utils.extend(app_config, deepcopy(require "Tilua.config.default"))
@@ -206,6 +236,9 @@ function app.startup(app_instance)
     end
     midware_manager = require('Tilua.midware.manager').load(app_config)
     request = require('Tilua.request')
+
+    app_instance.view_engine = init_view_engine(app_instance.path)
+    app_instance.view_engine.template.caching(not app_instance.debug)
     app.route = require('Tilua.route')
     app.route.set_app_name(appname)
     app_config.log.path = path.join(app_instance.path, app_config.log.path)
@@ -252,7 +285,6 @@ function app.run()
         end, app.error_handle)
     else
         ctx:dispatch(ctx.route.run(ctx))()
-
         lw_utils.foreach(ctx.after_app_handled_callbacks or {}, function(callback)
             callback()
         end)

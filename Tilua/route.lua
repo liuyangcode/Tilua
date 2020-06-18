@@ -1,6 +1,7 @@
 local ngx = ngx
 
 local re_sub = ngx.re.sub
+local string, table, require = string, table, require
 local string_sub = string.sub
 local string_find = string.find
 local re_match = ngx.re.match
@@ -9,7 +10,7 @@ local tablex = require('pl.tablex')
 local strip = stringx.strip
 local split = require('pl.utils').split
 local unpack = require('pl.utils').unpack
-
+local string_lower, type, pairs, select, table_insert, ipairs, table_unpack, setmetatable = string.lower, type, pairs, select, table.insert, ipairs, table.unpack, setmetatable
 local lw_util = require('Tilua.util')
 local midware_manager = require("Tilua.midware.manager")
 
@@ -31,18 +32,17 @@ end
 function route.init_rule_caches(config_rules)
     lw_util.extend(route.rules[route.cur_app], config_rules)
     for location, result in pairs(route.rules[route.cur_app]) do
-        ngx.log(ngx.ERR,location)
         local method, matchers, url, validation = route.parse_rule(location)
         for _, v in ipairs(method) do
             route.rule_caches[route.cur_app][v] = route.rule_caches[route.cur_app][v] or route.get_init_route_rule()
-            table.insert(route.rule_caches[route.cur_app][v][matchers],{ route.to_router(result, url), validation })
+            table_insert(route.rule_caches[route.cur_app][v][matchers], { route.to_router(result, url), validation })
         end
     end
 end
 
 function route.add_route_rule(cur_app, verbs, matchers, path, router)
     route.rule_caches[cur_app][verbs] = route.rule_caches[cur_app][verbs] or route.get_init_route_rule()
-    table.insert(route.rule_caches[cur_app][verbs][matchers],router)
+    table_insert(route.rule_caches[cur_app][verbs][matchers], router)
 end
 
 local function add_route(verbs, path, handler, ...)
@@ -150,7 +150,7 @@ local function combine_prefix_midware(cur_app, path, midwares)
     local prefix_midwares = get_prefix_matched_midwares(cur_app, path)
     if prefix_midwares then
         for _, midware in ipairs(prefix_midwares) do
-            table.insert(midwares, midware)
+            table_insert(midwares, midware)
         end
     end
     return midwares
@@ -237,24 +237,48 @@ function route.parse_rule(location)
     return method, matchers, route_url, validation
 end
 ---路径变量验证
----@param validation string
+---@param validation string like uid:reg,[0-9]+
 function route.parse_validation(validation)
     if not validation then
         return {}
     end
     local validation_parsed = {}
-    validation = split(stringx.strip(validation), ';')
-    tablex.foreach(validation, function(val)
-        local param, regex = unpack(split(val, ':'))
-        validation_parsed[param] = regex
-    end)
-    return validation_parsed
+    local validations = {}
+    validation_parsed = lw_util.parse_expression(validation, ';', ':', ',')
+    for k, v in pairs(validation_parsed) do
+        local tv = type(v)
+        if tv == 'table' then
+            local matchers = string.lower(v[1])
+            if matchers == 'reg' or matchers == 'eq' or matchers == 'neq' then
+                validations[k] = {
+                    matchers,
+                    v[2]
+                }
+            elseif matchers == 'in' or matchers == 'notin' then
+                validations[k] = {
+                    matchers,
+                    tablex.sub(v, 2, #v)
+                }
+            else
+                validations[k] = {
+                    'in',
+                    v
+                }
+            end
+        elseif tv ~= 'nil' then
+            validations[k] = {
+                'eq',
+                v
+            }
+        end
+    end
+    return validations
 end
 
 function route.parse_path_to_regex(url)
     local regex = url
     local params = {}
-    local iterator, err = ngx.re.gmatch(url, '{([a-zA-z_]+)}', "jo")
+    local iterator, err = ngx.re.gmatch(url, '{([^\\/]+)}', "jo")
     if not iterator then
         return url, url, {}
     end
@@ -264,7 +288,7 @@ function route.parse_path_to_regex(url)
         if not m then
             break
         else
-            regex = stringx.replace(regex, m[0], '([a-zA-Z0-9._]+)', 1)
+            regex = stringx.replace(regex, m[0], '([^\\/]+)', 1)
             params[#params + 1] = m[1]
         end
     end
@@ -303,27 +327,12 @@ end
 ---@param method string
 function route.get_routes(cur_app, flag, method)
     local rule_caches = nil
-    method = string.lower(method)
+    method = string_lower(method)
     rule_caches = route.rule_caches[cur_app][method] or route.get_init_route_rule()
     for _, v in ipairs(route.rule_caches[cur_app]['*'] and route.rule_caches[cur_app]['*'][flag] or {}) do
-        table.insert(rule_caches[flag], v)
+        table_insert(rule_caches[flag], v)
     end
     return tablex.deepcopy(rule_caches[flag])
-end
----验证路径变量
----@param params table
----@param validation table
-function route.validate_path_params(params, validation)
-    local result = true
-    tablex.foreach(validation, function(v, k)
-        if params[k] then
-            local m, _ = re_match(params[k], v)
-            result = result and not lw_util.empty(m)
-        else
-            result = false
-        end
-    end)
-    return result
 end
 
 ---验证路由是否匹配
@@ -336,7 +345,7 @@ function route.validate(ctx, validations)
     if type(validations) == 'function' then
         return validations(ctx)
     end
-    local string_lower = string.lower
+
     for k, validation in pairs(validations) do
         local value = lw_util.index_value(ctx, k)
         local tvalidation = type(validation)
@@ -345,18 +354,17 @@ function route.validate(ctx, validations)
                 return false
             end
         else
-            local exp, values = table.unpack(validation)
-
+            local exp, values = table_unpack(validation)
             exp = string_lower(exp)
             if (exp == 'in' and not tablex.find(values, value)) or (exp == 'notin' and tablex.find(values, value)) then
                 return false
             elseif (exp == 'eq' and value ~= values) or (exp == 'neq' and value == values) then
                 return false
+            elseif exp == 'reg' and not re_match(value, values) then
+                return false
             end
         end
     end
-    ctx.logger:debug(lw_util.json_encode(validations))
-
     return true
 end
 ---run
@@ -404,7 +412,7 @@ function route.run(ctx)
             end
             return url
         end, 'jox')
-        if n > 0 and #router.path > longest_match and route.validate_path_params(path_params, validation) then
+        if n > 0 and #router.path > longest_match and route.validate(setmetatable(path_params, { __index = ctx }), validation) then
             longest_match = #router.path
             matched_params = path_params
             matched_path = lw_util.is_string(router.responser) and newpath or router.responser
@@ -412,7 +420,6 @@ function route.run(ctx)
             matched_router = router
         end
     end
-
     if not lw_util.empty(matched_path) then
         request.routed_uri = matched_path
         request.params = matched_params
@@ -431,7 +438,7 @@ function route.run(ctx)
     for _, router in ipairs(rule_caches) do
         local validation
         router, validation = unpack(router)
-        local start_pos, end_pos = string_find( pathinfo,router.path, 1, true)
+        local start_pos, end_pos = string_find(pathinfo, router.path, 1, true)
         if start_pos == 1 and end_pos > longest_match and route.validate(ctx, validation) then
             longest_match = end_pos
             matched_params = route.bind_params_for_responser({}, { string_sub(pathinfo, end_pos + 1) })

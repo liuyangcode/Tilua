@@ -8,6 +8,7 @@ function routes.index(ctx)
     local req = request.body
     local page = req.page or 1
     local limit = req.limit or 10
+    ctx.logger:debug(request.header.content_type)
     return {
         code = 0,
         count = ctx.model.routes:getField("count(1) as cnt"),

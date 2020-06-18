@@ -16,6 +16,10 @@ route {
 --    ['/'] = '[mvc] /'
 --}
 
+route.get('~/user/find/{uid}/{name}', function(ctx, uid, name)
+    ctx.response.body = { uid, name }
+end, {'json'})
+
 
 route.group(function()
     route.rest('/posts', 'controller.posts')

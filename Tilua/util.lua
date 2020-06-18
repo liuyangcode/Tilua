@@ -59,9 +59,11 @@ end
 ---index table value by dot index like 'a.b.c'
 ---@param res table
 ---@param index string
-function util.index_value(res,index)
+---@param sep string optional,default is '.'
+function util.index_value(res,index,sep)
     assert_arg(1,res,'table')
-    local properties = split(index, '.',true)
+    sep = sep or '.'
+    local properties = split(index, sep,true)
     for i = 1, #properties do
         if not res[properties[i]] then
             return nil
