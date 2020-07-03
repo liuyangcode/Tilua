@@ -1,4 +1,4 @@
-local setmetatable,require = setmetatable,require
+local setmetatable, require = setmetatable, require
 
 ---@class session_redis_hanler
 local session_redis_hanler = {
@@ -19,16 +19,19 @@ end
 function session_redis_hanler.close(self)
     return true
 end
-function session_redis_hanler.read(self,name, id, gc_maxlifetime)
+function session_redis_hanler.read(self, name, id, gc_maxlifetime)
     local val, err = self.handler:get(name .. id, true)
     return val or ''
 end
-function session_redis_hanler.write(self,name, id, val, gc_maxlifetime)
-    self.log:debug('session_redis_hanler.write sessionid:', id," values:", val," lifetime:", gc_maxlifetime)
-    local val, err = self.handler:set(name .. id, val, gc_maxlifetime)
-    return val
+function session_redis_hanler.write(self, name, id, val, gc_maxlifetime)
+    self.log:debug('session_redis_hanler.write sessionid:', id, " values:", val, " lifetime:", gc_maxlifetime)
+    local result, err = self.handler:set(name .. id, val, gc_maxlifetime)
+    if err then
+        self.log:error('session_redis_hanler.write sessionid:', id, " values:", val, " lifetime:", gc_maxlifetime, err)
+    end
+    return result
 end
-function session_redis_hanler.destroy(self,name, id)
+function session_redis_hanler.destroy(self, name, id)
     local ok, err = self.handler:del(name .. id)
     self.log:error('session_redis_hanler.destroy', name, id)
     return ok
@@ -41,11 +44,11 @@ function session_redis_hanler.create_id(self)
 
 end
 
-function session_redis_hanler.validate_id(self,id)
+function session_redis_hanler.validate_id(self, id)
     return id
 end
-function session_redis_hanler.update_timestamp(self,name, id, val, gc_maxlifetime)
-    self.log:error( 'session_redis_hanler.updateTimestamp', id, val, gc_maxlifetime)
+function session_redis_hanler.update_timestamp(self, name, id, val, gc_maxlifetime)
+    self.log:error('session_redis_hanler.updateTimestamp', id, val, gc_maxlifetime)
     local val, err = self.handler:expire(name .. id, gc_maxlifetime)
     return true
 end

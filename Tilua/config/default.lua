@@ -9,7 +9,8 @@ local config = {
         session = 'Tilua.midware.session',
         json = 'Tilua.midware.json_response',
         body_parser = 'Tilua.midware.body_parser',
-        html_cache = 'Tilua.midware.html_cache'
+        html_cache = 'Tilua.midware.html_cache',
+        csrf = 'Tilua.midware.csrf_token'
     },
     midware_group = {
         api = {
@@ -61,11 +62,11 @@ local config = {
     data_cache_handler = 'redis',
     redis = {
         pool_timeout = 60, --连接池配置 闲置时间 单位s
-        pool_size = 100, --连接池大小
+        pool_size = 50, --连接池大小
         host = '172.17.0.2',
         port = 6379,
         db_index = 0,
-        timeout = 10,
+        timeout = 1500,
         prefix = 'Tilua:',
         driver = 'Tilua.cache.driver.redis'
     },

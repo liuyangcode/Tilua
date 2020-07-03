@@ -6,7 +6,7 @@ function session_start:_init(ctx, config)
     local default_config = {
         use_strict_mode = true,
         use_cookies = true,
-        gc_maxlifetime = 300,
+        gc_maxlifetime = 3600,
         gc_divisor = 100,
         name = 'ACCESSTOKEN',
         save_handler = 'Tilua.session.session_redis_hanler',
@@ -29,13 +29,13 @@ end
 ---@param next function
 function session_start:handle(next, ...)
     local request, response = self.ctx:unpack()
-    local  found,save_handler = pcall(require, self.config.save_handler)
+    local found, save_handler = pcall(require, self.config.save_handler)
     assert(found, 'Cannot find save handler - session startup failed')
     self.config.save_handler = save_handler.new(self.ctx)
     local sess = session.new(self.config, self.ctx)
     sess:start(request)
     self.ctx.session = sess
-    next(...)
+    response = next(...)
     response:set_cookie(sess:cookie_to_send())
     sess:close()
     return response

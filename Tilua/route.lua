@@ -1,6 +1,8 @@
 local ngx = ngx
 
 local re_sub = ngx.re.sub
+local re_gsub = ngx.re.gsub
+
 local string, table, require = string, table, require
 local string_sub = string.sub
 local string_find = string.find
@@ -22,6 +24,8 @@ local route = {
     path_midwares = {}
 }
 local group_midwares = nil
+local verbstack = {}
+
 function route.set_app_name(name)
     route.cur_app = name
     route.rules[name] = {}
@@ -98,27 +102,36 @@ end
 
 ---分组添加中间件
 function route.group(func, ...)
-    group_midwares = { ... }
+    local mid = select(1,...)
+    if type(mid) =='table' then
+        group_midwares = mid
+    else
+        group_midwares = {...}
+    end
     func(route)
     group_midwares = nil
 end
----get
-function route.get(...)
-    add_route('get', ...)
-end
----post
-function route.post(...)
-    add_route('post', ...)
-end
---delete
-function route.delete(...)
-    add_route('delete', ...)
-end
----put
-function route.put(...)
-    add_route('put', ...)
+
+for _, ver in ipairs({
+    'get','post','delete','put'
+}) do
+    route[ver] = function(...)
+        if not select(1,...) then
+            table_insert(verbstack,ver)
+            return route
+        end
+        table_insert(verbstack,ver)
+        for _ ,v in ipairs(verbstack) do
+            add_route(v, ...)
+        end
+        verbstack ={}
+        return route
+    end
 end
 
+function route.rewrite()
+
+end
 function route.prefix(path, ...)
     local midware
     local fmidware = select(1, ...)
@@ -276,23 +289,21 @@ function route.parse_validation(validation)
 end
 
 function route.parse_path_to_regex(url)
-    local regex = url
     local params = {}
-    local iterator, err = ngx.re.gmatch(url, '{([^\\/]+)}', "jo")
-    if not iterator then
-        return url, url, {}
-    end
-    local m
-    while true do
-        m, err = iterator()
-        if not m then
-            break
-        else
-            regex = stringx.replace(regex, m[0], '([^\\/]+)', 1)
-            params[#params + 1] = m[1]
+    local anonymous_arg_cnt = 0
+    local re_url = string.gsub(url, '\\/', '__SLASH__')
+    re_url = split(re_url, '/', true)
+    for i, v in ipairs(re_url) do
+        if re_match(v, '[(].+?[)]') then
+            anonymous_arg_cnt = anonymous_arg_cnt + 1
+            table_insert(params, '$' .. anonymous_arg_cnt)
+            re_url[i] = string.gsub(re_url[i], '__SLASH__', '\\/')
+        elseif re_match(v, '{[^}]+?}') then
+            table_insert(params, string_sub(v, 2, string_find(v, '}', 1, true) - 1))
+            re_url[i] = '([^\\/]+)'
         end
     end
-    return url, regex, params
+    return url, table.concat(re_url, '/'), params
 end
 
 function route.parse_handler_midware(responser)
@@ -311,13 +322,19 @@ end
 ---解析路径变量
 ---@param params table
 ---@param values table
-function route.bind_params_for_responser(params, values)
+function route.parse_path_params(params, values,extra_path)
+    values = values or {}
+    extra_path = strip(extra_path,'/')
+    tablex.insertvalues(values,split(extra_path,'/'))
     local path_params = {}
+    for i, v in ipairs(values) do
+        path_params['$' .. i] = v
+    end
     for i = 1, #params do
         path_params[params[i]] = values[i]
     end
-
     path_params.args = tablex.sub(values, 1, #values) --用于传递给responser
+    path_params.params = params
     return path_params
 end
 
@@ -367,6 +384,7 @@ function route.validate(ctx, validations)
     end
     return true
 end
+
 ---run
 function route.run(ctx)
     local request = ctx.request
@@ -399,12 +417,12 @@ function route.run(ctx)
     rule_caches = route.get_routes(ctx.name, '~', request_method)
     --正则匹配
     for _, router in ipairs(rule_caches) do
-        local validation
+        local validation,extra_path
         router, validation = unpack(router)
         local url, parsed_regex, params = route.parse_path_to_regex(router.path)
         local path_params = {}
         local newpath, n, _ = re_sub(pathinfo, parsed_regex, function(m)
-            path_params = route.bind_params_for_responser(params, m)
+            path_params = route.parse_path_params(params, m,stringx.replace(pathinfo,m[0],''))
             if lw_util.callable(router.responser) then
                 return ''
             elseif lw_util.is_string(router.responser) then
@@ -415,6 +433,15 @@ function route.run(ctx)
         if n > 0 and #router.path > longest_match and route.validate(setmetatable(path_params, { __index = ctx }), validation) then
             longest_match = #router.path
             matched_params = path_params
+            if lw_util.is_string(router.responser) then
+                newpath,n,_ = re_gsub(router.responser,'(\\$[a-z0-9A-Z_]+)', function(m)
+                    local index = tablex.find(path_params.params,m[1]) or tablex.find(path_params.params,string_sub(m[1],2))
+                    if index then
+                        return table.remove(path_params.args,index)
+                    end
+                    return ''
+                end,'jox')
+            end
             matched_path = lw_util.is_string(router.responser) and newpath or router.responser
             matched_midware = tablex.copy(router.midware)
             matched_router = router
@@ -441,7 +468,7 @@ function route.run(ctx)
         local start_pos, end_pos = string_find(pathinfo, router.path, 1, true)
         if start_pos == 1 and end_pos > longest_match and route.validate(ctx, validation) then
             longest_match = end_pos
-            matched_params = route.bind_params_for_responser({}, { string_sub(pathinfo, end_pos + 1) })
+            matched_params = route.parse_path_params({}, {},string_sub(pathinfo, end_pos + 1) )
             matched_path = router.responser
             matched_midware = tablex.copy(router.midware)
             matched_router = router
@@ -450,9 +477,10 @@ function route.run(ctx)
 
     if not lw_util.empty(matched_path) then
         request.routed_uri = pathinfo
+        request.params = matched_params
         return {
             matched_path,
-            matched_params,
+            matched_params.args,
             combine_prefix_midware(ctx.name, pathinfo, matched_midware),
             matched_router
         }

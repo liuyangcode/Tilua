@@ -722,6 +722,7 @@ function driver:initConnect(master)
             self._linkID = self:connect()
         end
     end
+    return self._linkID
 end
 
 function driver:multiConnect(master)

@@ -17,7 +17,6 @@ local in_array = lw_utils.in_array
 
 ---@class model
 local model = class()
-local _db_fields_cache_hanlder = nil
 ---s属性初始化
 ---@protected
 function model:properties()
@@ -61,13 +60,18 @@ function model:properties()
     -- 链操作方法列表
     self.methods = { 'strict', 'order', 'alias', 'having', 'group', 'lock', 'distinct', 'auto', 'filter', 'validate', 'result', 'token', 'index', 'force', 'master' }
 end
+
+function model:order(order)
+    self.options.order = order
+    return self
+end
 ---_init
 ---@param name string
 ---@param tablePrefix string
 ---@param connection any
 ---@return model
 ---@param ctx app
-function model:_init(ctx,name, tablePrefix, connection)
+function model:_init(ctx, name, tablePrefix, connection)
     self:properties()
     ---@type app
     self.ctx = ctx
@@ -115,14 +119,17 @@ function model:_facade(data)
         else
             fields = self.fields
         end
+        fields = tablex.values(fields)
         for key, val in pairs(data) do
             if not tablex.find(fields, key) then
                 if self.options.strict then
                     error('data type not valid :[' .. key .. '=' .. val .. ']')
+                else
+                    data[key] = nil
                 end
-            elseif type(val) then
-                --is_scalar
-                self:_parseType(data, key)
+            --elseif type(val) then
+            --    --is_scalar
+            --    self:_parseType(data, key)
             end
         end
     end
@@ -319,13 +326,12 @@ function model:select(options)
     local key
     if options.cache then
         cache = options.cache
-        key = cache.key or lw_utils.get_hash(options)
+        key = type(cache.key)=='string' and cache.key  or lw_utils.get_hash(options)
         local data = self.ctx.cache.get(key)
         if data then
             return data
         end
     end
-
 
     local resultSet = self.db:select(options)
     if not resultSet then
@@ -351,7 +357,7 @@ function model:select(options)
     end
 
     if cache then
-        self.ctx.cache.set(key,resultSet,cache.expire or -1)
+        self.ctx.cache.set(key, resultSet, cache.expire or -1)
     end
     return resultSet
 end
@@ -570,21 +576,15 @@ function model:getField(field, sepa)
     options = self:_parseOptions(options)
     if options.cache then
         cache = options.cache
-        key = self:get_hash_key(key, options)
-        local data = self:S(key, '', cache)
+        key = type(cache.key)=='string' and cache.key  or lw_utils.get_hash(options)
+        local data = self:load_query_cache(key, cache)
         if data then
             return data
         end
     end
     field = stringx.strip(field)
     if string.find(field, ',') and sepa then
-        if options.limit then
-            if type(sepa) == 'number' then
-                options.limit = sepa
-            else
-                options.limit = ''
-            end
-        end
+        options.limit = lw_utils.is_number(sepa) and sepa or nil
         local resultSet = self.db:select(options)
         if resultSet then
             if type(resultSet) == 'string' then
@@ -620,13 +620,7 @@ function model:getField(field, sepa)
     else
         local data
         if true ~= sepa then
-            if options.limit then
-                if type(sepa) == 'number' then
-                    options.limit = sepa
-                else
-                    options.limit = ''
-                end
-            end
+            options.limit = lw_utils.is_number(sepa) and sepa or 1
         end
         local result = self.db:select(options)
         if result then
@@ -634,19 +628,19 @@ function model:getField(field, sepa)
                 return result
             end
 
-            if true ~= self and 1 == options.limit then
-                data = result[1]
+            if true ~= sepa and 1 == options.limit then
+                data = tablex.values(result[1])[1]
                 if cache then
-                    self:S(key, data, cache)
+                    self:save_query_cache(key, data, cache)
                 end
                 return data
             end
             local array = {}
             tablex.foreachi(result, function(val)
-                array[#array + 1] = val
+                table.insert(array, val)
             end)
             if cache then
-                self:S(key, array, cache)
+                self:save_query_cache(key, data, cache)
             end
             return array
         end
@@ -656,52 +650,40 @@ end
 
 ---sql查询
 ---@param sql string
----@param parse table
-function model:query(sql, parse, ...)
-    if type(parse) ~= 'table' and type(parse) ~= 'boolean' then
-        parse = { ... }
-        --todo
-        --            $parse = func_get_args();
-        --            array_shift($parse);
-    end
-    sql = self:parseSql(sql, parse)
+function model:query(sql)
     return self.db:query(sql)
 end
-
+--'count', 'sum', 'min', 'max', 'avg'
+function model:count(field)
+    field = field or '*'
+    field = 'COUNT(' .. field .. ') AS tilua_count'
+    return self:getField(field)
+end
+function model:sum(field)
+    field = field or '*'
+    field = 'SUM(' .. field .. ') AS tilua_sum'
+    return self:getField(field)
+end
+function model:min(field)
+    field = field or '*'
+    field = 'MIN(' .. field .. ') AS tilua_min'
+    return self:getField(field)
+end
+function model:max(field)
+    field = field or '*'
+    field = 'MAX(' .. field .. ') AS tilua_max'
+    return self:getField(field)
+end
+function model:avg(field)
+    field = field or '*'
+    field = 'AVG(' .. field .. ') AS tilua_avg'
+    return self:getField(field)
+end
 --- 执行SQL语句
 ---@param sql string
----@param parse table
-function model:execute(sql, parse)
-    if type(parse) ~= 'table' and type(parse) ~= 'boolean' then
-        --todo
-        --            $parse = func_get_args();
-        --            array_shift($parse);
-    end
-    sql = self:parseSql(sql, parse)
+function model:execute(sql)
     return self.db:execute(sql)
 end
-
----解析SQL语句
----@param sql string  SQL指令
----@param parse boolean 是否需要解析SQL
-function model:parseSql(sql, parse)
-    if true == parse then
-        local options = self:_parseOptions()
-        sql = self.db:parseSql(sql, options)
-    elseif type(parse) == 'table' then
-        parse = tablex.map(parse, function(v)
-            --escapeString
-        end)
-        sql = string.format(sql, parse)
-    else
-        sql = '' --todo strtr($sql, array('__TABLE__' => $this->getTableName(), '__PREFIX__' => $this->tablePrefix));
-        local prefix = self.tablePrefix
-        sql = '' --preg_replace_callback("/__([A-Z0-9_-]+)__/sU", function ($match) use ($prefix) {return $prefix . strtolower($match[1]);}, $sql);
-    end
-    self.db:setModel(self.name)
-    return sql
-end
-
 ---得到当前的数据对象名称
 function model:getModelName()
     return self.name
@@ -796,19 +778,6 @@ function model:data(data)
     self.data = data
     return self
 end
-
----指定当前的数据表
----@param tableName any
-function model:table(tableName)
-    local prefix = self.tablePrefix
-    if type(tableName) == 'table' then
-        self.options.table = tableName
-    elseif tableName then
-        --todo            $table = preg_replace_callback("/__([A-Z0-9_-]+)__/sU", function ($match) use ($prefix) {return $prefix . strtolower($match[1]);}, $table);
-        self.options.table = tableName
-    end
-    return self
-end
 ---查询缓存
 ---@param key any
 ---@param expire number
@@ -833,16 +802,17 @@ end
 ---@param except boolean
 function model:field(field, except)
     if true == field then
-        local fields = self:getDbFields()
+        local fields = tablex.values(self:getDbFields())
         field = fields or '*'
     elseif except then
         if type(field) == 'string' then
             field = split(field, ',')
         end
-        local fields = self:getDbFields()
-        -- todo   $field  = $fields ? array_diff($fields, $field) : $field;
+        local fields = tablex.values(self:getDbFields())
+        field = tablex.filter(fields, function(v)
+            return not tablex.find(field,v)
+        end)
     end
-
     self.options.field = field
     return self
 end
@@ -942,12 +912,12 @@ end
 
 function model:get_table_fields_cache(tableName)
     local cache_key = self:get_table_fields_cache_key(tableName)
-    return self.db_fields_cache_hanlder:get(cache_key)
+    return self:get_db_fields_cache_hanlder():get(cache_key)
 end
 
 function model:cache_table_fields(tableName, fields)
     local cache_key = self:get_table_fields_cache_key(tableName)
-    self.db_fields_cache_hanlder:set(cache_key, fields)
+    self:get_db_fields_cache_hanlder():set(cache_key, fields)
 end
 
 function model:get_db_fields_cache_hanlder()

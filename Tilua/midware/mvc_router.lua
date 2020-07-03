@@ -27,7 +27,6 @@ end
 
 function mvc_router:handle(next, ...)
     local ctx = self.ctx
-
     local request = ctx:unpack()
     ctx.logger:debug("Mvc router midware start route path ", request.routed_uri)
     local pathinfo = request.routed_uri
@@ -53,10 +52,12 @@ function mvc_router:handle(next, ...)
             ctx.logger:debug("Mvc router midware end route controller:", self.controller_name, " action:_call")
             self.action = self.controller._call
         end
-        self.ctx.dispatcher:to_handler(pl_utils.bind1(self.action, self.controller))
+        self.ctx.dispatcher:to_handler(function()
+            return self.action(self.controller, self.ctx, table.unpack(params))
+        end)
     else
-        self.ctx.dispatcher:to_handler(function(ctx)
-            ctx.response.body = 'found no responser for route:' .. pathinfo
+        self.ctx.dispatcher:to_handler(function()
+            return 404
         end)
     end
     return next(...)

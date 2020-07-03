@@ -10,53 +10,61 @@ local reverseTable = require("Tilua.util").reverseTable
 local bind1 = require("pl.utils").bind1
 local proxy_dispatch = require("Tilua.dispatch").derive()
 local trim = require("pl.stringx").strip
+local dns = require("resty.dns.client")
 
 local reduce = require("pl.tablex").reduce
+
+local balancers = {}
+
 function proxy_dispatch:_init(ctx)
+    dns.init()
     self:super(ctx)
 end
 
-function proxy_dispatch:prepare_ctx_args_for_responser(args)
-    return self.ctx, table.unpack(args)
-end
----make_chain_call
----@param midware table
----@param handler function
-function proxy_dispatch:make_chain_call(midware, handler, ...)
-    local mid
-    local args = { ... } --参数绑定
-    local next = function
-    ()
-        local response, context = handler(self.ctx)
-        if not self.ctx.response.body then
-            -- response does not have body to send
-            local tresponse = type(response)
-            if tresponse == 'table' then
-                if #response == 2 and type(response[1]) == 'string' and type(response[2]) == 'table' then
-                    -- return view like {'index/index.html',{}}
-                    self.ctx.response:render(response[1], response[2])
-                elseif not response.new then
-                    --retun a table but not a response instance
-                    self.ctx.response.body = response
-                end
-            elseif tresponse == 'string' then
-                ---return view like 'index/index.html' without context
-                self.ctx.response.body = response
-            elseif tresponse == 'number' then
-                self.ctx.response.status = response
-            end
+function proxy_dispatch:add_targets_to_balancer(balancer, targets, start)
+    for i = start, #targets do
+        local target = targets[i]
+        if target.weight > 0 then
+            assert(balancer:addHost(target.name, target.port, target.weight))
+        else
+            assert(balancer:removeHost(target.name, target.port))
         end
-        return self.ctx.response
     end
-    --初始化响应前中间件
-    return reduce(function(res, next_midware)
-        mid = self.ctx.midware.instance(next_midware)
-        local func = bind1(mid.handle, mid)
-        return function(...)
-            return func(res)
-        end
-    end, reverseTable(midware or {}), next)
 end
+
+function proxy_dispatch:create_balancer(upstream, force_create)
+    local model = self.ctx.model
+    local balancer_types = {
+        ["consistent-hashing"] = require("resty.dns.balancer.ring"),
+        ["least-connections"] = require("resty.dns.balancer.least_connections"),
+        ["round-robin"] = require("resty.dns.balancer.ring")
+    }
+    local health_threshold = upstream.healthchecks and
+            upstream.healthchecks.threshold or nil
+
+    if balancers[upstream.id] and not force_create then
+        return balancers[upstream.id]
+    end
+
+    local balancer, err = balancer_types[upstream.algorithm].new({
+        log_prefix = "upstream:" .. upstream.name,
+        wheelSize = upstream.slots, -- will be ignored by least-connections
+        dns = dns,
+        healthThreshold = health_threshold,
+    })
+    if not balancer then
+        return nil, "failed creating balancer:" .. err
+    end
+
+    local targets = model.targets:where({
+        upstreamid = upstream.id
+    })                   :select()
+
+    self:add_targets_to_balancer(balancer, targets, 1)
+    balancers[upstream.id] = balancer
+
+end
+
 function proxy_dispatch:run(router)
     local ctx = self.ctx
     self.ctx.logger:debug("upstream uri ", json_encode(router))
@@ -93,25 +101,30 @@ function proxy_dispatch:run(router)
         else
             upstream_base = '/' .. trim(service.path, '/')
         end
-
+        local targets
         local upstream = model.upstreams:cache(not self.ctx.debug):where({
             name = service.host
         })                    :find()
+        self.ctx.logger:debug("upstream  ", json_encode(upstream))
+
         if upstream then
-            local targets = model.targets:cache(not self.ctx.debug):where({
+            targets = model.targets:cache(not self.ctx.debug):where({
                 upstreamid = upstream.id
-            })                   :select()
+            })             :select()
         end
 
         ngx.var.upstream_scheme = service.protocol
-        local striped_path = trim(router.params.args[1], '/')
         if matched_route.strip_path == 1 then
+            local striped_path = table.concat(router.params, '/')
+
             if matched_route.path_handle == 'v1' then
                 ngx.var.upstream_uri = upstream_base .. striped_path
             else
                 ngx.var.upstream_uri = upstream_base .. "/" .. striped_path
             end
         else
+            local striped_path = trim(ctx.request.path_info, '/')
+
             if matched_route.path_handle == 'v1' then
                 ngx.var.upstream_uri = upstream_base .. striped_path
             else
@@ -129,10 +142,20 @@ function proxy_dispatch:run(router)
         else
             ngx.var.upstream_host = "TiluaApiGateway"
         end
+        local ip, port, host, hanlde
+        if upstream then
+            local balancer = self:create_balancer(upstream)
+            ip, port, host, hanlde = balancer:getPeer(true)
+        else
+            ip = service.host
+            port = service.port
+        end
+
+        self.ctx.logger:debug("upstream uri ", ip, port)
 
         ngx.ctx.peer = {
-            host = '32.254.48.88',
-            port = '80',
+            host = ip,
+            port = port,
             connect_timeout = service.connect_timeout,
             send_timeout = service.write_timeout,
             read_timeout = service.read_timeout

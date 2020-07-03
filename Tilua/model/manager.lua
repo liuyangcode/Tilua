@@ -11,7 +11,7 @@ local model_class = require('Tilua.model')
 
 local manager = {}
 
-function manager:instance(name)
+function manager:instance(name, connection)
     self.logger:debug("start Init Model named ", name)
     local mod = lw_utils.import(table.concat({
         self.ctx.name,
@@ -26,7 +26,7 @@ function manager:instance(name)
         self.logger:debug("Model named ", name, " has already inited ")
         return self.models[name]
     end
-    self.models[name] = model_class(self.ctx,name)
+    self.models[name] = model_class(self.ctx,name, nil, connection or '')
     return self.models[name]
 end
 

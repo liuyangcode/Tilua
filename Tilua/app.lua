@@ -106,7 +106,7 @@ function app:get_view()
     return self.view
 end
 
-local function init_application(app_instance, context_ref)
+local function init_application(app_instance)
     local ngx = ngx
     ngx.update_time()
 
@@ -116,7 +116,6 @@ local function init_application(app_instance, context_ref)
     if context.on_app_init then
         context.on_app_init(context)
     end
-    context_ref.ctx = context
     return context
 end
 
@@ -129,12 +128,12 @@ function app.init(app_instance)
     local context = {}
     if app_instance.debug then
         xpcall(function()
-            init_application(app_instance, context)
+            context = init_application(app_instance)
         end, app.error_handle)
     else
-        init_application(app_instance, context)
+        context = init_application(app_instance)
     end
-    return context.ctx
+    return context
 end
 
 function app:get_config()
@@ -151,6 +150,9 @@ end
 
 function app.request_end(inst)
     local ctx = ngx.ctx.ctx
+    if not ctx then
+        return
+    end
     if ctx.on_app_end then
         ctx:on_app_end(ctx)
     end
@@ -188,6 +190,9 @@ end
 
 function app.init_worker(app_instance)
     --init_worker
+    if app_instance.init_worker then
+        app_instance:init_worker()
+    end
 end
 
 local function init_view_engine(root)
@@ -203,7 +208,7 @@ local function init_view_engine(root)
     end
     if not path_exists(html_cache_path) then
         local _, err = makepath(html_cache_path)
-        assert(not err, 'dir ' .. html_cache_path .. ' write ' .. err)
+        assert(not err, 'dir ' .. html_cache_path .. ' write ' .. (err or ''))
     end
     local view_engine = template.new({
         root = root
@@ -222,7 +227,6 @@ end
 ---@param app_instance app
 function app.startup(app_instance)
     local app_config = {}
-    local makepath = require "pl.dir".makepath
     local appname = app_instance.name
     --加载系统默认配置
     lw_utils.extend(app_config, deepcopy(require "Tilua.config.default"))
@@ -280,11 +284,14 @@ function app.run()
 
     if (ctx.debug) then
         xpcall(function()
-            ctx:dispatch(ctx.route.run(ctx))()
+            ctx:dispatch(ctx.route.run(ctx))
+            lw_utils.foreach(ctx.after_app_handled_callbacks or {}, function(callback)
+                callback()
+            end)
             ctx.response:send()
         end, app.error_handle)
     else
-        ctx:dispatch(ctx.route.run(ctx))()
+        ctx:dispatch(ctx.route.run(ctx))
         lw_utils.foreach(ctx.after_app_handled_callbacks or {}, function(callback)
             callback()
         end)

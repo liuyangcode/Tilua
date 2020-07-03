@@ -40,23 +40,35 @@ end
 ---@param value any
 ---@return boolean
 function session.set(self, name, value)
-    if type(name) == string then
+    if type(name) == 'string' then
         self._session[name] = value
     elseif type(name) == 'table' then
         for key, val in pairs(name) do
             self._session[key] = val
         end
     else
-        return false
+        return self
     end
-    return true
+    return self
 end
 
+function session.unset(self, name)
+    if type(name) == 'string' then
+        self._session[name] = nil
+    elseif type(name) == 'table' then
+        for _, val in ipairs(name) do
+            self._session[val] = nil
+        end
+    else
+        return self
+    end
+    return self
+end
 ---get
 ---@param name string
 ---@return any
 function session.get(self, name)
-    return self._session[name] ~= nil and self._session[name] or nil
+    return self._session[name]
 end
 
 function session.encode(self, data)

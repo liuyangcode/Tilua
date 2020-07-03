@@ -19,6 +19,7 @@ end
 function file.flush(log)
     local log_file = log.config.path .. '/' .. pl_date.Format("yyyy_mm_dd"):tostring(os.time()) .. '.log'
     local _file = io.open(log_file, "a+")
+    assert(_file,"failed to create log file "..log_file)
     io.output(_file)
     for i, v in ipairs(log.log_data) do
         if v.level == "" then
