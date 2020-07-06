@@ -3,6 +3,7 @@ local pretty = require('pl.pretty')
 local tablex_size = tablex.size
 local foreach = tablex.foreach
 local ngx = ngx
+local now,update_time = ngx.now,ngx.update_time
 local md5 = ngx.md5
 local string = string
 local table = table
@@ -203,8 +204,23 @@ function util.in_array(array, val)
 end
 
 function util.get_now_ms()
-    ngx.update_time()
-    return ngx.now() * 1000
+    update_time()
+    return now() * 1000
+end
+function util.elapse_time_start(tag,ctx)
+    if not ctx then
+        ctx = ngx.ctx
+    end
+    tag = tag and 'ELAPSE_TIME_TAG_'..tag or 'ELAPSE_TIME_TAG_DEFAULT_START'
+    ctx.tag = util.get_now_ms()
+    return ctx.tag
+end
+function util.elapse_time_end(tag, ctx)
+    if not ctx then
+        ctx = ngx.ctx
+    end
+    tag = tag and 'ELAPSE_TIME_TAG_'..tag or 'ELAPSE_TIME_TAG_DEFAULT_START'
+    return util.get_now_ms() - ctx.tag
 end
 
 function util.is_number(val)
@@ -254,6 +270,7 @@ function util.parse_url(url)
         fragment = m[8]
     }
 end
+
 ---判断所有传入的值是否有空
 function util.emptys(...)
     local result = true

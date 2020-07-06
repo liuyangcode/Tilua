@@ -11,44 +11,42 @@ function mysql:_init(...)
 end
 
 function mysql:connect(config, linkNum, autoConnection)
-    if not config then
-        config = self.config
+    linkNum = linkNum or 1
+    autoConnection = autoConnection or false
+    if not self.linkID[linkNum] then
+        if not config then
+            config = self.config
+        end
+        mysqlc:set_timeout(1000)
+        local db, err = mysqlc:new()
+        if not db then
+            self.logger:error("failed to instantiate mysql: " .. err)
+        end
+        local ok, err, errcode, sqlstate = db:connect({
+            host = config.hostname,
+            port = config.hostport,
+            database = config.database,
+            user = config.username,
+            password = config.password,
+            charset = config.charset,
+            max_packet_size = 1024 * 1024,
+        })
+        if not ok then
+            self.logger:error("failed to connect: ", err, ":", (errcode or ""), " ", (sqlstate or ""))
+        elseif self.debug then
+            self.logger:debug("Mysql Connect success!Server version:", (db:server_ver() or ""), " reused times:", db:get_reused_times())
+        end
+        self.linkID[linkNum] = db
     end
-    mysqlc:set_timeout(1000)
-    local db, err = mysqlc:new()
-    if not db then
-        self.logger:error("failed to instantiate mysql: " .. err)
-    end
-    local ok, err, errcode, sqlstate = db:connect({
-        host = config.hostname,
-        port = config.hostport,
-        database = config.database,
-        user = config.username,
-        password = config.password,
-        charset = config.charset,
-        max_packet_size = 1024 * 1024,
-    })
-    if not ok then
-        self.logger:error("failed to connect: ", err, ":", (errcode or ""), " ", (sqlstate or ""))
-    elseif self.debug then
-        self.logger:debug("Mysql Connect success!Server version:", (db:server_ver() or " null "), " reused times:", db:get_reused_times() or " null ")
-    end
-    return db
+    return self.linkID[linkNum]
 end
 
 function mysql:execute_sql(sql)
-    local db = self._linkID
-    local res, err, errcode, sqlstate = db:query(sql)
-    if not res or err then
+    local res, err, errcode, sqlstate = self._linkID:query(sql)
+    if not res then
         self.logger:error(err, " errcode ", (errcode or ""), " sqlstate:", (sqlstate or ""))
         error(err .. " errcode " .. (errcode or "") .. " sqlstate:" .. (sqlstate or ""), 2)
         return nil
-    end
-    local ok, _err = db:set_keepalive(60000, 100)
-    if not ok then
-        self.logger:error("failed to set keepalive because ", _err)
-    else
-        self.logger:debug("set mysql host ", self.config.hostname, " connection keepalive success!")
     end
     self.numRows = #res
     self.result_sets = res
@@ -56,7 +54,14 @@ function mysql:execute_sql(sql)
 end
 
 function mysql:close()
-    self._linkID = nil
+    if self._linkID then
+        local ok, err = self._linkID:set_keepalive(60000, 100)
+        if not ok then
+            self.logger:error("failed to set keepalive because ", err)
+        else
+            self.logger:debug("set mysql host ",self.config.hostname," connection keepalive success!")
+        end
+    end
 end
 
 function mysql:getFields(tableName)

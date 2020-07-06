@@ -1,0 +1,20 @@
+return {
+    redis = {
+        --host = '32.254.48.88',
+        --port = 46379,
+        host = '32.254.48.89',
+        port = 6379
+    },
+    db_type = 'mysql', -- 数据库类型
+    db_host = '32.254.48.89', -- 服务器地址
+    db_name = 'lwhc', -- 数据库名
+    db_user = 'lwhc', -- 用户名
+    db_pwd = 'lwhc', -- 密码
+    db_port = '3306', -- 端口
+
+    db_debug = true,
+    filesys = 'mysql://file:file@32.254.64.68:3306/file?debug=true#utf8',
+    log = {
+        level = "DEBUG,ERROR"
+    }
+}

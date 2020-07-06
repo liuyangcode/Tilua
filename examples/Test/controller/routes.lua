@@ -102,7 +102,7 @@ function routes.update(ctx, id)
         paths = paths or '/',
         methods = methods or '*',
         headers = req.headers or '',
-        strip_path = req.strip_path == 'on' and 0 or 1,
+        strip_path = req.strip_path == 'on' and 1 or 0,
         preserve_host = req.preserve_host == 'on' and 1 or 0,
         serviceid = req.serviceid or 0,
         proxy_type = req.proxy_type or 'proxy',

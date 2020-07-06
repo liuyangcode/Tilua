@@ -63,10 +63,17 @@
                 }
                 , {
                     field: 'strip_path', width: 180, title: '是否保留匹配前缀', templet: function (d) {
-                        if (d.strip_path == 0) {
+                        if (d.strip_path == 1) {
                             return "不保留";
                         }
                         return "保留";
+                    }
+                }, {
+                    field: 'path_handle', width: 180, title: '路径处理方式', templet: function (d) {
+                        if (d.path_handle == 'v0') {
+                            return "追加";
+                        }
+                        return "连接";
                     }
                 }
                 , {field: 'created_at', width: 180, title: '创建时间'}

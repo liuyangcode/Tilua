@@ -62,11 +62,11 @@ local config = {
     data_cache_handler = 'redis',
     redis = {
         pool_timeout = 60, --连接池配置 闲置时间 单位s
-        pool_size = 50, --连接池大小
+        pool_size = 1000, --连接池大小
         host = '172.17.0.2',
         port = 6379,
         db_index = 0,
-        timeout = 1500,
+        timeout = 2000,
         prefix = 'Tilua:',
         driver = 'Tilua.cache.driver.redis'
     },

@@ -10,6 +10,42 @@ ApiGateWay.status = 'dev'
 function ApiGateWay:_init()
     self:super(self)
 end
+function ApiGateWay.init_worker()
+    --local healthcheck = require("resty.healthcheck")
+    --
+    --local we = require "resty.worker.events"
+    --local ok, err = we.configure({
+    --    shm = "api_cache",
+    --    interval = 0.1
+    --})
+    --if not ok then
+    --    ngx.log(ngx.ERR, "failed to configure worker events: ", err)
+    --    return
+    --end
+    --
+    --
+    --local checker = healthcheck.new({
+    --    name = "testing",
+    --    shm_name = "api_cache",
+    --    checks = {
+    --        active = {
+    --            type = "http",
+    --            http_path = "/",
+    --            healthy  = {
+    --                interval = 2,
+    --                successes = 1,
+    --            },
+    --            unhealthy  = {
+    --                interval = 1,
+    --                http_failures = 2,
+    --            }
+    --        },
+    --    }
+    --})
+    --local ok, err = checker:add_target("32.254.48.88", 80)
+    --local ok, err = checker:add_target("32.254.48.88", 81)
+
+end
 
 function ApiGateWay.on_startup(ctx)
     local ngx = ngx
@@ -17,7 +53,7 @@ function ApiGateWay.on_startup(ctx)
         config = ctx
     }
     local localtime = ngx.localtime
-    local logger = ApiGateWay.get_logger(context)
+    local logger = ApiGateWay.init_logger(context)
     logger:write("\n[", localtime(), "]", "ApiGateWay Worker init success worker pid ", ngx.worker.pid())
     logger:flush()
 end
@@ -85,7 +121,6 @@ function ApiGateWay.rewrite(ApiGateWay)
     local ctx = ApiGateWay:init()
     local cache_key = ctx.request.method .. ":" .. ctx.request.uri .. ":" .. ctx.request.host
     local router
-
     if ctx.cache.exists(cache_key) and not ctx.debug then
         router = ctx.cache.get(cache_key)
     else

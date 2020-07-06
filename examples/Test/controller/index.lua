@@ -1,6 +1,4 @@
 local index = require("Tilua.controller").derive()
-local lw_util = require("Tilua.util")
-local manager = require("Tilua.cache.manager")
 function index:_init(ctx)
     self:super(ctx)
 end

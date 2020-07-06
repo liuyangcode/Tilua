@@ -8,7 +8,7 @@ local bind1 = require("pl.utils").bind1
 local deepcopy = require('pl.tablex').deepcopy
 local model_manager = require("Tilua.model.manager")
 local db_manager = require("Tilua.db.manager")
-local midware_manager = require("Tilua.model.manager")
+local midware_manager = require("Tilua.midware.manager")
 local cache_manager = require("Tilua.cache.manager")
 local template = require "resty.template"
 ---@class app
@@ -24,6 +24,18 @@ function app:_init()
     self:catch(function(_, name)
         return self:magic(name)
     end)
+    self:initialize()
+end
+function app:initialize()
+    self.config = configs[self.name]
+    self:init_logger()
+    self.request = request.capture(self)
+    self.response = require("Tilua.response").new(self)
+    self:init_view()
+    self.midware = midware_manager.new(self)
+    self:init_cache_manager()
+    self:init_db_manager()
+    self:init_model_manager()
 end
 ---分发路由
 ---@return dispatch
@@ -50,14 +62,6 @@ function app:magic(name)
         return app[name]
     end
 end
-function app:get_midware()
-    self.midware = midware_manager.new(self)
-    return self.midware
-end
-function app:get_response()
-    self.response = require("Tilua.response").new(self)
-    return self.response
-end
 ---get_html_cache_interceptor
 ---@return page
 function app:get_html_cache_interceptor()
@@ -69,31 +73,31 @@ function app:get_html_cache_interceptor()
 end
 
 ---@return cache
-function app.get_cache(ctx)
-    ctx.cache = cache_manager.new(ctx.config, ctx.logger)
-    if ctx.on_app_handled then
-        ctx:on_app_handled(bind1(ctx.cache.close, ctx.cache))
+function app:init_cache_manager()
+    self.cache = cache_manager.new(self.config, self.logger)
+    if self.on_app_handled then
+        self:on_app_handled(bind1(self.cache.close, self.cache))
     end
-    return ctx.cache
+    return self.cache
 end
 
-function app.get_db(ctx)
-    ctx.db = db_manager.new({
-        ctx = ctx.config,
-        logger = ctx.logger
+function app:init_db_manager()
+    self.db = db_manager.new({
+        ctx = self.config,
+        logger = self.logger
     })
-    if ctx.on_app_handled then
-        ctx:on_app_handled(bind1(ctx.db.close, ctx.db))
+    if self.on_app_handled then
+        self:on_app_handled(bind1(self.db.close, self.db))
     end
-    return ctx.db
+    return self.db
 end
 
-function app.get_model(ctx)
-    ctx.model = model_manager.new(ctx)
-    return ctx.model
+function app:init_model_manager()
+    self.model = model_manager.new(self)
+    return self.model
 end
 
-function app.get_logger(ctx)
+function app.init_logger(ctx)
     ctx.logger = logger_class.new(ctx.config.log)
     if ctx.on_request_end then
         ctx:on_request_end(bind1(ctx.logger.flush, ctx.logger))
@@ -101,7 +105,7 @@ function app.get_logger(ctx)
     return ctx.logger
 end
 
-function app:get_view()
+function app:init_view()
     self.view = require("Tilua.view")(self)
     return self.view
 end
@@ -111,6 +115,7 @@ local function init_application(app_instance)
     ngx.update_time()
 
     local ctx = ngx.ctx
+    lw_utils.elapse_time_start('app_excution_time')
     local context = app_instance()
     ctx.ctx = context
     if context.on_app_init then
@@ -119,10 +124,6 @@ local function init_application(app_instance)
     return context
 end
 
-function app:get_request()
-    self.request = request.capture(self)
-    return self.request
-end
 ---应用初始化
 function app.init(app_instance)
     local context = {}
@@ -156,6 +157,7 @@ function app.request_end(inst)
     if ctx.on_app_end then
         ctx:on_app_end(ctx)
     end
+    ctx.logger:debug('App Request elapsed time ', lw_utils.elapse_time_end('app_excution_time') or 0, ' ms')
     if ctx then
         lw_utils.foreach(ctx.request_end_callbacks or {}, function(callback)
             callback()
@@ -218,7 +220,7 @@ local function init_view_engine(root)
         view = view_path,
         root = root,
         cache_key_prefix = view_path,
-        view_cache_path = path.join('cache','view',''),
+        view_cache_path = path.join('cache', 'view', ''),
         view_cache_abs_path = view_cache_path,
         html_cache_path = html_cache_path
     }

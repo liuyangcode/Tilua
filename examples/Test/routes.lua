@@ -16,7 +16,7 @@ route {
 --    ['/'] = '[mvc] /'
 --}
 
-route.get('~/user/find/{uid}/{name}', function(ctx, uid, name)
+route.get('~/user/find/([^\\/]+)/{name}$', function(ctx, uid, name)
     ctx.response.body = { uid, name }
 end, {'json'})
 
