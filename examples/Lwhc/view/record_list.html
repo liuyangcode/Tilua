@@ -86,7 +86,7 @@
                     }
                 }
                 , {field: 'certName', width: 150, title: '姓名'}
-                , {field: 'certNo', width: 250, title: '主机'}
+                , {field: 'certNo', width: 250, title: '身份证号码'}
                 , {field: 'rtime', width: 250, title: '核查时间'}
                 , {
                     field: 'result', width: 250, title: '核查结果', templet: function (d) {
@@ -113,7 +113,7 @@
         table.on('tool(test)', function (obj) {
             var data = obj.data;
             if (obj.event === 'view') {
-                window.open('/record/view/' + data.certNo + '/' + data.recordid, '_blank')
+                window.open('/record/view/' + data.recordid + "/{% if history ==0 then %}record{% else %}record_history{% end %}", '_blank')
             } else if (obj.event === 'del') {
             } else if (obj.event === 'edit') {
 
