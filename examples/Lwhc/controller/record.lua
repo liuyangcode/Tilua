@@ -3,6 +3,7 @@
 --- Created by liuyang.
 --- DateTime: 2020/6/28 5:06 下午
 ---
+local util = require("Lwhc.util")
 
 local M =  {}
 
@@ -50,18 +51,25 @@ function M.index(ctx,tab)
     }
 end
 
-function M.view(ctx,certNo, id)
-    local record = ctx.model.record
-    local picp_cert = ctx.model.picp_cert:where({
-        certno = certNo
-    })                   :find()
+function M.view(ctx, id, tab)
+    local record = ctx.model[tab]
     local record_data = record:where({
         recordid = id
     })                        :find()
     if not record_data then
         return ctx.response:jump('/', false, '记录不存在，请确认!')
     end
-    record_data.fileid = picp_cert.fileid
+    local res, err = util.api_v2({
+        service = "realName",
+        action = "PicpSingleInquireAction",
+        data = {
+            certname = record_data.certName,
+            certno = record_data.certNo
+        }
+    }
+    )
+    record_data.result = res and res.code or '04'
+    record_data.fileid = res and res.fileid or -1
     local result = {
         ['00'] = "[00] 号码与姓名一致且照片存在",
         ['01'] = "[01] 号码与姓名一致且照片不存在",
