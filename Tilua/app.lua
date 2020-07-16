@@ -20,10 +20,6 @@ local request = nil
 local configs = {}
 ---_init
 function app:_init()
-    --共享全局app实例
-    self:catch(function(_, name)
-        return self:magic(name)
-    end)
     self:initialize()
 end
 function app:initialize()
@@ -50,17 +46,6 @@ function app:dispatch(...)
     assert(dispatch.run, 'dispatch must has a run method')
     self.dispatcher = dispatch(self)
     return self.dispatcher:run(...)
-end
----魔术方法
----@param name string
-function app:magic(name)
-    if rawget(self, 'get_' .. name) then
-        return self['get_' .. name](self)
-    elseif app['get_' .. name] then
-        return app['get_' .. name](self)
-    elseif rawget(app, name) then
-        return app[name]
-    end
 end
 ---get_html_cache_interceptor
 ---@return page
