@@ -150,7 +150,6 @@ function driver:commit()
         self.transTimes = 0
         self.transPdo = nil
         if not result then
-            self:error()
             return false
         end
     else
@@ -165,7 +164,6 @@ function driver:rollback()
         local result = self._linkID:rollback()
         self.transTimes = 0
         if not result then
-            self:error()
             return false
         end
     end

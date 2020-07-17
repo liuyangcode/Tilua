@@ -41,12 +41,15 @@ function mysql:connect(config, linkNum, autoConnection)
     return self.linkID[linkNum]
 end
 
+function mysql:beginTransaction()
+
+end
+
 function mysql:execute_sql(sql)
     local res, err, errcode, sqlstate = self._linkID:query(sql)
     if not res then
         self.logger:error(err, " errcode ", (errcode or ""), " sqlstate:", (sqlstate or ""))
-        error(err .. " errcode " .. (errcode or "") .. " sqlstate:" .. (sqlstate or ""), 2)
-        return nil
+        return nil,err .. " errcode " .. (errcode or "") .. " sqlstate:" .. (sqlstate or "")
     end
     self.numRows = #res
     self.result_sets = res

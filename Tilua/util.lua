@@ -233,6 +233,16 @@ function util.serialize(data)
     return util.json_encode(data)
 end
 
+function util.combine(keys,values)
+    assert_arg(1,keys,'table')
+    assert_arg(1,values,'table')
+    local result = {}
+    for i, v in ipairs(keys) do
+        result[v] = values[i]
+    end
+    return result
+end
+
 function util.get_hash(data)
     return md5(util.serialize(data))
 end

@@ -24,7 +24,6 @@ function session_start:_init(ctx, config)
     self.config = update(default_config, config or {})
     self:super(ctx)
 end
-
 ---handle
 ---@param next function
 function session_start:handle(next, ...)

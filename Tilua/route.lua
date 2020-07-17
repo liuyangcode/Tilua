@@ -81,16 +81,21 @@ local function add_route(verbs, path, handler, ...)
         elseif lw_util.callable(responser) then
             add_route('', route_rule, responser)
         elseif lw_util.is_array(responser) then
-            lw_util.foreach(responser, function(hanlder, verb)
-                if verb == '*' then
-                    add_route('', route_rule, hanlder)
-                else
-                    verb = split(verb, ',')
-                    lw_util.foreach(verb, function(v)
-                        add_route(v, route_rule, hanlder)
-                    end)
-                end
-            end)
+            if responser.res or responser.responser then
+                local mid = responser.mid or responser.midware or nil
+                add_route('',verbs, responser.responser or responser.res, mid)
+            else
+                lw_util.foreach(responser, function(hanlder, verb)
+                    if verb == '*' then
+                        add_route('', route_rule, hanlder)
+                    else
+                        verb = split(verb, ',')
+                        lw_util.foreach(verb, function(v)
+                            add_route(v, route_rule, hanlder)
+                        end)
+                    end
+                end)
+            end
         end
     end
 end
@@ -102,29 +107,29 @@ end
 
 ---分组添加中间件
 function route.group(func, ...)
-    local mid = select(1,...)
-    if type(mid) =='table' then
+    local mid = select(1, ...)
+    if type(mid) == 'table' then
         group_midwares = mid
     else
-        group_midwares = {...}
+        group_midwares = { ... }
     end
     func(route)
     group_midwares = nil
 end
 
 for _, ver in ipairs({
-    'get','post','delete','put'
+    'get', 'post', 'delete', 'put'
 }) do
     route[ver] = function(...)
-        if not select(1,...) then
-            table_insert(verbstack,ver)
+        if not select(1, ...) then
+            table_insert(verbstack, ver)
             return route
         end
-        table_insert(verbstack,ver)
-        for _ ,v in ipairs(verbstack) do
+        table_insert(verbstack, ver)
+        for _, v in ipairs(verbstack) do
             add_route(v, ...)
         end
-        verbstack ={}
+        verbstack = {}
         return route
     end
 end
@@ -202,12 +207,12 @@ function route.to_router(router, path)
         standard_handler.responser, standard_handler.midware = route.parse_handler_midware(router)
     elseif lw_util.is_array(router) then
         -- 标准路由响应者
-        standard_handler.responser = router.responser
+        standard_handler.responser = router.responser or router.res
         router.midware = router.midware or {}
         if lw_util.is_string(router.midware) then
-            router.midware = midware_manager.parse(router.midware)
+            router.midware = midware_manager.parse(router.midware or router.mid)
         elseif lw_util.is_array(router.midware) then
-            router.midware = midware_manager.parse(router.midware)
+            router.midware = midware_manager.parse(router.midware or router.mid)
         end
         standard_handler.midware = router.midware
     elseif lw_util.callable(router) then
@@ -322,10 +327,10 @@ end
 ---解析路径变量
 ---@param params table
 ---@param values table
-function route.parse_path_params(params, values,extra_path)
+function route.parse_path_params(params, values, extra_path)
     values = values or {}
-    extra_path = strip(extra_path,'/')
-    tablex.insertvalues(values,split(extra_path,'/'))
+    extra_path = strip(extra_path, '/')
+    tablex.insertvalues(values, split(extra_path, '/'))
     local path_params = {}
     for i, v in ipairs(values) do
         path_params['$' .. i] = v
@@ -417,12 +422,12 @@ function route.run(ctx)
     rule_caches = route.get_routes(ctx.name, '~', request_method)
     --正则匹配
     for _, router in ipairs(rule_caches) do
-        local validation,extra_path
+        local validation, extra_path
         router, validation = unpack(router)
         local url, parsed_regex, params = route.parse_path_to_regex(router.path)
         local path_params = {}
         local newpath, n, _ = re_sub(pathinfo, parsed_regex, function(m)
-            path_params = route.parse_path_params(params, m,stringx.replace(pathinfo,m[0],''))
+            path_params = route.parse_path_params(params, m, stringx.replace(pathinfo, m[0], ''))
             if lw_util.callable(router.responser) then
                 return ''
             elseif lw_util.is_string(router.responser) then
@@ -434,13 +439,13 @@ function route.run(ctx)
             longest_match = #router.path
             matched_params = path_params
             if lw_util.is_string(router.responser) then
-                newpath,n,_ = re_gsub(router.responser,'(\\$[a-z0-9A-Z_]+)', function(m)
-                    local index = tablex.find(path_params.params,m[1]) or tablex.find(path_params.params,string_sub(m[1],2))
+                newpath, n, _ = re_gsub(router.responser, '(\\$[a-z0-9A-Z_]+)', function(m)
+                    local index = tablex.find(path_params.params, m[1]) or tablex.find(path_params.params, string_sub(m[1], 2))
                     if index then
-                        return table.remove(path_params.args,index)
+                        return table.remove(path_params.args, index)
                     end
                     return ''
-                end,'jox')
+                end, 'jox')
             end
             matched_path = lw_util.is_string(router.responser) and newpath or router.responser
             matched_midware = tablex.copy(router.midware)
@@ -468,7 +473,7 @@ function route.run(ctx)
         local start_pos, end_pos = string_find(pathinfo, router.path, 1, true)
         if start_pos == 1 and end_pos > longest_match and route.validate(ctx, validation) then
             longest_match = end_pos
-            matched_params = route.parse_path_params({}, {},string_sub(pathinfo, end_pos + 1) )
+            matched_params = route.parse_path_params({}, {}, string_sub(pathinfo, end_pos + 1))
             matched_path = router.responser
             matched_midware = tablex.copy(router.midware)
             matched_router = router
