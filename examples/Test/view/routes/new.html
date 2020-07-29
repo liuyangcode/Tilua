@@ -100,7 +100,7 @@
             <label class="layui-form-label">资源id</label>
             <div class="layui-input-block">
                 <input type="text" name="serviceid" placeholder="请输入关联服务ID" autocomplete="off"
-                       class="layui-input">
+                       class="layui-input" lay-verify="required" required>
             </div>
         </div>
         <div class="layui-form-item" pane="">
@@ -154,6 +154,8 @@
                         if (parent) {
                             var index = parent.layer.getFrameIndex(window.name); //先得到当前iframe层的索引
                             parent.layer.close(index); //再执行关闭
+                            parent.layui.table.reload('test')
+
                         }
                     } else {
                         layer.alert(result.msg);

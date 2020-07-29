@@ -43,15 +43,15 @@ function posts.create(ctx)
     local result = services:add({
         name = req.name,
         connect_timeout = req.name,
-        path = req.path,
+        path = req.path or "/",
         host = req.host,
         port = req.port,
         protocol = req.protocol,
         read_timeout = req.read_timeout,
         write_timeout = req.write_timeout,
         connect_timeout = req.connect_timeout,
-        created_at = {'exp','now()'},
-        updated_at =  {'exp','now()'}
+        created_at = { 'exp', 'now()' },
+        updated_at = { 'exp', 'now()' }
     })
     response.body = {
         code = result.affected_rows ==1 and 0 or -1,

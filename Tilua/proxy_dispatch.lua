@@ -6,13 +6,10 @@
 local json_encode = require("Tilua.util").json_encode
 local json_decode = require("Tilua.util").json_decode
 
-local reverseTable = require("Tilua.util").reverseTable
-local bind1 = require("pl.utils").bind1
 local proxy_dispatch = require("Tilua.dispatch").derive()
 local trim = require("pl.stringx").strip
 local dns = require("resty.dns.client")
-
-local reduce = require("pl.tablex").reduce
+local ngx_var = ngx.var
 
 local balancers = {}
 
@@ -58,24 +55,25 @@ function proxy_dispatch:create_balancer(upstream, force_create)
 
     local targets = model.targets:where({
         upstreamid = upstream.id
-    }):select()
-
-    self:add_targets_to_balancer(balancer, targets, 1)
+    })                   :select()
+    if targets then
+        self:add_targets_to_balancer(balancer, targets, 1)
+    end
     balancers[upstream.id] = balancer
 
+    return balancer
 end
 
 function proxy_dispatch:run(router)
-    local ctx = self.ctx
-    self.ctx.logger:debug("upstream uri ", json_encode(router))
-    local model = ctx.model
     if not router.proxy then
         ngx.exit(404)
         return
     end
+    local ctx = self.ctx
+    local model = ctx.model
     local handler = {}
     if router.proxy.type == 'baffle' then
-        handler = {function()
+        handler = { function()
             local baffle = model.baffle:find(router.proxy.serviceid)
             local response = ctx.response
             local header = json_decode(baffle.header)
@@ -94,61 +92,57 @@ function proxy_dispatch:run(router)
             ngx.exit(404)
             return
         end
+        upstream_base = '/' .. trim(service.path, '/')
         handler = {
             function()
-                if service.path == ngx.null then
-                    upstream_base = '/'
-                else
-                    upstream_base = '/' .. trim(service.path, '/')
-                end
                 local targets
                 local upstream = model.upstreams:cache(not self.ctx.debug):where({
                     name = service.host
-                }):find()
+                })                    :find()
                 if upstream then
                     targets = model.targets:cache(not self.ctx.debug):where({
                         upstreamid = upstream.id
-                    }):select()
+                    })             :select()
                 end
 
-                ngx.var.upstream_scheme = service.protocol
+                ngx_var.upstream_scheme = service.protocol
                 if matched_route.strip_path == 1 then
                     local striped_path = table.concat(router.params, '/')
 
                     if matched_route.path_handle == 'v1' then
-                        ngx.var.upstream_uri = upstream_base .. striped_path
+                        ngx_var.upstream_uri = upstream_base .. striped_path
                     else
-                        ngx.var.upstream_uri = upstream_base .. "/" .. striped_path
+                        ngx_var.upstream_uri = upstream_base .. "/" .. striped_path
                     end
                 else
                     local striped_path = trim(ctx.request.path_info, '/')
 
                     if matched_route.path_handle == 'v1' then
-                        ngx.var.upstream_uri = upstream_base .. striped_path
+                        ngx_var.upstream_uri = upstream_base .. striped_path
                     else
-                        ngx.var.upstream_uri = upstream_base .. "/" .. striped_path
+                        ngx_var.upstream_uri = upstream_base .. "/" .. striped_path
                     end
                 end
-                local upstream_uri = ngx.var.upstream_uri
-                if ngx.var.is_args == "?" or string.sub(ngx.var.request_uri, -1) == "?" then
-                    ngx.var.upstream_uri = upstream_uri .. "?" .. (ngx.var.args or "")
+                local upstream_uri = ngx_var.upstream_uri
+                if ngx_var.is_args == "?" or string.sub(ngx_var.request_uri, -1) == "?" then
+                    ngx_var.upstream_uri = upstream_uri .. "?" .. (ngx_var.args or "")
                 end
-                self.ctx.logger:debug("upstream uri ", ngx.var.upstream_uri)
+                self.ctx.logger:debug("upstream uri ", ngx_var.upstream_uri)
 
-                ngx.var.upstream_connection = ctx.request.header.connection or ''
+                ngx_var.upstream_connection = ctx.request.header.connection or ''
                 if matched_route.preserve_host == 1 then
-                    ngx.var.upstream_host = ctx.request.http_host or ctx.request.host .. ":" .. ctx.request.server_port
+                    ngx_var.upstream_host = ctx.request.http_host or ctx.request.host .. ":" .. ctx.request.server_port
                 elseif upstream then
-                    ngx.var.upstream_host = upstream.host_header ~= "" and upstream.host_header or "TiluaApiGateway"
+                    ngx_var.upstream_host = upstream.host_header ~= "" and upstream.host_header or "TiluaApiGateway"
                 else
-                    ngx.var.upstream_host = "TiluaApiGateway"
+                    ngx_var.upstream_host = "TiluaApiGateway"
                 end
                 local ip, port, host, hanlde
                 if upstream then
                     local balancer = self:create_balancer(upstream)
                     ip, port, host, hanlde = balancer:getPeer(true)
                 else
-                    ip = service.host
+                    ip = dns.toip(service.host)
                     port = service.port
                 end
                 return {
