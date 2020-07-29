@@ -136,8 +136,7 @@ function driver:startTrans()
         return false
     end
     if 0 == self.transTimes then
-        self.transPdo = self._linkID
-        self._linkID:beginTransaction()
+        self:beginTransaction()
     end
     self.transTimes = self.transTimes + 1
     return
@@ -146,9 +145,8 @@ end
 ---用于非自动提交状态下面的查询提交
 function driver:commit()
     if 1 == self.transTimes then
-        local result = self._linkID:commit()
+        local result = self:commitTrans()
         self.transTimes = 0
-        self.transPdo = nil
         if not result then
             return false
         end

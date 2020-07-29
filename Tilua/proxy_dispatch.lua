@@ -58,7 +58,7 @@ function proxy_dispatch:create_balancer(upstream, force_create)
 
     local targets = model.targets:where({
         upstreamid = upstream.id
-    })                   :select()
+    }):select()
 
     self:add_targets_to_balancer(balancer, targets, 1)
     balancers[upstream.id] = balancer
@@ -73,8 +73,9 @@ function proxy_dispatch:run(router)
         ngx.exit(404)
         return
     end
+    local handler = {}
     if router.proxy.type == 'baffle' then
-        self:make_chain_call(router.midware, function()
+        handler = {function()
             local baffle = model.baffle:find(router.proxy.serviceid)
             local response = ctx.response
             local header = json_decode(baffle.header)
@@ -84,9 +85,7 @@ function proxy_dispatch:run(router)
                 end
             end
             return baffle.body
-        end)()
-        ctx.response:send()
-        return ;
+        end,{},router.midware}
     else
         local service = model.services:cache(not self.ctx.debug):find(router.proxy.serviceid)
         local matched_route = router.router.route
@@ -95,73 +94,86 @@ function proxy_dispatch:run(router)
             ngx.exit(404)
             return
         end
+        handler = {
+            function()
+                if service.path == ngx.null then
+                    upstream_base = '/'
+                else
+                    upstream_base = '/' .. trim(service.path, '/')
+                end
+                local targets
+                local upstream = model.upstreams:cache(not self.ctx.debug):where({
+                    name = service.host
+                }):find()
+                if upstream then
+                    targets = model.targets:cache(not self.ctx.debug):where({
+                        upstreamid = upstream.id
+                    }):select()
+                end
 
-        if service.path == ngx.null then
-            upstream_base = '/'
-        else
-            upstream_base = '/' .. trim(service.path, '/')
-        end
-        local targets
-        local upstream = model.upstreams:cache(not self.ctx.debug):where({
-            name = service.host
-        })                    :find()
-        self.ctx.logger:debug("upstream  ", json_encode(upstream))
+                ngx.var.upstream_scheme = service.protocol
+                if matched_route.strip_path == 1 then
+                    local striped_path = table.concat(router.params, '/')
 
-        if upstream then
-            targets = model.targets:cache(not self.ctx.debug):where({
-                upstreamid = upstream.id
-            })             :select()
-        end
+                    if matched_route.path_handle == 'v1' then
+                        ngx.var.upstream_uri = upstream_base .. striped_path
+                    else
+                        ngx.var.upstream_uri = upstream_base .. "/" .. striped_path
+                    end
+                else
+                    local striped_path = trim(ctx.request.path_info, '/')
 
-        ngx.var.upstream_scheme = service.protocol
-        if matched_route.strip_path == 1 then
-            local striped_path = table.concat(router.params, '/')
+                    if matched_route.path_handle == 'v1' then
+                        ngx.var.upstream_uri = upstream_base .. striped_path
+                    else
+                        ngx.var.upstream_uri = upstream_base .. "/" .. striped_path
+                    end
+                end
+                local upstream_uri = ngx.var.upstream_uri
+                if ngx.var.is_args == "?" or string.sub(ngx.var.request_uri, -1) == "?" then
+                    ngx.var.upstream_uri = upstream_uri .. "?" .. (ngx.var.args or "")
+                end
+                self.ctx.logger:debug("upstream uri ", ngx.var.upstream_uri)
 
-            if matched_route.path_handle == 'v1' then
-                ngx.var.upstream_uri = upstream_base .. striped_path
-            else
-                ngx.var.upstream_uri = upstream_base .. "/" .. striped_path
-            end
-        else
-            local striped_path = trim(ctx.request.path_info, '/')
-
-            if matched_route.path_handle == 'v1' then
-                ngx.var.upstream_uri = upstream_base .. striped_path
-            else
-                ngx.var.upstream_uri = upstream_base .. "/" .. striped_path
-            end
-        end
-
-        self.ctx.logger:debug("upstream uri ", ngx.var.upstream_uri)
-
-        ngx.var.upstream_connection = ctx.request.header.connection or ''
-        if matched_route.preserve_host == 1 then
-            ngx.var.upstream_host = ctx.request.http_host or ctx.request.host .. ":" .. ctx.request.server_port
-        elseif upstream then
-            ngx.var.upstream_host = upstream.host_header ~= "" and upstream.host_header or "TiluaApiGateway"
-        else
-            ngx.var.upstream_host = "TiluaApiGateway"
-        end
-        local ip, port, host, hanlde
-        if upstream then
-            local balancer = self:create_balancer(upstream)
-            ip, port, host, hanlde = balancer:getPeer(true)
-        else
-            ip = service.host
-            port = service.port
-        end
-
-        self.ctx.logger:debug("upstream uri ", ip, port)
-
-        ngx.ctx.peer = {
-            host = ip,
-            port = port,
-            connect_timeout = service.connect_timeout,
-            send_timeout = service.write_timeout,
-            read_timeout = service.read_timeout
+                ngx.var.upstream_connection = ctx.request.header.connection or ''
+                if matched_route.preserve_host == 1 then
+                    ngx.var.upstream_host = ctx.request.http_host or ctx.request.host .. ":" .. ctx.request.server_port
+                elseif upstream then
+                    ngx.var.upstream_host = upstream.host_header ~= "" and upstream.host_header or "TiluaApiGateway"
+                else
+                    ngx.var.upstream_host = "TiluaApiGateway"
+                end
+                local ip, port, host, hanlde
+                if upstream then
+                    local balancer = self:create_balancer(upstream)
+                    ip, port, host, hanlde = balancer:getPeer(true)
+                else
+                    ip = service.host
+                    port = service.port
+                end
+                return {
+                    host = ip,
+                    port = port,
+                    connect_timeout = service.connect_timeout,
+                    send_timeout = service.write_timeout,
+                    read_timeout = service.read_timeout
+                }
+            end,
+            {},
+            router.midware
         }
     end
-
+    handler = self:create_responser(handler)
+    local response = self:prepare_response(handler())
+    if router.proxy.type == 'baffle' then
+        response:send()
+    else
+        if response.status ~=0 and response.status ~=200 then
+            response:send()
+        else
+            ngx.ctx.peer = response.body
+        end
+    end
 end
 
 return proxy_dispatch

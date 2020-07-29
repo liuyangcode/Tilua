@@ -176,10 +176,10 @@ function app:on_app_handled(func)
 end
 
 function app.init_worker(app_instance)
-    --init_worker
-    if app_instance.init_worker then
-        app_instance:init_worker()
-    end
+    ----init_worker
+    --if app_instance.init_worker then
+    --    app_instance:init_worker()
+    --end
 end
 
 local function init_view_engine(root)
@@ -230,14 +230,14 @@ function app.startup(app_instance)
 
     app_instance.view_engine = init_view_engine(app_instance.path)
     app_instance.view_engine.template.caching(not app_instance.debug)
-    app.route = require('Tilua.route')
-    app.route.set_app_name(appname)
+    app_instance.route = require('Tilua.route')
+    app_instance.route.set_app_name(appname)
     app_config.log.path = path.join(app_instance.path, app_config.log.path)
     logger_class = require("Tilua.log").init(app_config.log)
     --加载应用自定义路由
     pcall(require, appname .. '.routes')
     --解析路由
-    app.route.init_rule_caches(app_config.route)
+    app_instance.route.init_rule_caches(app_config.route)
     configs[appname] = app_config
     if app_instance.on_startup then
         app_instance.on_startup(app_config)

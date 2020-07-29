@@ -4,9 +4,9 @@ local split = require("pl.utils").split
 local route_service = require("ApiGateWay.routes")
 ApiGateWay.name = "ApiGateWay"
 ApiGateWay.path = "/usr/local/openresty/lua/ApiGateWay/"
-ApiGateWay.debug = true
+ApiGateWay.debug = false
 ApiGateWay.status = 'dev'
-
+local is_routes_loaded = false
 function ApiGateWay:_init()
     self:super(self)
 end
@@ -62,7 +62,7 @@ end
 ---@param ctx app
 function ApiGateWay.on_app_init(ctx)
     ctx.logger:debug("on_app_init --- ", ctx.name)
-    if not ApiGateWay.is_routes_loaded then
+    if not is_routes_loaded then
         local routes = ctx.model.routes:select()
         lw_utils.foreach(routes, function(route)
             local validations = {
@@ -82,13 +82,11 @@ function ApiGateWay.on_app_init(ctx)
                     }
                 end
             end
-            ctx.logger:debug("upstream uri ", lw_utils.json_encode(validations))
-
             local methods = split(route.methods, ',', true)
             local paths = split(route.paths, ',', true)
             lw_utils.foreach(methods, function(verb)
                 lw_utils.foreach(paths, function(path)
-                    ApiGateWay.route.add_route_rule(
+                    ctx.route.add_route_rule(
                             ctx.name,
                             string.lower(verb),
                             '*',
@@ -109,7 +107,7 @@ function ApiGateWay.on_app_init(ctx)
                 end)
             end)
         end)
-        ApiGateWay.is_routes_loaded = true
+        is_routes_loaded = true
     end
 end
 

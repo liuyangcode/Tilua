@@ -42,7 +42,25 @@ function mysql:connect(config, linkNum, autoConnection)
 end
 
 function mysql:beginTransaction()
+    self:initConnect(true)
+    local res, err, errcode, sqlstate = self._linkID:query("START TRANSACTION")
+    self.logger:debug("START TRANSACTION ")
+    if not res then
+        self.logger:error(err, " errcode ", (errcode or ""), " sqlstate:", (sqlstate or ""))
+        error(err .. " errcode " .. (errcode or "") .. " sqlstate:" .. (sqlstate or ""),2)
+    end
+    return true
+end
 
+function mysql:commitTrans()
+    self:initConnect(true)
+    local res, err, errcode, sqlstate = self._linkID:query("COMMIT")
+    self.logger:debug("COMMIT TRANSACTION ")
+    if not res then
+        self.logger:error(err, " errcode ", (errcode or ""), " sqlstate:", (sqlstate or ""))
+        error(err .. " errcode " .. (errcode or "") .. " sqlstate:" .. (sqlstate or ""),2)
+    end
+    return true
 end
 
 function mysql:execute_sql(sql)

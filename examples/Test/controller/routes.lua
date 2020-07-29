@@ -73,7 +73,7 @@ function routes.create(ctx)
         methods = methods or '*',
         headers = req.headers or '',
         strip_path = req.strip_path == 'on' and 0 or 1,
-        preserve_host = req.preserve_host or 0,
+        preserve_host = req.preserve_host=='on' and 1 or 0,
         serviceid = req.serviceid or 0,
         proxy_type = req.proxy_type or 'proxy',
         path_handle = req.path_handle or 'v0',

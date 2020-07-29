@@ -28,7 +28,7 @@
             <label class="layui-form-label">匹配请求方法</label>
             <div class="layui-input-block">
                 <input type="checkbox" name="methods" lay-skin="primary" title="GET" value="GET"  {% if string.find(methods,'GET') then %} checked {% end  %}>
-                <input type="checkbox" name="methods" lay-skin="primary" title="POST" value="POST"{% if string.find(methods,'GET') then %} checked {% end  %}>
+                <input type="checkbox" name="methods" lay-skin="primary" title="POST" value="POST"{% if string.find(methods,'POST') then %} checked {% end  %}>
                 <input type="checkbox" name="methods" lay-skin="primary" title="PUT" value="PUT"{% if string.find(methods,'PUT') then %} checked {% end  %}>
                 <input type="checkbox" name="methods" lay-skin="primary" title="DELETE" value="DELETE"{% if string.find(methods,'DELETE') then %} checked {% end  %}>
                 <input type="checkbox" name="methods" lay-skin="primary" title="HEAD" value="HEAD"{% if string.find(methods,'HEAD') then %} checked {% end  %}>

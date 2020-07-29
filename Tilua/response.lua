@@ -56,6 +56,14 @@ function response:send_headers()
     if not has_content_type then
         add_header('content-type', self.ctx.config.default_content_type .. '; charset=' .. self.ctx.config.default_charset)
     end
+
+    local tcontent = type(self.body)
+    if tcontent == 'string' then
+        add_header('Content-Length',#self.body)
+    elseif tcontent == 'nil' then
+        self.body = ''
+        add_header('Content-Length',0)
+    end
     return self
 end
 
@@ -135,7 +143,6 @@ function response:set_cookie(name, value, path, expires, domain, httponly, secur
 end
 ---发送正文给客户端
 function response:send_body()
-    ngx.status = self.status
     if self.status == 200 or self.status == 0 then
         send(self.body)
     end

@@ -21,6 +21,7 @@ end
 function view:precompile(view_file)
     local viewCacheFile = self.ctx.view_engine.view_cache_abs_path .. view_file
     view_file = path.join('view', view_file)
+    self.ctx.logger:debug(view_file,' precompile to ',viewCacheFile )
     self.ctx.view_engine.template.precompile(view_file, viewCacheFile, '', false)
 end
 
@@ -46,12 +47,15 @@ function view:render(view_file, context)
     else
         local view_cache_abs_path = self.ctx.view_engine.view_cache_abs_path .. view_file
         local view_cache_mtime = getmtime(view_cache_abs_path) or -1
+        if not path.exists( path.dirname(view_cache_abs_path)) then
+            path.mkdir(path.dirname(view_cache_abs_path))
+        end
 
         local view_abs_path = path.join(self.ctx.path, 'view', view_file)
         local view_mtime = getmtime(view_abs_path)
         assert(view_mtime, "[view.render] Template file named " .. view_abs_path .. " not exists!")
         if view_cache_mtime < view_mtime then
-            self.ctx.logger:debug("template cache expired need update")
+            self.ctx.logger:debug("template cache expired need update ",view_file )
             self:precompile(view_file)
         end
     end

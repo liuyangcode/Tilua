@@ -12,6 +12,9 @@ local rawget, type, setmetatable, string_lower, string_sub = rawget, type, setme
 local manager = {}
 
 function manager:instance(config)
+    if config == self then
+        config = nil
+    end
     config = manager.parse_config(self, config)
     assert(config, "db config is not valid")
     local hash = lw_utils.get_hash(config)

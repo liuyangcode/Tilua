@@ -70,9 +70,8 @@ local function parse_disposition_headers(headers)
     }
 end
 local function get_boundary(content_type)
-    local boundary = string.match(content_type, ";%s*boundary=([^,;]+)")
-    boundary = strip(boundary, '"')
-
+    local boundary = string.match(content_type or "", ";%s*boundary=([^,;]+)")
+    boundary = strip(boundary or "", '"')
     return boundary
 end
 local function is_multipart(content_type)
