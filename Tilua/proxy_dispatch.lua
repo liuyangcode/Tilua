@@ -43,11 +43,6 @@ function proxy_dispatch:run(router)
         ngx.exit(404)
         return
     end
-    local service = balancer.get_service(router.proxy.serviceid, self.ctx)
-    if not service then
-        ngx.exit(404)
-        return
-    end
     local ctx = self.ctx
     local model = ctx.model
     local handler = {}
@@ -56,16 +51,23 @@ function proxy_dispatch:run(router)
             local baffle = model.baffle:find(router.proxy.serviceid)
             local response = ctx.response
             local header = json_decode(baffle.header)
-            response.headers = header
-            return baffle.body
+            util.foreach(header, function(v)
+                response:add_header(v)
+            end)
+            response.body = baffle.body
         end
     else
+        local service = balancer.get_service(router.proxy.serviceid, self.ctx)
+        if not service then
+            ngx.exit(404)
+            return
+        end
         local matched_route = router.router.route
-        local upstream_base  = '/' .. trim(service.path, '/')
+        local upstream_base = '/' .. trim(service.path, '/')
         handler = function()
             local upstream = balancer.get_upstream(service, ctx)
             ngx.var.upstream_scheme = service.protocol
-            if matched_route.protocols =='HTTP' then
+            if matched_route.protocols == 'HTTP' then
                 ngx.var.upstream_uri = upstream_base .. self:get_striped_path(router)
                 self.ctx.logger:debug("upstream uri ", ngx.var.upstream_uri)
             end
@@ -82,8 +84,8 @@ function proxy_dispatch:run(router)
             if ngx.ctx.peer then
                 handle = ngx.ctx.peer.handle
             end
-            hash_value = ngx.ctx.peer and ngx.ctx.peer.hash_value or balancer.create_hash(upstream, ctx)
 
+            hash_value = ngx.ctx.peer and ngx.ctx.peer.hash_value or balancer.create_hash(upstream, ctx)
             if upstream then
                 local bal,err = balancer.create_balancer(upstream, ctx, false)
                 if not bal then
@@ -95,6 +97,7 @@ function proxy_dispatch:run(router)
                         hash_value
                 )
             else
+
                 ip = dns.toip(service.host)
                 port = service.port
             end

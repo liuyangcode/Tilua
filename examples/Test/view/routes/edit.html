@@ -107,9 +107,16 @@
             <label class="layui-form-label">路径处理方式</label>
             <div class="layui-input-block">
                 <select name="path_handle">
-                    <option value="v0"{% if path_handle=='v0' then  %}selected{% end %}>追加</option>
-                    <option value="v1"{% if path_handle=='v1' then  %}selected{% end %}>连接</option>
+                    <option value="v0" {% if path_handle=='v0' then %}selected{% end %}>追加</option>
+                    <option value="v1" {% if path_handle=='v1' then %}selected{% end %}>连接</option>
                 </select>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">验证规则</label>
+            <div class="layui-input-block">
+                <textarea class="layui-textarea" name="validations"
+                          placeholder="例如，env:in,uat,pro多个验证规则用;分隔" value="">{{validations}}</textarea>
             </div>
         </div>
         <div class="layui-form-item">

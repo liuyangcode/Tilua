@@ -15,12 +15,11 @@
 <body style="width: 500px;padding: 10px;">
 <div id="add_form">
     <form class="layui-form">
-        <input type="hidden" name="id" value="{{id}}">
         <div class="layui-form-item">
             <label class="layui-form-label">服务名称</label>
             <div class="layui-input-block">
                 <input type="text" name="name" required lay-verify="required" placeholder="请输入服务名称" autocomplete="off"
-                       class="layui-input" value="{{name}}">
+                       class="layui-input">
             </div>
         </div>
         <div class="layui-form-item">
@@ -28,8 +27,8 @@
             <div class="layui-input-block">
                 <select name="protocol" lay-verify="required">
                     <option value=""></option>
-                    <option value="http" {% if protocol=='http' then %} selected{% end %}>http</option>
-                    <option value="https"{% if protocol=='https' then %} selected{% end %}>https</option>
+                    <option value="http">http</option>
+                    <option value="https">https</option>
                 </select>
             </div>
         </div>
@@ -37,45 +36,45 @@
             <label class="layui-form-label">服务端口</label>
             <div class="layui-input-block">
                 <input type="text" name="port" required lay-verify="required" placeholder="请输入服务端口号" autocomplete="off"
-                       class="layui-input" value="{{port}}">
+                       class="layui-input">
             </div>
         </div>
         <div class="layui-form-item">
             <label class="layui-form-label">主机</label>
             <div class="layui-input-block">
                 <input type="text" name="host" required lay-verify="required" placeholder="请输入主机" autocomplete="off"
-                       class="layui-input" value="{{host}}">
+                       class="layui-input">
             </div>
         </div>
         <div class="layui-form-item">
             <label class="layui-form-label">路径</label>
             <div class="layui-input-block">
                 <input type="text" name="path" required lay-verify="required" placeholder="请输入路径" autocomplete="off"
-                       class="layui-input" value="{{path}}">
+                       class="layui-input" value="/">
             </div>
         </div>
         <div class="layui-form-item">
-            <label class="layui-form-label">连接超时时间</label>
+            <label class="layui-form-label">连接超时时间(ms)</label>
             <div class="layui-input-block">
                 <input type="text" name="connect_timeout" required lay-verify="required" placeholder="单位ms"
                        autocomplete="off"
-                       class="layui-input" value="{{read_timeout}}">
+                       class="layui-input" value="60000">
             </div>
         </div>
         <div class="layui-form-item">
-            <label class="layui-form-label">读超时时间</label>
+            <label class="layui-form-label">读超时时间(ms)</label>
             <div class="layui-input-block">
                 <input type="text" name="read_timeout" required lay-verify="required" placeholder="单位ms"
                        autocomplete="off"
-                       class="layui-input" value="{{read_timeout}}">
+                       class="layui-input" value="60000">
             </div>
         </div>
         <div class="layui-form-item">
-            <label class="layui-form-label">写超时时间</label>
+            <label class="layui-form-label">写超时时间(ms)</label>
             <div class="layui-input-block">
                 <input type="text" name="write_timeout" required lay-verify="required" placeholder="单位ms"
                        autocomplete="off"
-                       class="layui-input" value="{{write_timeout}}">
+                       class="layui-input" value="60000">
             </div>
         </div>
         <div class="layui-form-item">
@@ -95,11 +94,13 @@
         form.on('submit(formDemo)', function (data) {
             $.ajax({
                 //请求方式
-                type: "PUT",
-                //请求地址
-                url: "/posts/"+data.field.id,
-                data: JSON.stringify(data.field),
+                type: "POST",
+                //请求的媒体类型
                 contentType: "application/json;charset=UTF-8",
+                //请求地址
+                url: "/services",
+                //数据，json字符串
+                data: JSON.stringify(data.field),
                 //请求成功
                 success: function (result) {
                     if (result.code == 0) {
@@ -107,9 +108,10 @@
                             var index = parent.layer.getFrameIndex(window.name); //先得到当前iframe层的索引
                             parent.layer.close(index); //再执行关闭
                             parent.layui.table.reload('test')
+
                         }
                     } else {
-                        layer.alert(JSON.stringify(result));
+                        layer.alert(result.msg);
                     }
                 },
                 //请求失败，包含具体的错误信息

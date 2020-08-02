@@ -23,18 +23,18 @@ function posts.index(ctx)
 end
 
 function posts.new(ctx)
-    ctx.response:render("posts/new.html")
+    ctx.response:render("services/new.html")
 end
 
 function posts.show(ctx, id)
-    ctx.response.body = ngx.re.gsub("32.254.48.88", "([\'\\\"])", "\\$1", "jo")
+    ctx.response.body = ngx.re.gsub("posts.show", "([\'\\\"])", "\\$1", "jo")
 end
 
 function posts.edit(ctx, id)
     local request, response = ctx:unpack()
     local req = request.body
     local services = ctx.model.services
-    response:render('posts/edit.html',services:find(id))
+    response:render('services/edit.html', services:find(id))
 end
 
 function posts.create(ctx)

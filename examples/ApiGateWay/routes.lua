@@ -9,22 +9,25 @@ local routes = {}
 local lw_utils = require("Tilua.util")
 local split = require("pl.utils").split
 local add_route_rule = require("Tilua.route").add_route_rule
+local parse_validation = require("Tilua.route").parse_validation
 local clear_route_rule = require("Tilua.route").clear_route_rule
+local midwares = require("ApiGateWay.plugins")
 
 function routes.get_midwares(ctx, id)
     local db = ctx.db.instance()
     local data = db:query("select mid.package,mid.config as midconfig,route.config from routes_plugins as route left join midwares as mid on (mid.id=route.mid) where route.routeid=" .. id)
-
     local midwares = {}
-
     for _, mid in ipairs(data) do
         table.insert(midwares, {
             mid.package,
             lw_util.parse_expression(mid.config == ngx.null and "" or mid.config, ',', '=')
         })
     end
-
     return midwares
+end
+
+function routes.get_midwares()
+
 end
 
 function routes.reload(ctx)
@@ -49,6 +52,12 @@ function routes.parse_validation(route)
                 'EQ',
                 v
             }
+        end
+    end
+    if route.validations ~= '' then
+        local va = parse_validation(route.validations)
+        for k, v in pairs(va) do
+            validations[k] = v
         end
     end
 
@@ -78,7 +87,7 @@ function routes.load(ctx, force)
                                         type = route.proxy_type,
                                         serviceid = route.serviceid
                                     },
-                                    midware = routes.get_midwares(ctx, route.id),
+                                    midware = midwares.get_route_midwares(ctx, 'content', route.id),
                                     path = path,
                                     route = route
                                 },

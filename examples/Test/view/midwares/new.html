@@ -10,9 +10,18 @@
         .layui-form-label {
             width: 80px;
         }
+
+        .layui-table-tool-self {
+            display: none;
+        }
     </style>
 </head>
 <body style="width: 500px;padding: 10px;">
+<script id="toolbarDemo" type="text/html">
+    <div class="layui-btn-container">
+        <button class="layui-btn layui-btn-xs" lay-event="addService">添加一行</button>
+    </div>
+</script>
 <div id="add_form">
     <form class="layui-form">
         <div class="layui-form-item">
@@ -36,23 +45,28 @@
                        class="layui-input">
             </div>
         </div>
-
         <div class="layui-form-item">
             <label class="layui-form-label">配置项</label>
             <div class="layui-input-block">
-                <div class="layui-input-inline" style="width: 300px">
-                    <input type="text" name="config" placeholder="请添加配置项"
-                           autocomplete="off"
-                           class="layui-input"/>
-                </div>
-                <div class="layui-form-mid layui-word-aux">
-                    <button type="button" class="layui-btn layui-btn-sm" onclick="addPath(this,'config')"><i
-                            class="layui-icon layui-icon-addition"></i></button>
-                    <button type="button" class="layui-btn layui-btn-sm" onclick="removePath(this)"><i
-                            class="layui-icon layui-icon-subtraction"></i></button>
-                </div>
+                <table id="demo"></table>
             </div>
         </div>
+        <!--        <div class="layui-form-item">-->
+        <!--            <label class="layui-form-label">配置项</label>-->
+        <!--            <div class="layui-input-block">-->
+        <!--                <div class="layui-input-inline" style="width: 300px">-->
+        <!--                    <input type="text" name="config" placeholder="请添加配置项"-->
+        <!--                           autocomplete="off"-->
+        <!--                           class="layui-input"/>-->
+        <!--                </div>-->
+        <!--                <div class="layui-form-mid layui-word-aux">-->
+        <!--                    <button type="button" class="layui-btn layui-btn-sm" onclick="addPath(this,'config')"><i-->
+        <!--                            class="layui-icon layui-icon-addition"></i></button>-->
+        <!--                    <button type="button" class="layui-btn layui-btn-sm" onclick="removePath(this)"><i-->
+        <!--                            class="layui-icon layui-icon-subtraction"></i></button>-->
+        <!--                </div>-->
+        <!--            </div>-->
+        <!--        </div>-->
         <div class="layui-form-item">
             <div class="layui-input-block">
                 <button class="layui-btn" lay-submit lay-filter="formDemo">立即提交</button>
@@ -67,10 +81,30 @@
     function addPath(item, field) {
         $(item).parent().prev().append("<input type=\"text\" name=\"" + field + "\"  autocomplete=\"off\" class=\"layui-input\" style='margin-top: 10px'>\n");
     }
+
     function removePath(item) {
         $(item).parent().prev().children().last().remove();
     }
-    layui.use(['form'], function () {
+
+    layui.use(['form', 'table'], function () {
+        var data = []
+        var table = layui.table;
+
+        //第一个实例
+        table.render({
+            elem: '#demo'
+            , height: 200
+            , toolbar: '#toolbarDemo'
+            , data: data
+            , size: 'sm'
+            , skin: 'row'
+            , cols: [[ //表头
+                {field: 'item', title: '配置项', width: '50%', edit: 'text'}
+                , {field: 'type', title: '类型', width: '50%', edit: 'text'}
+            ]]
+        });
+
+
         var form = layui.form;
         //监听提交
         form.on('submit(formDemo)', function (data) {

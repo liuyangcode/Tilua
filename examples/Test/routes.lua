@@ -22,12 +22,7 @@ end, {'json'})
 
 
 route.group(function()
-    route.rest('/posts', 'controller.posts')
-    route.rest('/targets', 'controller.targets')
-    route.rest('/routes', 'controller.routes')
-    route.rest('/upstreams', 'controller.upstreams')
-    route.rest('/baffle', 'controller.baffle')
-    route.rest('/midwares', 'controller.midwares')
+    route.rest('^/(services|secrets|targets|routes|upstreams|baffle|midwares|users)', 'controller.$1')
     route {
         ["=/routes/addPlugin"] = {
             get = 'controller.routes@add_plugin',

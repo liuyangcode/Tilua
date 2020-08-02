@@ -10,22 +10,25 @@ function index:index(ctx)
 end
 
 function index:services(ctx)
-    self:display()
+    return 'services/index.html'
 end
 function index:routes(ctx)
-    self:display()
+    return 'routes/index.html'
 end
 function index:targets(ctx)
-    self:display()
+    return 'targets/index.html'
 end
 function index:baffle(ctx)
-    self:display()
+    return 'baffle/index.html'
 end
 function index:midwares(ctx)
-    self:display()
+    return 'midwares/index.html'
 end
 function index:upstreams(ctx)
-    self:display()
+    return 'upstreams/index.html'
+end
+function index:secrets(ctx)
+    return 'secrets/index.html'
 end
 function index:login()
     self:display()

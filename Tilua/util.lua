@@ -3,7 +3,7 @@ local pretty = require('pl.pretty')
 local tablex_size = tablex.size
 local foreach = tablex.foreach
 local ngx = ngx
-local now,update_time = ngx.now,ngx.update_time
+local now, update_time = ngx.now, ngx.update_time
 local md5 = ngx.md5
 local string = string
 local table = table
@@ -15,6 +15,9 @@ local string_format = string.format
 local string_sub = string.sub
 local table_insert = table.insert
 local math_random = math.random
+
+local lrandom = require "random"
+
 ---@class util
 local util = {
     split = split
@@ -61,10 +64,10 @@ end
 ---@param res table
 ---@param index string
 ---@param sep string optional,default is '.'
-function util.index_value(res,index,sep)
-    assert_arg(1,res,'table')
+function util.index_value(res, index, sep)
+    assert_arg(1, res, 'table')
     sep = sep or '.'
-    local properties = split(index, sep,true)
+    local properties = split(index, sep, true)
     for i = 1, #properties do
         if not res[properties[i]] then
             return nil
@@ -112,8 +115,8 @@ end
 ---@param dest table
 ---@param src table
 function util.extend(dest, src)
-    assert_arg(1,dest,'table')
-    assert_arg(1,src,'table')
+    assert_arg(1, dest, 'table')
+    assert_arg(1, src, 'table')
     for k, v in pairs(src) do
         if util.is_array(v) and util.is_array(dest[k]) then
             tablex.update(dest[k], v)
@@ -147,10 +150,22 @@ function util.dump(...)
         ngx.say(pretty.write(params[i]) .. '<br/>')
     end
 end
+
+function util.CreateUUID()
+
+    local template = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    local d = io.open("/dev/urandom", "r"):read(4)
+    math.randomseed(os.time() + d:byte(1) + (d:byte(2) * 256) + (d:byte(3) * 65536) + (d:byte(4) * 4294967296))
+    return string.gsub(template, "x", function(c)
+        local v = (c == "x") and math.random(0, 0xf) or math.random(8, 0xb)
+        return string.format("%x", v)
+    end)
+end
 ---uuid
 function util.uuid()
     local seed = { 'e', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' }
     local tb = {}
+    ngx.update_time()
     math.randomseed(ngx.now())
     for i = 1, 32 do
         table_insert(tb, seed[math_random(1, 16)])
@@ -207,11 +222,11 @@ function util.get_now_ms()
     update_time()
     return now() * 1000
 end
-function util.elapse_time_start(tag,ctx)
+function util.elapse_time_start(tag, ctx)
     if not ctx then
         ctx = ngx.ctx
     end
-    tag = tag and 'ELAPSE_TIME_TAG_'..tag or 'ELAPSE_TIME_TAG_DEFAULT_START'
+    tag = tag and 'ELAPSE_TIME_TAG_' .. tag or 'ELAPSE_TIME_TAG_DEFAULT_START'
     ctx.tag = util.get_now_ms()
     return ctx.tag
 end
@@ -219,7 +234,7 @@ function util.elapse_time_end(tag, ctx)
     if not ctx then
         ctx = ngx.ctx
     end
-    tag = tag and 'ELAPSE_TIME_TAG_'..tag or 'ELAPSE_TIME_TAG_DEFAULT_START'
+    tag = tag and 'ELAPSE_TIME_TAG_' .. tag or 'ELAPSE_TIME_TAG_DEFAULT_START'
     return util.get_now_ms() - ctx.tag
 end
 
@@ -233,9 +248,9 @@ function util.serialize(data)
     return util.json_encode(data)
 end
 
-function util.combine(keys,values)
-    assert_arg(1,keys,'table')
-    assert_arg(1,values,'table')
+function util.combine(keys, values)
+    assert_arg(1, keys, 'table')
+    assert_arg(1, values, 'table')
     local result = {}
     for i, v in ipairs(keys) do
         result[v] = values[i]

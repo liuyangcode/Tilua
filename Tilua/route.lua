@@ -182,11 +182,11 @@ end
 ---@param handler any
 function route.rest(path, handler, ...)
     local rest = {
-        { 'get', '', 'index', '' },
-        { 'get', '/new', 'new', '=' },
-        { 'get', '/{id}', 'show', '~' },
+        { 'get', '', 'index', '~' },
+        { 'get', '/new', 'new', '~' },
+        { 'get', '/{id} id:neq,new', 'show', '~' },
         { 'get', '/{id}/edit', 'edit', '~' },
-        { 'post', '', 'create', '' },
+        { 'post', '', 'create', '~' },
         { 'put', '/{id}', 'update', '~' },
         { 'delete', '/{id}', 'destroy', '~' }
     }

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
+    <title>挡板服务器</title>
+    <link href="/static/layui/css/layui.css" rel="stylesheet">
+    <script charset="utf-8" src="/static/js/jquery.min.js"></script>
+    <style type="text/css">
+        .layui-form-label {
+        }
+    </style>
+</head>
+<body>
+<table class="layui-hide test-table" id="test" lay-filter="test"></table>
+<!-- 注意：如果你直接复制所有代码到本地，上述js路径需要改成你本地的 -->
+<script id="toolbarDemo" type="text/html">
+    <div class="layui-btn-container">
+        <button class="layui-btn layui-btn-sm" lay-event="addService">新增</button>
+    </div>
+</script>
+
+<script id="barDemo" type="text/html">
+    <a class="layui-btn layui-btn-xs" lay-event="edit">编辑</a>
+    <a class="layui-btn layui-btn-danger layui-btn-xs" lay-event="del">删除</a>
+</script>
+
+<script charset="utf-8" src="/static/layui/layui.js"></script>
+<script>
+    layui.use(['table', 'element', 'layer'], function () {
+        var table = layui.table;
+        var layer = layui.layer;
+        var form = layui.form;
+        table.render({
+            elem: '#test'
+            , url: '/upstreams'
+            , toolbar: '#toolbarDemo' //开启头部工具栏，并为其绑定左侧模板
+            , height: 'full-30'
+            , cols: [[
+                {fixed: 'left', type: 'radio'},
+                {fixed: 'left', field: 'id', width: 80, title: 'ID'}
+                , {field: 'name', width: 130, title: '负载主机'}
+                , {field: 'algorithm', width: 120, title: '负载算法'}
+                , {field: 'hash_on', title: '哈希数据类型', width: 120}
+                , {field: 'hash_on_header', width: 180, title: '请求头哈希键名'}
+                , {field: 'hash_on_cookie', width: 180, title: 'Cookie哈希键名'}
+                , {field: 'hash_fallback', width: 150, title: '备选哈希数据类型'}
+                , {field: 'hash_fallback_header', width: 150, title: '备选请求头哈希键名'}
+                , {field: 'host_header', width: 150, title: '代理请求头Host'}
+                , {field: 'created_at', width: 180, title: '创建时间'}
+                , {field: 'updated_at', width: 180, title: '更新时间'}
+                , {fixed: 'right', width: 130, align: 'center', toolbar: '#barDemo'}
+            ]]
+            , id: 'test'
+            , page: true
+        });
+        table.on('tool(test)', function (obj) {
+            var data = obj.data;
+            if (obj.event === 'detail') {
+                layer.msg('ID：' + data.id + ' 的查看操作');
+            } else if (obj.event === 'del') {
+                layer.confirm('真的删除行么', function (index) {
+
+                    $.ajax({
+                        //请求方式
+                        type: "delete",
+                        //请求的媒体类型
+                        //请求地址
+                        url: "/upstreams/" + obj.data.id,
+                        //数据，json字符串
+                        //请求成功
+                        success: function (result) {
+                            if (result.code == 0) {
+                                obj.del();
+                                layer.close(index);
+                            } else {
+                                layer.alert(result.msg);
+                            }
+                        },
+                        //请求失败，包含具体的错误信息
+                        error: function (e) {
+                            console.log(e.status);
+                            console.log(e.responseText);
+                        }
+                    })
+                });
+            } else if (obj.event === 'edit') {
+                layer.open({
+                    type: 2,
+                    title: "编辑负载",
+                    area: ["540px", '580px'],
+                    content: '/upstreams/' + data.id + '/edit'
+                });
+            }
+        });
+        //头工具栏事件
+        table.on('toolbar(test)', function (obj) {
+            var checkStatus = table.checkStatus(obj.config.id);
+            switch (obj.event) {
+                case 'addService':
+                    layer.open({
+                        type: 2,
+                        title: "新增负载",
+                        area: ["540px", '580px'],
+                        content: '/upstreams/new'
+                    });
+                    break;
+            }
+        });
+    });
+</script>
+</body>
+</html>

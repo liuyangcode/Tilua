@@ -32,10 +32,14 @@ function app:initialize()
     self:init_cache_manager()
     self:init_db_manager()
     self:init_model_manager()
+    self:init_dispatcher()
 end
 ---分发路由
 ---@return dispatch
 function app:dispatch(...)
+    return self.dispatcher:run(...)
+end
+function app:init_dispatcher()
     local dispatcher = self.config.dispatch
     self.logger:debug('init dispatch named:', dispatcher)
     assert(not lw_utils.empty(dispatcher), 'no dispatcher defined')
@@ -45,7 +49,6 @@ function app:dispatch(...)
     end
     assert(dispatch.run, 'dispatch must has a run method')
     self.dispatcher = dispatch(self)
-    return self.dispatcher:run(...)
 end
 ---get_html_cache_interceptor
 ---@return page
@@ -102,10 +105,10 @@ local function init_application(app_instance)
     local ctx = ngx.ctx
     lw_utils.elapse_time_start('app_excution_time')
     local context = app_instance()
-    ctx.ctx = context
     if context.on_app_init then
         context.on_app_init(context)
     end
+    ctx.ctx = context
     return context
 end
 

@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
+    <title>挡板服务器</title>
+    <link href="/static/layui/css/layui.css" rel="stylesheet">
+    <script charset="utf-8" src="/static/js/jquery.min.js"></script>
+    <style type="text/css">
+        .layui-form-label {
+            width: 120px;
+        }
+
+        .layui-input-inline {
+            width: 300px;
+        }
+
+        .layui-input-block {
+            margin-left: 150px;
+        }
+    </style>
+</head>
+<body style="width: 500px;padding: 10px;">
+<div id="add_form">
+    <form class="layui-form">
+        <div class="layui-form-item">
+            <label class="layui-form-label">负载主机名</label>
+            <div class="layui-input-block">
+                <input autocomplete="off" class="layui-input" lay-verify="required" name="name"
+                       placeholder="请输入负载主机名，要与服务host一致" required
+                       type="text">
+            </div>
+        </div>
+        <div class="layui-form-item" pane="">
+            <label class="layui-form-label">负载算法</label>
+            <div class="layui-input-block">
+                <select name="algorithm">
+                    <option value="least-connections">最小连接数法</option>
+                    <option selected="" value="round-robin">加权轮询法</option>
+                    <option value="consistent-hashing">一致性哈希法</option>
+                </select>
+            </div>
+        </div>
+        <div class="layui-form-item" pane="">
+            <label class="layui-form-label">哈希数据类型</label>
+            <div class="layui-input-block">
+                <select name="hash_on">
+                    <option selected="" value="none">无</option>
+                    <option value="ip">ip</option>
+                    <option value="header">header</option>
+                    <option value="cookie">cookie</option>
+                </select>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">请求头哈希键名</label>
+            <div class="layui-input-block">
+                <input autocomplete="off" class="layui-input" name="hash_on_header" placeholder="请输入请求头哈希键名"
+                       type="text">
+            </div>
+        </div>
+
+        <div class="layui-form-item">
+            <label class="layui-form-label">Cookie哈希键名</label>
+            <div class="layui-input-block">
+                <input autocomplete="off" class="layui-input" name="hash_on_cookie" placeholder="请输入Cookie哈希键名"
+                       type="text">
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">Cookie路径</label>
+            <div class="layui-input-block">
+                <input autocomplete="off" class="layui-input" name="hash_on_cookie_path" placeholder="请输入Cookie路径"
+                       type="text" value="/">
+            </div>
+        </div>
+        <div class="layui-form-item" pane="">
+            <label class="layui-form-label">备选哈希数据类型</label>
+            <div class="layui-input-block">
+                <select name="hash_fallback">
+                    <option selected="" value="none">无</option>
+                    <option value="ip">ip</option>
+                    <option value="header">header</option>
+                    <option value="cookie">cookie</option>
+                </select>
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">备选请求头哈希键名</label>
+            <div class="layui-input-block">
+                <input autocomplete="off" class="layui-input" name="hash_fallback_header" placeholder="请输入备选请求头哈希键名"
+                       type="text">
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">代理请求头Host</label>
+            <div class="layui-input-block">
+                <input autocomplete="off" class="layui-input" name="host_header" placeholder="请输入代理请求头Host"
+                       type="text">
+            </div>
+        </div>
+        <div class="layui-form-item">
+            <div class="layui-input-block">
+                <button class="layui-btn" lay-filter="formDemo" lay-submit>立即提交</button>
+                <button class="layui-btn layui-btn-primary" type="reset">重置</button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script charset="utf-8" src="/static/layui/layui.js"></script>
+<script>
+    function addPath(item, field) {
+        $(item).parent().prev().append("<input type=\"text\" name=\"" + field + "\"  autocomplete=\"off\" class=\"layui-input\" style='margin-top: 10px'>\n");
+    }
+
+    layui.use(['form'], function () {
+        var form = layui.form;
+        //监听提交
+        form.on('submit(formDemo)', function (data) {
+            //alert($('form').serialize())
+            $.ajax({
+                //请求方式
+                type: "POST",
+                //请求的媒体类型
+                //contentType: "application/json;charset=UTF-8",
+                //请求地址
+                url: "/upstreams",
+                //数据，json字符串
+                data: $('form').serialize(),//JSON.stringify(data.field),
+                //请求成功
+                success: function (result) {
+                    if (result.code == 0) {
+                        if (parent) {
+                            var index = parent.layer.getFrameIndex(window.name); //先得到当前iframe层的索引
+                            parent.layer.close(index); //再执行关闭
+                            parent.layui.table.reload('test');
+
+                        }
+                    } else {
+                        layer.alert(result.msg);
+                    }
+                },
+                //请求失败，包含具体的错误信息
+                error: function (e) {
+                    console.log(e.status);
+                    console.log(e.responseText);
+                }
+            });
+            return false;
+        });
+    });
+</script>
+</body>
+</html>

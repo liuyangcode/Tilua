@@ -2,8 +2,10 @@ local ngx = ngx
 local ngx_req = ngx.req
 local ngx_var = ngx.var
 local util = require("Tilua.util")
+local trim = require("pl.stringx").strip
+local tablex = require("pl.tablex")
 local string_format = string.format
-local setmetatable,rawget = setmetatable,rawget
+local setmetatable, rawget = setmetatable, rawget
 
 ---@class request
 local request = {}
@@ -40,6 +42,9 @@ end
 function request.get_uri()
     return ngx_var.request_uri
 end
+function request.get_args()
+    return ngx_req.get_uri_args()
+end
 function request.get_path_info()
     return ngx_var.uri
 end
@@ -67,7 +72,12 @@ function request.set_body(self, value)
         self._body = {}
     elseif type(value) == 'table' then
         util.foreach(value, function(val, k)
-            self._body[k] = val
+            local tval = type(val)
+            if tval == 'table' then
+                self._body[k] = tablex.imap(trim, val)
+            else
+                self._body[k] = trim(val)
+            end
         end)
     end
 end

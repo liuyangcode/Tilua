@@ -2,6 +2,7 @@ local ApiGateWay = require("Tilua.app").derive()
 local lw_utils = require("Tilua.util")
 local route_service = require("ApiGateWay.routes")
 local balancer = require("ngx.balancer")
+local plugins = require("ApiGateWay.plugins")
 
 local balancer_service = require("ApiGateWay.balancer")
 ApiGateWay.name = "ApiGateWay"
@@ -60,16 +61,33 @@ function ApiGateWay.on_app_init(ctx)
 end
 
 function ApiGateWay.access(ApiGateWay)
+    local ctx = ngx.ctx.ctx
+    local ak = ctx.request.args.accessToken or ctx.request.header.accessToken
+    local midwares
+    if ak then
+        midwares = plugins.get_secret_midwares(ctx, 'access', ak)
+    end
+    ctx.dispatcher:make_chain_call(midwares, ctx.route.run, ctx)
 
+    local handler = ctx.dispatcher:create_responser({
+        ctx.route.run, { ctx }, midwares or {}
+    })
+    local response = ctx.dispatcher:prepare_response(handler())
+    if response.status ~= 0 and response.status ~= 200 then
+        response:send()
+    else
+        local router = response.body
+        response.body = nil
+        ctx:dispatch({
+            proxy = router[1], params = router[2], midware = router[3], router = router[4]
+        })
+    end
 end
 
 function ApiGateWay.rewrite(ApiGateWay)
     lw_utils.elapse_time_start("BALANCER_START")
-    local ctx = ApiGateWay:init()
-    local  router = ctx.route.run(ctx)
-    ctx:dispatch({
-        proxy = router[1], params = router[2], midware = router[3], router = router[4]
-    })
+    ApiGateWay:init()
+
 end
 
 function ApiGateWay.on_app_end(ctx)
@@ -82,8 +100,10 @@ function ApiGateWay.balancer()
 
     local host = peer.host
     local port = peer.port
-    local state, code = balancer.get_last_failure()
-    app.logger:debug("balancer.get_last_failure", state, code)
+    --local state, code = balancer.get_last_failure()
+    app.logger:debug("set the current peer (address: ",
+            tostring(host), " port: ", tostring(port),
+            "): ")
     local ok, err = balancer.set_current_peer(host, port)
     if not ok then
         app.logger:error("failed to set the current peer (address: ",
