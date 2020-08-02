@@ -4,8 +4,12 @@
 --- DateTime: 2020/6/12 4:39 下午
 ---
 local lw_util = require("Tilua.util")
-
+local is_routes_loaded = false
 local routes = {}
+local lw_utils = require("Tilua.util")
+local split = require("pl.utils").split
+local add_route_rule = require("Tilua.route").add_route_rule
+local clear_route_rule = require("Tilua.route").clear_route_rule
 
 function routes.get_midwares(ctx, id)
     local db = ctx.db.instance()
@@ -21,6 +25,71 @@ function routes.get_midwares(ctx, id)
     end
 
     return midwares
+end
+
+function routes.reload(ctx)
+    routes.load(ctx, true)
+end
+
+function routes.reload_routes()
+    is_routes_loaded = false
+end
+function routes.parse_validation(route)
+    local validations = {}
+    if route.hosts ~= '' then
+        validations['request.host'] = {
+            'IN',
+            split(route.hosts, ',')
+        }
+    end
+    if route.headers ~= '' then
+        local headers = lw_utils.parse_expression(route.headers)
+        for k, v in pairs(headers) do
+            validations['request.header.' .. k] = {
+                'EQ',
+                v
+            }
+        end
+    end
+
+    return validations
+end
+
+function routes.load(ctx, force)
+    if not is_routes_loaded or force then
+        is_routes_loaded = true
+        clear_route_rule(ctx.name)
+        ctx.logger:debug("start load routes")
+        local _routes = ctx.model.routes:select()
+        lw_utils.foreach(_routes, function(route)
+            local methods = split(route.methods, ',', true)
+            local paths = split(route.paths, ',', true)
+            local validations = routes.parse_validation(route)
+            lw_utils.foreach(methods, function(verb)
+                lw_utils.foreach(paths, function(path)
+                    add_route_rule(
+                            ctx.name,
+                            string.lower(verb),
+                            '*',
+                            path,
+                            {
+                                {
+                                    responser = {
+                                        type = route.proxy_type,
+                                        serviceid = route.serviceid
+                                    },
+                                    midware = routes.get_midwares(ctx, route.id),
+                                    path = path,
+                                    route = route
+                                },
+                                validations
+                            }
+                    )
+                end)
+            end)
+        end)
+
+    end
 end
 
 return routes

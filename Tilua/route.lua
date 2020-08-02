@@ -49,6 +49,10 @@ function route.add_route_rule(cur_app, verbs, matchers, path, router)
     table_insert(route.rule_caches[cur_app][verbs][matchers], router)
 end
 
+function route.clear_route_rule(cur_app)
+    route.rule_caches[cur_app] = {}
+end
+
 local function add_route(verbs, path, handler, ...)
     if handler then
         local midware

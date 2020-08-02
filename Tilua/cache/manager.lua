@@ -63,7 +63,7 @@ function manager:exists(name)
     if not self.handler then
         self.handler = manager.instance(self, self.ctx.data_cache_handler)
     end
-    return self.handler:exists(self.handler.config.prefix .. name)
+    return self.handler:exists(self.handler.config.prefix .. name) == 1
 end
 ---del
 ---@param name string

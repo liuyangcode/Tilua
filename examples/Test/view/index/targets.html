@@ -12,14 +12,6 @@
     </style>
 </head>
 <body>
-
-<div class="demoTable">
-    搜索ID：
-    <div class="layui-inline">
-        <input class="layui-input" name="id" id="demoReload" autocomplete="off">
-    </div>
-    <button class="layui-btn" data-type="reload">搜索</button>
-</div>
 <table class="layui-hide test-table" id="test" lay-filter="test">
 </table>
 <!-- 注意：如果你直接复制所有代码到本地，上述js路径需要改成你本地的 -->
@@ -57,7 +49,7 @@
                 , {field: 'updated_at', width: 180, title: '更新时间'}
                 , {fixed: 'right', width: 130, align: 'center', toolbar: '#barDemo'}
             ]]
-            ,id: 'testReload'
+            ,id: 'test'
             , page: true
         });
         table.on('tool(test)', function (obj) {

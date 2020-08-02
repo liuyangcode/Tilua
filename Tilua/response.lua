@@ -27,7 +27,7 @@ function response:set_body(content)
 end
 
 ---发送响应头
-function response:send_headers()
+function response:send_headers(without_body)
     if ngx.headers_sent then
         return
     end
@@ -53,16 +53,19 @@ function response:send_headers()
         end
         add_header(k, v)
     end
+    if without_body then
+        return self
+    end
     if not has_content_type then
         add_header('content-type', self.ctx.config.default_content_type .. '; charset=' .. self.ctx.config.default_charset)
     end
 
     local tcontent = type(self.body)
     if tcontent == 'string' then
-        add_header('Content-Length',#self.body)
+        add_header('Content-Length', #self.body)
     elseif tcontent == 'nil' then
         self.body = ''
-        add_header('Content-Length',0)
+        add_header('Content-Length', 0)
     end
     return self
 end

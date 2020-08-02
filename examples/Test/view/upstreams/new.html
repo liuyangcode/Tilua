@@ -64,12 +64,18 @@
                        class="layui-input">
             </div>
         </div>
+        <div class="layui-form-item">
+            <label class="layui-form-label">Cookie路径</label>
+            <div class="layui-input-block">
+                <input type="text" name="hash_on_cookie_path"  placeholder="请输入Cookie路径" autocomplete="off"
+                       class="layui-input" value="/">
+            </div>
+        </div>
         <div class="layui-form-item" pane="">
             <label class="layui-form-label">备选哈希数据类型</label>
             <div class="layui-input-block">
                 <select name="hash_fallback">
                     <option value="none" selected="">无</option>
-
                     <option value="ip">ip</option>
                     <option value="header">header</option>
                     <option value="cookie">cookie</option>
@@ -124,6 +130,8 @@
                         if (parent) {
                             var index = parent.layer.getFrameIndex(window.name); //先得到当前iframe层的索引
                             parent.layer.close(index); //再执行关闭
+                            parent.layui.table.reload('test');
+
                         }
                     } else {
                         layer.alert(result.msg);

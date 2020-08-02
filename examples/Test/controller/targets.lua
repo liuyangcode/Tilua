@@ -1,4 +1,4 @@
-local lw_util = require("Tilua.util")
+local we = require "resty.worker.events"
 
 local targets = {}
 ---index
@@ -33,14 +33,21 @@ function targets.create(ctx)
     local request, _ = ctx:unpack()
     local req = request.body
     local services = ctx.model.targets
-    local result = services:add({
+    local data = {
         host = req.host,
         port = req.port,
         weight = req.weight,
         upstreamid = req.upstreamid,
         created_at = { 'exp', 'now()' },
         updated_at = { 'exp', 'now()' }
-    })
+    }
+    local result = services:add(data)
+    ctx.logger:debug(require("Tilua.util").json_encode(result))
+
+    if result.affected_rows == 1 then
+        data.id = result.insert_id
+        we.post('target', 'add', data, true)
+    end
     return {
         code = result.affected_rows == 1 and 0 or -1,
         msg = "错误",
@@ -51,14 +58,18 @@ function targets.update(ctx, id)
     local request, response = ctx:unpack()
     local req = request.body
     local services = ctx.model.targets
-
-    local result = services:where({ id = id }):save({
+    local data = {
         weight = req.weight,
         host = req.host,
         port = req.port,
         upstreamid = req.upstreamid,
         updated_at = { 'exp', 'now()' }
-    })
+    }
+    local result = services:where({ id = id }):save(data)
+    if result.affected_rows == 1 then
+        data.id = id
+        we.post('target', 'update', data, true)
+    end
     response.body = {
         code = result.affected_rows == 1 and 0 or -1,
         msg = id,
@@ -70,6 +81,9 @@ function targets.destroy(ctx, id)
     local req = request.body
     local services = ctx.model.targets
     local result = services:where({ id = id }):delete()
+    if result.affected_rows == 1 then
+        we.post('target', 'delete', id, true)
+    end
     response.body = {
         code = result.affected_rows == 1 and 0 or -1,
         msg = '',

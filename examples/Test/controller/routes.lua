@@ -1,5 +1,5 @@
 local lw_util = require("Tilua.util")
-
+local we = require "resty.worker.events"
 local routes = {}
 ---index
 ---@param ctx app
@@ -34,6 +34,9 @@ function routes.do_add_plugin(ctx)
         created_at = { 'exp', 'now()' },
         updated_at = { 'exp', 'now()' }
     })
+    if result.affected_rows == 1 then
+        we.post('route', 'add_plugin', req.routeid, true)
+    end
     response.body = {
         code = result.affected_rows == 1 and 0 or -1,
         msg = "错误",
@@ -66,8 +69,7 @@ function routes.create(ctx)
     local paths = type(req.paths) == 'table' and table.concat(req.paths, ',') or req.paths
     local methods = type(req.methods) == 'table' and table.concat(req.methods, ',') or req.methods
     local protocols = type(req.protocols) == 'table' and table.concat(req.protocols, ',') or req.protocols
-
-    local result = services:add({
+    local data = {
         hosts = hosts or '',
         paths = paths or '/',
         methods = methods or '*',
@@ -81,8 +83,11 @@ function routes.create(ctx)
         validations = req.validations,
         created_at = { 'exp', 'now()' },
         updated_at = { 'exp', 'now()' }
-    })
-
+    }
+    local result = services:add(data)
+    if result.affected_rows == 1 then
+        we.post('route', 'add', data)
+    end
     response.body = {
         code = result.affected_rows == 1 and 0 or -1,
         msg = "错误",
@@ -96,20 +101,24 @@ function routes.update(ctx, id)
     local paths = type(req.paths) == 'table' and table.concat(req.paths, ',') or req.paths
     local methods = type(req.methods) == 'table' and table.concat(req.methods, ',') or req.methods
     local protocols = type(req.protocols) == 'table' and table.concat(req.protocols, ',') or req.protocols
-
-    local result = services:where({ id = id }):save({
+    local data = {
         hosts = hosts or '',
         paths = paths or '/',
         methods = methods or '*',
         headers = req.headers or '',
-        strip_path = req.strip_path == 'on' and 1 or 0,
+        strip_path = req.strip_path == 'on' and 0 or 1,
         preserve_host = req.preserve_host == 'on' and 1 or 0,
         serviceid = req.serviceid or 0,
         proxy_type = req.proxy_type or 'proxy',
         path_handle = req.path_handle or 'v0',
         protocols = protocols or '*',
         updated_at = { 'exp', 'now()' }
-    })
+    }
+    local result = services:where({ id = id }):save(data)
+    data.id = id
+    if result.affected_rows == 1 then
+        we.post('route', 'update', data)
+    end
     response.body = {
         code = result.affected_rows == 1 and 0 or -1,
         msg = id,
@@ -120,6 +129,10 @@ function routes.destroy(ctx, id)
     local req = request.body
     local services = ctx.model.routes
     local result = services:where({ id = id }):delete()
+    if result.affected_rows == 1 then
+        we.post('route', 'delete', id)
+    end
+
     response.body = {
         code = result.affected_rows == 1 and 0 or -1,
         msg = '',

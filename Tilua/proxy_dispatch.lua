@@ -3,65 +3,39 @@
 --- Created by liuyang.
 --- DateTime: 2020/5/29 4:36 下午
 ---
-local json_encode = require("Tilua.util").json_encode
-local json_decode = require("Tilua.util").json_decode
+---
+---
+local util = require("Tilua.util")
+local json_encode = util.json_encode
+local json_decode = util.json_decode
 
 local proxy_dispatch = require("Tilua.dispatch").derive()
 local trim = require("pl.stringx").strip
 local dns = require("resty.dns.client")
-local ngx_var = ngx.var
-
-local balancers = {}
+local balancer = require("ApiGateWay.balancer")
 
 function proxy_dispatch:_init(ctx)
-    dns.init()
     self:super(ctx)
 end
 
-function proxy_dispatch:add_targets_to_balancer(balancer, targets, start)
-    for i = start, #targets do
-        local target = targets[i]
-        if target.weight > 0 then
-            assert(balancer:addHost(target.name, target.port, target.weight))
-        else
-            assert(balancer:removeHost(target.name, target.port))
+function proxy_dispatch:get_striped_path(router)
+    local matched_route = router.router.route
+    local striped_path
+    if matched_route.strip_path == 1 then
+        striped_path = table.concat(router.params, '/')
+        if matched_route.path_handle ~= 'v1' then
+            striped_path = "/" .. striped_path
+        end
+    else
+        striped_path = trim(ngx.var.uri, '/')
+        if matched_route.path_handle ~= 'v1' then
+            striped_path = "/" .. striped_path
         end
     end
-end
-
-function proxy_dispatch:create_balancer(upstream, force_create)
-    local model = self.ctx.model
-    local balancer_types = {
-        ["consistent-hashing"] = require("resty.dns.balancer.ring"),
-        ["least-connections"] = require("resty.dns.balancer.least_connections"),
-        ["round-robin"] = require("resty.dns.balancer.ring")
-    }
-    local health_threshold = upstream.healthchecks and
-            upstream.healthchecks.threshold or nil
-
-    if balancers[upstream.id] and not force_create then
-        return balancers[upstream.id]
+    if ngx.var.is_args == "?" or string.sub(ngx.var.request_uri, -1) == "?" then
+        striped_path = striped_path .. "?" .. (ngx.var.args or "")
     end
-
-    local balancer, err = balancer_types[upstream.algorithm].new({
-        log_prefix = "upstream:" .. upstream.name,
-        wheelSize = upstream.slots, -- will be ignored by least-connections
-        dns = dns,
-        healthThreshold = health_threshold,
-    })
-    if not balancer then
-        return nil, "failed creating balancer:" .. err
-    end
-
-    local targets = model.targets:where({
-        upstreamid = upstream.id
-    })                   :select()
-    if targets then
-        self:add_targets_to_balancer(balancer, targets, 1)
-    end
-    balancers[upstream.id] = balancer
-
-    return balancer
+    return striped_path
 end
 
 function proxy_dispatch:run(router)
@@ -69,100 +43,80 @@ function proxy_dispatch:run(router)
         ngx.exit(404)
         return
     end
+    local service = balancer.get_service(router.proxy.serviceid, self.ctx)
+    if not service then
+        ngx.exit(404)
+        return
+    end
     local ctx = self.ctx
     local model = ctx.model
     local handler = {}
     if router.proxy.type == 'baffle' then
-        handler = { function()
+        handler = function()
             local baffle = model.baffle:find(router.proxy.serviceid)
             local response = ctx.response
             local header = json_decode(baffle.header)
-            for _, h in ipairs(header) do
-                for k, v in pairs(h) do
-                    response.headers[k] = v
-                end
-            end
+            response.headers = header
             return baffle.body
-        end,{},router.midware}
-    else
-        local service = model.services:cache(not self.ctx.debug):find(router.proxy.serviceid)
-        local matched_route = router.router.route
-        local upstream_base
-        if not service then
-            ngx.exit(404)
-            return
         end
-        upstream_base = '/' .. trim(service.path, '/')
-        handler = {
-            function()
-                local targets
-                local upstream = model.upstreams:cache(not self.ctx.debug):where({
-                    name = service.host
-                })                    :find()
-                if upstream then
-                    targets = model.targets:cache(not self.ctx.debug):where({
-                        upstreamid = upstream.id
-                    })             :select()
-                end
+    else
+        local matched_route = router.router.route
+        local upstream_base  = '/' .. trim(service.path, '/')
+        handler = function()
+            local upstream = balancer.get_upstream(service, ctx)
+            ngx.var.upstream_scheme = service.protocol
+            if matched_route.protocols =='HTTP' then
+                ngx.var.upstream_uri = upstream_base .. self:get_striped_path(router)
+                self.ctx.logger:debug("upstream uri ", ngx.var.upstream_uri)
+            end
+            ngx.var.upstream_connection = ctx.request.header.connection or ''
+            if matched_route.preserve_host == 1 then
+                ngx.var.upstream_host = ctx.request.host .. ":" .. ctx.request.server_port
+            elseif upstream then
+                ngx.var.upstream_host = upstream.host_header ~= "" and upstream.host_header or "TiluaApiGateway"
+            else
+                ngx.var.upstream_host = "TiluaApiGateway"
+            end
+            self.ctx.logger:debug("upstream host -> ", ngx.var.upstream_host)
+            local ip, port, host, handle, hash_value
+            if ngx.ctx.peer then
+                handle = ngx.ctx.peer.handle
+            end
+            hash_value = ngx.ctx.peer and ngx.ctx.peer.hash_value or balancer.create_hash(upstream, ctx)
 
-                ngx_var.upstream_scheme = service.protocol
-                if matched_route.strip_path == 1 then
-                    local striped_path = table.concat(router.params, '/')
-
-                    if matched_route.path_handle == 'v1' then
-                        ngx_var.upstream_uri = upstream_base .. striped_path
-                    else
-                        ngx_var.upstream_uri = upstream_base .. "/" .. striped_path
-                    end
-                else
-                    local striped_path = trim(ctx.request.path_info, '/')
-
-                    if matched_route.path_handle == 'v1' then
-                        ngx_var.upstream_uri = upstream_base .. striped_path
-                    else
-                        ngx_var.upstream_uri = upstream_base .. "/" .. striped_path
-                    end
+            if upstream then
+                local bal,err = balancer.create_balancer(upstream, ctx, false)
+                if not bal then
+                    self.ctx.logger:debug("upstream backend ",err )
+                    return 500
                 end
-                local upstream_uri = ngx_var.upstream_uri
-                if ngx_var.is_args == "?" or string.sub(ngx_var.request_uri, -1) == "?" then
-                    ngx_var.upstream_uri = upstream_uri .. "?" .. (ngx_var.args or "")
-                end
-                self.ctx.logger:debug("upstream uri ", ngx_var.upstream_uri)
-
-                ngx_var.upstream_connection = ctx.request.header.connection or ''
-                if matched_route.preserve_host == 1 then
-                    ngx_var.upstream_host = ctx.request.http_host or ctx.request.host .. ":" .. ctx.request.server_port
-                elseif upstream then
-                    ngx_var.upstream_host = upstream.host_header ~= "" and upstream.host_header or "TiluaApiGateway"
-                else
-                    ngx_var.upstream_host = "TiluaApiGateway"
-                end
-                local ip, port, host, hanlde
-                if upstream then
-                    local balancer = self:create_balancer(upstream)
-                    ip, port, host, hanlde = balancer:getPeer(true)
-                else
-                    ip = dns.toip(service.host)
-                    port = service.port
-                end
-                return {
-                    host = ip,
-                    port = port,
-                    connect_timeout = service.connect_timeout,
-                    send_timeout = service.write_timeout,
-                    read_timeout = service.read_timeout
-                }
-            end,
-            {},
-            router.midware
-        }
+                ip, port, host, handle = bal:getPeer(true,
+                        handle,
+                        hash_value
+                )
+            else
+                ip = dns.toip(service.host)
+                port = service.port
+            end
+            return {
+                host = ip,
+                port = port,
+                connect_timeout = service.connect_timeout,
+                send_timeout = service.write_timeout,
+                read_timeout = service.read_timeout,
+                handle = handle,
+                hash_value = hash_value
+            }
+        end
     end
-    handler = self:create_responser(handler)
+    handler = self:create_responser({
+        handler,{},router.midware
+    })
     local response = self:prepare_response(handler())
     if router.proxy.type == 'baffle' then
         response:send()
     else
-        if response.status ~=0 and response.status ~=200 then
+        if response.status ~= 0 and response.status ~= 200 then
             response:send()
         else
             ngx.ctx.peer = response.body

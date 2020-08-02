@@ -18,10 +18,10 @@
         <input type="hidden" name="id" value="{{id}}">
 
         <div class="layui-form-item">
-            <label class="layui-form-label">匹配协议</label>
+            <label class="layui-form-label">协议类型</label>
             <div class="layui-input-block">
-                <input type="checkbox" name="protocols" lay-skin="primary" value="HTTP" title="HTTP" {% if string.find(protocols,'HTTP') then %} checked {% end  %}/>
-                <input type="checkbox" name="protocols" lay-skin="primary" value="HTTPS" title="HTTPS" {% if string.find(protocols,'HTTPS') then %} checked {% end  %}>
+                <input type="radio" name="protocols" lay-skin="primary" value="HTTP" title="HTTP" {% if string.find(protocols,'HTTP') then %} checked {% end  %}/>
+                <input type="radio" name="protocols" lay-skin="primary" value="STREAM" title="STREAM" {% if string.find(protocols,'STREAM') then %} checked {% end  %}>
             </div>
         </div>
         <div class="layui-form-item" pane="">
@@ -84,7 +84,7 @@
         <div class="layui-form-item">
             <label class="layui-form-label">是否保留匹配前缀</label>
             <div class="layui-input-block">
-                <input type="checkbox" name="strip_path" lay-skin="switch" lay-filter="switchTest" title="开关"  {% if strip_path==1 then  %}checked{% end %}>
+                <input type="checkbox" name="strip_path" lay-skin="switch" lay-filter="switchTest" title="开关"  {% if strip_path==0 then  %}checked{% end %}>
             </div>
         </div>
         <div class="layui-form-item">

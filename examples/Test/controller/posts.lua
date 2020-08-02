@@ -6,7 +6,8 @@
 --PUT	/posts/:id	post	app.controllers.posts.update
 --DELETE	/posts/:id	post	app.controllers.posts.destroy
 local posts = {}
-local lw_utils = require("Tilua.util")
+local we = require "resty.worker.events"
+
 ---index
 ---@param ctx app
 function posts.index(ctx)
@@ -40,7 +41,7 @@ function posts.create(ctx)
     local request, response = ctx:unpack()
     local req = request.body
     local services = ctx.model.services
-    local result = services:add({
+    local data = {
         name = req.name,
         connect_timeout = req.name,
         path = req.path or "/",
@@ -52,7 +53,13 @@ function posts.create(ctx)
         connect_timeout = req.connect_timeout,
         created_at = { 'exp', 'now()' },
         updated_at = { 'exp', 'now()' }
-    })
+    }
+    local result = services:add(data)
+    if result.affected_rows == 1 then
+        data.id = result.insert_id
+
+        we.post('service', 'add', data, true)
+    end
     response.body = {
         code = result.affected_rows ==1 and 0 or -1,
         msg = "错误",
@@ -62,8 +69,7 @@ function posts.update(ctx, id)
     local request, response = ctx:unpack()
     local req = request.body
     local services = ctx.model.services
-
-    local result = services:where({id=id}):save({
+    local data = {
         name = req.name,
         connect_timeout = req.name,
         path = req.path,
@@ -74,7 +80,13 @@ function posts.update(ctx, id)
         write_timeout = req.write_timeout,
         connect_timeout = req.connect_timeout,
         updated_at =  {'exp','now()'}
-    })
+    }
+    local result = services:where({id=id}):save(data)
+
+    if result.affected_rows == 1 then
+        data.id = id
+        we.post('service', 'update', data, true)
+    end
     response.body = {
         code =  result.affected_rows == 1 and 0 or -1,
         msg = id,
@@ -85,6 +97,9 @@ function posts.destroy(ctx, id)
     local req = request.body
     local services = ctx.model.services
     local result = services:where({id=id}):delete()
+    if result.affected_rows == 1 then
+        we.post('service', 'delete', id, true)
+    end
     response.body = {
         code = result.affected_rows ==1 and 0 or -1,
         msg = '',

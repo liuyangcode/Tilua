@@ -16,66 +16,81 @@
 <div id="add_form">
     <form class="layui-form">
         <input type="hidden" name="id" value="{{id}}">
+
         <div class="layui-form-item">
-            <label class="layui-form-label">服务名称</label>
+            <label class="layui-form-label">负载主机名</label>
             <div class="layui-input-block">
-                <input type="text" name="name" required lay-verify="required" placeholder="请输入服务名称" autocomplete="off"
+                <input type="text" name="name" required lay-verify="required" placeholder="请输入负载主机名，要与服务host一致" autocomplete="off"
                        class="layui-input" value="{{name}}">
             </div>
         </div>
-        <div class="layui-form-item">
-            <label class="layui-form-label">协议</label>
+        <div class="layui-form-item" pane="">
+            <label class="layui-form-label">负载算法</label>
             <div class="layui-input-block">
-                <select name="protocol" lay-verify="required">
-                    <option value=""></option>
-                    <option value="http" {% if protocol=='http' then %} selected{% end %}>http</option>
-                    <option value="https"{% if protocol=='https' then %} selected{% end %}>https</option>
+                <select name="algorithm">
+                    <option value="least-connections" {% if algorithm=='least-connections' then  %}selected{% end %}>最小连接数法</option>
+                    <option value="round-robin" {% if algorithm=='round-robin' then  %}selected{% end %}>加权轮询法</option>
+                    <option value="consistent-hashing" {% if algorithm=='consistent-hashing' then  %}selected{% end %}>一致性哈希法</option>
+                </select>
+            </div>
+        </div>
+        <div class="layui-form-item" pane="">
+            <label class="layui-form-label">哈希数据类型</label>
+            <div class="layui-input-block">
+                <select name="hash_on">
+                    <option value="none" {% if hash_on=='none' then  %}selected{% end %}>无</option>
+                    <option value="ip" {% if hash_on=='ip' then  %}selected{% end %}>ip</option>
+                    <option value="header" {% if hash_on=='header' then  %}selected{% end %}>header</option>
+                    <option value="cookie" {% if hash_on=='cookie' then  %}selected{% end %}>cookie</option>
                 </select>
             </div>
         </div>
         <div class="layui-form-item">
-            <label class="layui-form-label">服务端口</label>
+            <label class="layui-form-label">请求头哈希键名</label>
             <div class="layui-input-block">
-                <input type="text" name="port" required lay-verify="required" placeholder="请输入服务端口号" autocomplete="off"
-                       class="layui-input" value="{{port}}">
+                <input type="text" name="hash_on_header"  placeholder="请输入请求头哈希键名" autocomplete="off"
+                       class="layui-input" value="{{hash_on_header}}">
+            </div>
+        </div>
+
+        <div class="layui-form-item">
+            <label class="layui-form-label">Cookie哈希键名</label>
+            <div class="layui-input-block">
+                <input type="text" name="hash_on_cookie"  placeholder="请输入Cookie哈希键名" autocomplete="off"
+                       class="layui-input"  value="{{hash_on_cookie}}">
             </div>
         </div>
         <div class="layui-form-item">
-            <label class="layui-form-label">主机</label>
+            <label class="layui-form-label">Cookie路径</label>
             <div class="layui-input-block">
-                <input type="text" name="host" required lay-verify="required" placeholder="请输入主机" autocomplete="off"
-                       class="layui-input" value="{{host}}">
+                <input type="text" name="hash_on_cookie_path"  placeholder="请输入Cookie路径" autocomplete="off"
+                       class="layui-input" value="{{hash_on_cookie_path}}">
+            </div>
+        </div>
+
+        <div class="layui-form-item" pane="">
+            <label class="layui-form-label">备选哈希数据类型</label>
+            <div class="layui-input-block">
+                <select name="hash_fallback">
+                    <option value="none" {% if hash_fallback=='none' then  %}selected{% end %}>无</option>
+                    <option value="ip" {% if hash_fallback=='ip' then  %}selected{% end %}>ip</option>
+                    <option value="header" {% if hash_fallback=='header' then  %}selected{% end %}>header</option>
+                    <option value="cookie" {% if hash_fallback=='cookie' then  %}selected{% end %}>cookie</option>
+                </select>
             </div>
         </div>
         <div class="layui-form-item">
-            <label class="layui-form-label">路径</label>
+            <label class="layui-form-label">备选请求头哈希键名</label>
             <div class="layui-input-block">
-                <input type="text" name="path" required lay-verify="required" placeholder="请输入路径" autocomplete="off"
-                       class="layui-input" value="{{path}}">
+                <input type="text" name="hash_fallback_header"  placeholder="请输入备选请求头哈希键名" autocomplete="off"
+                       class="layui-input"  value="{{hash_fallback_header}}">
             </div>
         </div>
         <div class="layui-form-item">
-            <label class="layui-form-label">连接超时时间</label>
+            <label class="layui-form-label">代理请求头Host</label>
             <div class="layui-input-block">
-                <input type="text" name="connect_timeout" required lay-verify="required" placeholder="单位ms"
-                       autocomplete="off"
-                       class="layui-input" value="{{read_timeout}}">
-            </div>
-        </div>
-        <div class="layui-form-item">
-            <label class="layui-form-label">读超时时间</label>
-            <div class="layui-input-block">
-                <input type="text" name="read_timeout" required lay-verify="required" placeholder="单位ms"
-                       autocomplete="off"
-                       class="layui-input" value="{{read_timeout}}">
-            </div>
-        </div>
-        <div class="layui-form-item">
-            <label class="layui-form-label">写超时时间</label>
-            <div class="layui-input-block">
-                <input type="text" name="write_timeout" required lay-verify="required" placeholder="单位ms"
-                       autocomplete="off"
-                       class="layui-input" value="{{write_timeout}}">
+                <input type="text" name="host_header"  placeholder="请输入代理请求头Host" autocomplete="off"
+                       class="layui-input" value="{{host_header}}">
             </div>
         </div>
         <div class="layui-form-item">
@@ -97,7 +112,7 @@
                 //请求方式
                 type: "PUT",
                 //请求地址
-                url: "/posts/"+data.field.id,
+                url: "/upstreams/"+data.field.id,
                 data: JSON.stringify(data.field),
                 contentType: "application/json;charset=UTF-8",
                 //请求成功
