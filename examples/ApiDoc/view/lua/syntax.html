@@ -1,0 +1,125 @@
+<div class="site-content">
+    <h1 class="site-h1">Lua 基础 - 基本语法</h1>
+    <blockquote class="layui-elem-quote">
+        Lua 学习起来非常简单，我们可以创建第一个 Lua 程序！
+    </blockquote>
+    <fieldset class="layui-elem-field layui-field-title site-title">
+        <legend><a name="compatibility">第一个 Lua 程序</a></legend>
+    </fieldset>
+    <h3>交互式编程</h3>
+    <p> Lua 提供了交互式编程模式。我们可以在命令行中输入程序并立即查看效果。</p>
+    <p> Lua 交互式编程模式可以通过命令 lua -i 或 lua 来启用：</p>
+    <pre>$ lua -i
+$ Lua 5.3.0  Copyright (C) 1994-2015 Lua.org, PUC-Rio
+&gt;
+</pre>
+    <p>在命令行中，输入以下命令:</p>
+    <pre>&gt; print("Hello World！")
+</pre>
+    <p>接着我们按下回车键，输出结果如下：</p>
+    <pre>&gt; print("Hello World！")
+Hello World！
+&gt;
+</pre>
+    <hr>
+    <h2>脚本式编程</h2>
+    <p>我们可以将 Lua 程序代码保持到一个以 lua 结尾的文件，并执行，该模式称为脚本式编程，如我们将如下代码存储在名为 hello.lua 的脚本文件中： </p>
+    <pre>print("Hello World！")
+print("www.w3cschool.cn")
+</pre>
+    <p>使用 lua 名执行以上脚本，输出结果为：</p>
+    <pre>$ lua test.lua
+Hello World！
+www.w3cschool.cn
+</pre>
+    <p>我们也可以将代码修改为如下形式来执行脚本（在开头添加：#!/usr/local/bin/lua）： </p>
+    <pre>#!/usr/local/bin/lua
+
+print("Hello World！")
+print("www.w3cschool.cn")
+</pre>
+    <p>以上代码中，我们指定了 Lua 的解释器 /usr/local/bin directory。加上 # 号标记解释器会忽略它。接下来我们为脚本添加可执行权限，并执行：</p>
+    <pre>./test.lua
+Hello World！
+www.w3cschool.cn
+</pre>
+    <hr>
+    <h2>注释</h2>
+    <h3>单行注释</h3>
+    <p> 两个减号是单行注释:</p>
+    <pre>--
+</pre>
+    <h3>多行注释</h3>
+    <pre>--[[
+ 多行注释
+ 多行注释
+ --]]
+</pre>
+    <hr>
+    <h2>标示符</h2>
+    <p>Lua 表示符用于定义一个变量，函数获取其他用户定义的项。标示符以一个字母 A 到 Z 或 a 到 z 或下划线 _ 开头后加上0个或多个字母，下划线，数字（0到9）。 </p>
+    <p>最好不要使用下划线加大写字母的标示符，因为Lua的保留字也是这样的。</p>
+    <p> Lua 不允许使用特殊字符如 @, $, 和 % 来定义标示符。 Lua 是一个区分大小写的编程语言。因此在 Lua 中 W3c 与 w3c 是两个不同的标示符。以下列出了一些正确的标示符：</p>
+    <pre>mohd         zara      abc     move_name    a_123
+myname50     _temp     j       a23b9        retVal
+</pre>
+    <hr>
+    <h2>关键词</h2>
+    <p>以下列出了 Lua 的保留关键字。保留关键字不能作为常量或变量或其他用户自定义标示符：</p>
+    <table class="layui-table">
+        <tbody>
+        <tr>
+            <td style="width:25%">and</td>
+            <td style="width:25%">break</td>
+            <td style="width:25%">do</td>
+            <td style="width:25%">else</td>
+        </tr>
+        <tr>
+            <td>elseif</td>
+            <td>end</td>
+            <td>false</td>
+            <td>for</td>
+        </tr>
+        <tr>
+            <td>function</td>
+            <td>if</td>
+            <td>in</td>
+            <td>local</td>
+        </tr>
+        <tr>
+            <td>nil</td>
+            <td>not</td>
+            <td>or</td>
+            <td>repeat</td>
+        </tr>
+        <tr>
+            <td>return</td>
+            <td>then</td>
+            <td>true</td>
+            <td>until</td>
+        </tr>
+        <tr>
+            <td>while</td>
+            <td></td>
+            <td></td>
+            <td></td>
+        </tr>
+        </tbody>
+    </table>
+    <p>一般约定，以下划线开头连接一串大写字母的名字（比如 _VERSION）被保留用于 Lua 内部全局变量。</p>
+    <hr>
+    <h2>全局变量</h2>
+    <p>在默认情况下，变量总是认为是全局的。</p>
+    <p>全局变量不需要声明，给一个变量赋值后即创建了这个全局变量，访问一个没有初始化的全局变量也不会出错，只不过得到的结果是：nil。 </p>
+    <pre>&gt; print(b)
+nil
+&gt; b=10
+&gt; print(b)
+10
+&gt;
+</pre>
+    <p> 如果你想删除一个全局变量，只需要将变量赋值为nil。</p>
+    <pre>b = nil
+print(b)      --&gt; nil</pre>
+    <p> 这样变量b就好像从没被使用过一样。换句话说, 当且仅当一个变量不等于nil时，这个变量即存在。</p>
+</div>

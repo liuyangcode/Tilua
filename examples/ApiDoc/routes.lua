@@ -30,10 +30,101 @@ local function getnavs(module, action)
                     this = module == 'lua' and action == 'editor'
                 },
                 {
+                    title = "基本语法",
+                    href = "/lua/syntax.html",
+                    em = "Basic syntax",
+                    this = module == 'lua' and action == 'syntax'
+                },
+                {
                     title = "数据类型",
-                    href = "/lua/class.html",
-                    em = "Lua types",
-                    this = module == 'lua' and action == 'class'
+                    href = "/lua/types.html",
+                    em = "types",
+                    this = module == 'lua' and action == 'types'
+                },
+                {
+                    title = "变量",
+                    href = "/lua/variables.html",
+                    em = "variables",
+                    this = module == 'lua' and action == 'variables'
+                },
+                --{
+                --    title = "字符串",
+                --    href = "/lua/strings.html",
+                --    em = "types",
+                --    this = module == 'lua' and action == 'strings'
+                --},
+                --{
+                --    title = "函数",
+                --    href = "/lua/functions.html",
+                --    em = "function",
+                --    this = module == 'lua' and action == 'functions'
+                --},
+                {
+                    title = "运算符",
+                    href = "/lua/operator.html",
+                    em = "operator",
+                    this = module == 'lua' and action == 'operator'
+                },
+
+                --{
+                --    title = "数组",
+                --    href = "/lua/arrays.html",
+                --    em = "array",
+                --    this = module == 'lua' and action == 'arrays'
+                --},
+                {
+                    title = "迭代器",
+                    href = "/lua/iterators.html",
+                    em = "iterators",
+                    this = module == 'lua' and action == 'iterators'
+                },
+                --{
+                --    title = "表",
+                --    href = "/lua/tables.html",
+                --    em = "table",
+                --    this = module == 'lua' and action == 'tables'
+                --},
+                {
+                    title = "模块与包",
+                    href = "/lua/packages.html",
+                    em = "package",
+                    this = module == 'lua' and action == 'packages'
+                },
+                {
+                    title = "元表(Metatable)",
+                    href = "/lua/metatables.html",
+                    em = "metatable",
+                    this = module == 'lua' and action == 'metatables'
+                },
+                {
+                    title = "协同程序(coroutine)",
+                    href = "/lua/coroutine.html",
+                    em = "coroutine",
+                    this = module == 'lua' and action == 'coroutine'
+                },
+                {
+                    title = "文件 I/O",
+                    href = "/lua/fileio.html",
+                    em = "fileio",
+                    this = module == 'lua' and action == 'fileio'
+                },
+                {
+                    title = "错误处理",
+                    href = "/lua/error-handling.html",
+                    em = "error handle",
+                    this = module == 'lua' and action == 'error-handling'
+                },
+                {
+                    title = "面向对象",
+                    href = "/lua/object-oriented.html",
+                    em = "object oriented",
+                    this = module == 'lua' and action == 'object-oriented'
+                },
+                {
+                    title = "数据库访问",
+                    href = "/lua/database-access.html",
+                    em = "database access",
+                    this = module == 'lua' and action == 'database-access'
                 }
             }
         }
@@ -48,8 +139,12 @@ route['/'] = function
         action = 'introduce'
     }
 end
-
-route['~^/{module}/{action}1212ahtml$'] = function
+route['=/test'] = function
+(ctx)
+    --ngx.re.gmatch
+    ctx.response.body = 1
+end
+route['~^/{module}/{action}.html$'] = function
 (ctx, module, action)
     return "index.html", {
         navs = getnavs(module, action),

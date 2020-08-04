@@ -1,0 +1,96 @@
+<div class="site-content">
+    <h1 class="site-h1">Lua 基础 - 变量</h1>
+    <fieldset class="layui-elem-field layui-field-title site-title">
+        <legend><a name="compatibility">Lua 变量</a></legend>
+    </fieldset>
+    <p>变量在使用前，必须在代码中进行声明，即创建该变量。编译程序执行代码之前编译器需要知道如何给语句变量开辟存储区，用于存储变量的值。</p>
+    <p>Lua 变量有三种类型：全局变量、局部变量、表中的域。</p>
+    <p> 函数外的变量默认为全局变量，除非用 local 显示声明。函数内变量与函数的参数默认为局部变量。 </p>
+    <p> 局部变量的作用域为从声明位置开始到所在语句块结束（或者是直到下一个同名局部变量的声明）。 </p>
+    <p> 变量的默认值均为 nil。</p>
+    <p>
+    <pre>-- test.lua 文件脚本
+a = 5               -- 全局变量
+local b = 5         -- 局部变量
+
+function joke()
+    c = 5           -- 全局变量
+    local d = 6     -- 局部变量
+end
+
+joke()
+print(c,d)          --&gt; 5 nil
+
+do
+    local a = 6     -- 局部变量
+    b = 6           -- 全局变量
+    print(a,b);     --&gt; 6 6
+end
+
+print(a,b)      --&gt; 5 6
+</pre>
+    </p><p>执行以上实例输出结果为：</p>
+    <pre>$ lua test.lua
+5	nil
+6	6
+5	6</pre>
+
+    <fieldset class="layui-elem-field layui-field-title site-title">
+        <legend><a name="compatibility">赋值语句</a></legend>
+    </fieldset>
+    <p>赋值是改变一个变量的值和改变表域的最基本的方法。</p>
+    <pre>a = &quot;hello&quot; .. &quot;world&quot;
+t.n = t.n + 1
+</pre>
+    Lua可以对多个变量同时赋值，变量列表和值列表的各个元素用逗号分开，赋值语句右边的值会依次赋给左边的变量。
+    <pre>a, b = 10, 2*x       &lt;--&gt;       a=10; b=2*x
+</pre>
+    <p> 遇到赋值语句Lua会先计算右边所有的值然后再执行赋值操作，所以我们可以这样进行交换变量的值： </p>
+    <pre>x, y = y, x                     -- swap &#39;x&#39; for &#39;y&#39;
+a[i], a[j] = a[j], a[i]         -- swap &#39;a[i]&#39; for &#39;a[i]&#39;
+</pre>
+    <p> 当变量个数和值的个数不一致时，Lua会一直以变量个数为基础采取以下策略：</p>
+    <pre>a. 变量个数 &gt; 值的个数             按变量个数补足nil
+b. 变量个数 &lt; 值的个数             多余的值会被忽略 </pre>
+    <p> 例如：</p>
+    <pre>a, b, c = 0, 1
+print(a,b,c)             --&gt; 0   1   nil
+
+a, b = a+1, b+1, b+2     -- value of b+2 is ignored
+print(a,b)               --&gt; 1   2
+
+a, b, c = 0
+print(a,b,c)             --&gt; 0   nil   nil
+</pre>
+    <p> 上面最后一个例子是一个常见的错误情况，注意：如果要对多个变量赋值必须依次对每个变量赋值。 </p>
+    <pre>a, b, c = 0, 0, 0
+print(a,b,c)             --&gt; 0   0   0
+</pre>
+    <p> 多值赋值经常用来交换变量，或将函数调用返回给变量： </p>
+    <pre>a, b = f()
+</pre>
+    <p> f()返回两个值，第一个赋给a，第二个赋给b。</p>
+    <p> 应该尽可能的使用局部变量，有两个好处：</p>
+    <ul>
+        <li> 1. 避免命名冲突。</li>
+        <li> 2. 访问局部变量的速度比全局变量更快。</li>
+    </ul>
+
+    <fieldset class="layui-elem-field layui-field-title site-title">
+        <legend><a name="compatibility">索引</a></legend>
+    </fieldset>
+    <p> 对 table 的索引使用方括号 []。Lua 也提供了 . 操作。 </p>
+    <pre>t[i]
+t.i                 -- 当索引为字符串类型时的一种简化写法
+gettable_event(t,i) -- 采用索引访问本质上是一个类似这样的函数调用
+</pre>
+    <p>例如：</p>
+    <pre>&gt; site = {}
+&gt; site[&quot;key&quot;] = &quot;www.w3cschool.cn&quot;
+&gt; print(site[&quot;key&quot;])
+www.w3cschool.cn
+&gt; print(site.key)
+www.w3cschool.cn
+</pre>
+</div>
+</div>

@@ -25,7 +25,7 @@ local route = {
 }
 local group_midwares = nil
 local verbstack = {}
-
+local parsed_paths_to_regex = {}
 function route.set_app_name(name)
     route.cur_app = name
     route.rules[name] = {}
@@ -87,7 +87,7 @@ local function add_route(verbs, path, handler, ...)
         elseif lw_util.is_array(responser) then
             if responser.res or responser.responser then
                 local mid = responser.mid or responser.midware or nil
-                add_route('',verbs, responser.responser or responser.res, mid)
+                add_route('', verbs, responser.responser or responser.res, mid)
             else
                 lw_util.foreach(responser, function(hanlder, verb)
                     if verb == '*' then
@@ -298,20 +298,30 @@ function route.parse_validation(validation)
 end
 
 function route.parse_path_to_regex(url)
+    if parsed_paths_to_regex[url] then
+        return unpack(parsed_paths_to_regex[url])
+    end
     local params = {}
     local anonymous_arg_cnt = 0
     local re_url = string.gsub(url, '\\/', '__SLASH__')
     re_url = split(re_url, '/', true)
     for i, v in ipairs(re_url) do
-        if re_match(v, '[(].+?[)]') then
-            anonymous_arg_cnt = anonymous_arg_cnt + 1
-            table_insert(params, '$' .. anonymous_arg_cnt)
+        if re_match(v, '[(][^)]+[)]') then
+            repeat
+                anonymous_arg_cnt = anonymous_arg_cnt + 1
+                table_insert(params, '$' .. anonymous_arg_cnt)
+                v = re_sub(v, '[(][^)]+[)]', '')
+            until not re_match(v, '[(][^)]+[)]')
             re_url[i] = string.gsub(re_url[i], '__SLASH__', '\\/')
         elseif re_match(v, '{[^}]+?}') then
-            table_insert(params, string_sub(v, 2, string_find(v, '}', 1, true) - 1))
-            re_url[i] = '([^\\/]+)'
+            re_url[i] = re_gsub(v, '({[^}]+?})', function(m)
+                table_insert(params, string_sub(m[1], 2, -2))
+                return '([^\\/]+)'
+            end, 'jox')
         end
     end
+    parsed_paths_to_regex[url] = { url, table.concat(re_url, '/'), params }
+
     return url, table.concat(re_url, '/'), params
 end
 
@@ -400,14 +410,14 @@ function route.run(ctx)
     local request_method = request.method
     ---@type log
     local log = ctx.logger
-    local pathinfo = string.gsub(request.path_info,'.html','')
+    local pathinfo = request.path_info
     log:debug('route:start route pathinfo:', pathinfo)
     local rule_caches = route.get_routes(ctx.name, '=', request_method)
     if rule_caches then
         for _, router in ipairs(rule_caches) do
             router, _ = unpack(router)
             if router.path == pathinfo then
-                return true,{
+                return true, {
                     router.responser,
                     {},
                     combine_prefix_midware(ctx.name, pathinfo, tablex.copy(router.midware)),
@@ -429,7 +439,6 @@ function route.run(ctx)
         local validation, extra_path
         router, validation = unpack(router)
         local url, parsed_regex, params = route.parse_path_to_regex(router.path)
-        ctx.logger:debug(router.path," parsed into ",parsed_regex)
         local path_params = {}
         local newpath, n, _ = re_sub(pathinfo, parsed_regex, function(m)
             path_params = route.parse_path_params(params, m, stringx.replace(pathinfo, m[0], ''))
@@ -460,7 +469,7 @@ function route.run(ctx)
     if not lw_util.empty(matched_path) then
         request.routed_uri = matched_path
         request.params = matched_params
-        return true,{
+        return true, {
             matched_path,
             matched_params.args,
             combine_prefix_midware(ctx.name, pathinfo, matched_midware),
@@ -488,14 +497,14 @@ function route.run(ctx)
     if not lw_util.empty(matched_path) then
         request.routed_uri = pathinfo
         request.params = matched_params
-        return true,{
+        return true, {
             matched_path,
             matched_params.args,
             combine_prefix_midware(ctx.name, pathinfo, matched_midware),
             matched_router
         }
     end
-    return false,pathinfo
+    return false, pathinfo
 end
 
 return setmetatable(route, {
