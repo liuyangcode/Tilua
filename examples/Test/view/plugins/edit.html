@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
-    <title>挡板服务器</title>
+    <title>TiluaGateWay</title>
     <link href="/static/layui/css/layui.css" rel="stylesheet">
     <script src="/static/js/jquery.min.js" charset="utf-8"></script>
     <style type="text/css">
@@ -23,31 +23,17 @@
 <body style="width: 500px;padding: 10px;">
 <div id="add_form">
     <form class="layui-form">
-        <input name="objectid" type="hidden" value="{{id}}">
-        <input name="objecttype" type="hidden" value="{{objecttype}}">
-
-        <div class="layui-form-item">
-            <label class="layui-form-label">选择插件</label>
-            <div class="layui-input-block">
-                <select name="mid" lay-verify="" lay-search>
-                    {% for _, plugin in ipairs(plugins) do %}
-                    <option value="{{plugin.id}}">{{plugin.name}}</option>
-                    {% end %}
-                </select>
-            </div>
-        </div>
-
         <div class="layui-form-item" pane="">
             <label class="layui-form-label">执行阶段</label>
             <div class="layui-input-block">
-                <select name="path_handle">
-                    <option value="rewrite">URL重写</option>
-                    <option value="access">请求准入时</option>
-                    <option value="content">请求处理前</option>
-                    <option value="headfilter">响应头部过滤处理</option>
-                    <option value="bodyfilter">响应体过滤处理</option>
-                    <option value="request_end">会话结束前</option>
-                    <option value="log">会话结束后</option>
+                <select name="phase">
+                    <option value="rewrite" {% if phase=='rewrite' then %}selected{% end %}>URL重写</option>
+                    <option value="access" {% if phase=='access' then %}selected{% end %}>请求准入时</option>
+                    <option value="content" {% if phase=='content' then %}selected{% end %}>请求处理前</option>
+                    <option value="headfilter" {% if phase=='headfilter' then %}selected{% end %}>响应头部过滤处理</option>
+                    <option value="bodyfilter" {% if phase=='bodyfilter' then %}selected{% end %}>响应体过滤处理</option>
+                    <option value="request_end" {% if phase=='request_end' then %}selected{% end %}>会话结束前</option>
+                    <option value="log" {% if phase=='log' then %}selected{% end %}>会话结束后</option>
                 </select>
             </div>
         </div>
@@ -56,6 +42,11 @@
             <label class="layui-form-label">配置项</label>
             <div class="layui-input-block">
                 <div class="layui-input-inline" style="width: 300px">
+                    {% for _, cfg in ipairs(config) do %}
+                    <input type="text" name="config" placeholder="请添加配置项"
+                           autocomplete="off"
+                           class="layui-input" value="{{cfg}}"/>
+                    {% end %}
                 </div>
                 <div class="layui-form-mid layui-word-aux">
                     <button type="button" class="layui-btn layui-btn-sm" onclick="addPath(this,'config')"><i
@@ -93,7 +84,7 @@
                 //请求的媒体类型
                 //contentType: "application/json;charset=UTF-8",
                 //请求地址
-                url: "/routes/addPlugin",
+                url: "/plugins/edit/{{id}}",
                 //数据，json字符串
                 data: $('form').serialize(),//JSON.stringify(data.field),
                 //请求成功

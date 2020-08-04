@@ -6,50 +6,34 @@
 
 local M = {}
 local lw_util = require("Tilua.util")
-
-function M.get_route_midwares(ctx, phase, routeid)
+local is_plugins_loaded = false
+local plugins = {}
+function M.load(ctx)
+    if is_plugins_loaded then
+        return
+    end
+    plugins[ctx.name] = {}
     local db = ctx.db.instance()
-    local sql = [[select mid.package,mid.config as midconfig,route.config from plugins as route left join midwares as mid
-    on (mid.id=route.mid) where route.objecttype="route" and  route.objectid = ]]
-    local data = db:query(sql .. routeid .. " and route.phase = '" .. phase .. "'")
-    local midwares = {}
+    local sql = [[select mid.package,plugins.config,plugins.phase,plugins.objecttype,plugins.objectid from plugins  left join midwares as mid
+    on (mid.id=plugins.mid) where plugins.status =1 order by plugins.indexNo asc ]]
+    local data = db:query(sql)
     for _, mid in ipairs(data) do
-        table.insert(midwares, {
+        plugins[ctx.name][mid.objecttype] = plugins[ctx.name][mid.objecttype] or {}
+        plugins[ctx.name][mid.objecttype][mid.phase] = plugins[ctx.name][mid.objecttype][mid.phase] or {}
+        plugins[ctx.name][mid.objecttype][mid.phase]['t'..mid.objectid] = plugins[ctx.name][mid.objecttype][mid.phase]['t'..mid.objectid] or {}
+        table.insert(plugins[ctx.name][mid.objecttype][mid.phase]['t'..mid.objectid], {
             mid.package,
             lw_util.parse_expression(mid.config == ngx.null and "" or mid.config, ',', '=')
         })
     end
-    return midwares
+    is_plugins_loaded = true
 end
 
-function M.get_secret_midwares(ctx, phase, secretid)
-    local db = ctx.db.instance()
-    local sql = [[select mid.package,mid.config as midconfig,route.config from plugins as route left join midwares as mid on (mid.id=route.mid)
-    where route.objecttype="secret" and  route.objectid = ]]
-    local data = db:query(sql .. secretid .. " and route.phase = '" .. phase .. "'")
-    local midwares = {}
-    for _, mid in ipairs(data) do
-        table.insert(midwares, {
-            mid.package,
-            lw_util.parse_expression(mid.config == ngx.null and "" or mid.config, ',', '=')
-        })
+function M.get_midwares(ctx,objecttype,objectid,phase)
+    if plugins[ctx.name][objecttype] and plugins[ctx.name][objecttype][phase] and plugins[ctx.name][objecttype][phase]['t'..objectid] then
+        return plugins[ctx.name][objecttype][phase]['t'..objectid]
     end
-    return midwares
-end
-
-function M.get_service_midwares(ctx, phase, serviceid)
-    local db = ctx.db.instance()
-    local sql = [[select mid.package,mid.config as midconfig,route.config from plugins as route left join midwares as mid on (mid.id=route.mid)
-    where route.objecttype="service" and  route.objectid = ]]
-    local data = db:query(sql .. serviceid .. " and route.phase = '" .. phase .. "'")
-    local midwares = {}
-    for _, mid in ipairs(data) do
-        table.insert(midwares, {
-            mid.package,
-            lw_util.parse_expression(mid.config == ngx.null and "" or mid.config, ',', '=')
-        })
-    end
-    return midwares
+    return {}
 end
 
 return M

@@ -64,18 +64,16 @@ end
 function dispatch:create_responser(router)
     local hanlder, args
     local midware = {}
-    if lw_util.is_array(router) then
-        hanlder, args, midware = table.unpack(router)
-        local thandler = type(hanlder)
-        if thandler == 'string' then
-            self.handler = function(...)
-                return self:get_handler(hanlder, args)()
-            end
-        elseif lw_util.callable(hanlder) then
-            self.handler = function
-            ()
-                return hanlder(self.ctx, table.unpack(args))
-            end
+    hanlder, args, midware = table.unpack(router)
+    local thandler = type(hanlder)
+    if thandler == 'string' then
+        self.handler = function(...)
+            return self:get_handler(hanlder, args)()
+        end
+    elseif lw_util.callable(hanlder) then
+        self.handler = function
+        ()
+            return hanlder(self.ctx, table.unpack(args))
         end
     end
     return self:make_chain_call(midware, self.handler or function(...)
@@ -84,9 +82,12 @@ function dispatch:create_responser(router)
 end
 ---run
 ---@param router table
-function dispatch:run(router)
-    local responser = self:create_responser(router)
-    return self:prepare_response(responser())
+function dispatch:run(matched,router)
+    if matched then
+        local responser = self:create_responser(router)
+        return self:prepare_response(responser())
+    end
+    return 404
 end
 
 function dispatch:get_handler(hanlder, args)

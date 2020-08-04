@@ -46,7 +46,7 @@ end
 
 function user.login(ctx)
     if ctx.request.method =='GET' then
-        return 'login.html'
+        return 'login.html',{ip=ctx.request.remote_addr}
     end
     local req = ctx.request.body
     local user_model = ctx.model.user

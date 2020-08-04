@@ -7,27 +7,36 @@ local lw_util = require("Tilua.util")
 local is_routes_loaded = false
 local routes = {}
 local lw_utils = require("Tilua.util")
+local tablex = require("pl.tablex")
 local split = require("pl.utils").split
 local add_route_rule = require("Tilua.route").add_route_rule
 local parse_validation = require("Tilua.route").parse_validation
 local clear_route_rule = require("Tilua.route").clear_route_rule
 local midwares = require("ApiGateWay.plugins")
+local prefix_midwares = {}
 
-function routes.get_midwares(ctx, id)
-    local db = ctx.db.instance()
-    local data = db:query("select mid.package,mid.config as midconfig,route.config from routes_plugins as route left join midwares as mid on (mid.id=route.mid) where route.routeid=" .. id)
-    local midwares = {}
-    for _, mid in ipairs(data) do
-        table.insert(midwares, {
-            mid.package,
-            lw_util.parse_expression(mid.config == ngx.null and "" or mid.config, ',', '=')
-        })
+local re_match = ngx.re.match
+
+function routes.find_prefix_midwares(ctx)
+    local pathinfo = ctx.request.path_info
+    local method = ctx.request.method
+    local mids = {}
+    ctx.logger:debug("find_prefix_midwares prefix:", pathinfo, ' method:', method, lw_utils.json_encode(prefix_midwares[ctx.name]) )
+
+    for _, v in ipairs(prefix_midwares[ctx.name]) do
+        if (v.method == method or v.method == '*')  then
+            if v.matcher == '=' and v.path == pathinfo then
+                ctx.logger:debug("find_prefix_midwares prefix path:",v.path," pathinfo:",pathinfo)
+                tablex.move(mids, v.midwares)
+            elseif v.matcher == '~' and re_match(pathinfo, v.path, 'jo') then
+                tablex.move(mids, v.midwares)
+            elseif v.matcher == '*' and string.find(pathinfo, v.path, 1, true) then
+                tablex.move(mids, v.midwares)
+            end
+        end
     end
-    return midwares
-end
-
-function routes.get_midwares()
-
+    ctx.logger:debug("find_prefix_midwares prefix:", pathinfo, ' method:', method,' midwares:', lw_utils.json_encode(mids))
+    return mids
 end
 
 function routes.reload(ctx)
@@ -70,16 +79,30 @@ function routes.load(ctx, force)
         clear_route_rule(ctx.name)
         ctx.logger:debug("start load routes")
         local _routes = ctx.model.routes:select()
+        prefix_midwares[ctx.name] = {}
+
         lw_utils.foreach(_routes, function(route)
             local methods = split(route.methods, ',', true)
             local paths = split(route.paths, ',', true)
             local validations = routes.parse_validation(route)
+
             lw_utils.foreach(methods, function(verb)
                 lw_utils.foreach(paths, function(path)
+                    local pre_mid =midwares.get_midwares(ctx, 'route',route.id, 'access')
+                    if pre_mid then
+                        table.insert(prefix_midwares[ctx.name], {
+                            matcher = route.matcher,
+                            path = path,
+                            method = verb,
+                            midwares = pre_mid,
+                            phase = 'access'
+                        })
+                    end
+
                     add_route_rule(
                             ctx.name,
                             string.lower(verb),
-                            '*',
+                            route.matcher,
                             path,
                             {
                                 {
@@ -87,7 +110,7 @@ function routes.load(ctx, force)
                                         type = route.proxy_type,
                                         serviceid = route.serviceid
                                     },
-                                    midware = midwares.get_route_midwares(ctx, 'content', route.id),
+                                    midware = midwares.get_midwares(ctx, 'route',route.id, 'content'),
                                     path = path,
                                     route = route
                                 },
@@ -97,7 +120,6 @@ function routes.load(ctx, force)
                 end)
             end)
         end)
-
     end
 end
 

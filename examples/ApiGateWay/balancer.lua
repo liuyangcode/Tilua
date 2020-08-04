@@ -17,6 +17,8 @@ local dns = require("resty.dns.client")
 local util = require("Tilua.util")
 local crc32 = ngx.crc32_short
 local routes = require("ApiGateWay.routes")
+local certificate = require("ApiGateWay.certificate")
+
 local balancer_types = {
     ["consistent-hashing"] = require("resty.dns.balancer.ring"),
     ["least-connections"] = require("resty.dns.balancer.least_connections"),
@@ -30,7 +32,7 @@ function balancer.init()
 end
 
 function balancer.ev_handler(data, event, source, pid)
-    ngx.log(ngx.ERR, source,'-', event,'-', util.json_encode(data),'-', pid)
+    ngx.log(ngx.ERR, source, '-', event, '-', util.json_encode(data), '-', pid)
     if source == 'upstream' then
         if event == 'update' then
         elseif event == 'add' then
@@ -38,99 +40,101 @@ function balancer.ev_handler(data, event, source, pid)
         end
     elseif source == 'target' then
         if event == 'update' then
-            ngx.log(ngx.ERR, source,'-', event,'-', util.json_encode(m_targets),'-', pid)
+            ngx.log(ngx.ERR, source, '-', event, '-', util.json_encode(m_targets), '-', pid)
 
-            local pre_target = m_targets['t'..data.id]
+            local pre_target = m_targets['t' .. data.id]
             if pre_target.host == data.host and pre_target.port == data.port and pre_target.weight == data.weight then
                 return
             end
-            if m_balancers["t"..data.upstreamid] then
-                m_balancers["t"..data.upstreamid]:removeHost(pre_target.host, tonumber(pre_target.port))
-                m_balancers["t"..data.upstreamid]:addHost(data.host, tonumber(data.port), tonumber(data.weight))
+            if m_balancers["t" .. data.upstreamid] then
+                m_balancers["t" .. data.upstreamid]:removeHost(pre_target.host, tonumber(pre_target.port))
+                m_balancers["t" .. data.upstreamid]:addHost(data.host, tonumber(data.port), tonumber(data.weight))
             end
             balancer.remove_upstream_target(data.upstreamid, data.id)
-            table.insert(m_upstreams_targets["t"..data.upstreamid], data)
-            m_targets['t'..data.id] = data
+            table.insert(m_upstreams_targets["t" .. data.upstreamid], data)
+            m_targets['t' .. data.id] = data
         elseif event == 'add' then
-            table.insert(m_upstreams_targets["t"..data.upstreamid], data)
-            m_targets['t'..data.id] = data
-            if m_balancers["t"..data.upstreamid] then
-                m_balancers["t"..data.upstreamid]:addHost(data.host, tonumber(data.port), tonumber(data.weight))
+            table.insert(m_upstreams_targets["t" .. data.upstreamid], data)
+            m_targets['t' .. data.id] = data
+            if m_balancers["t" .. data.upstreamid] then
+                m_balancers["t" .. data.upstreamid]:addHost(data.host, tonumber(data.port), tonumber(data.weight))
             end
-            m_targets_upstreams["t"..data.id] = m_upstreams["t"..data.upstreamid]
+            m_targets_upstreams["t" .. data.id] = m_upstreams["t" .. data.upstreamid]
         elseif event == 'delete' then
-            local pre_target = m_targets['t'..data]
-            local upstream = m_targets_upstreams["t"..data]
-            if m_balancers["t"..upstream.id] then
-                m_balancers["t"..upstream.id]:removeHost(pre_target.host, tonumber(pre_target.port))
+            local pre_target = m_targets['t' .. data]
+            local upstream = m_targets_upstreams["t" .. data]
+            if m_balancers["t" .. upstream.id] then
+                m_balancers["t" .. upstream.id]:removeHost(pre_target.host, tonumber(pre_target.port))
             end
             balancer.remove_upstream_target(upstream.id, data)
-            m_targets['t'..data] = nil
+            m_targets['t' .. data] = nil
         end
     elseif source == 'service' then
         if event == 'update' then
-            m_services['t'..data.id] = data
+            m_services['t' .. data.id] = data
         elseif event == 'add' then
-            m_services['t'..data.id] = data
+            m_services['t' .. data.id] = data
         elseif event == 'delete' then
-            m_services['t'..data.id] = nil
-            m_services_upstreams['t'..data.id] = nil
+            m_services['t' .. data.id] = nil
+            m_services_upstreams['t' .. data.id] = nil
         end
-    elseif source =='route' then
+    elseif source == 'route' then
         routes.reload_routes()
+    elseif source == 'certificate' then
+        certificate.reload()
     end
 end
 
 function balancer.remove_upstream_target(upstreamid, tagetid)
     local index = -1
-    for i, v in ipairs(m_upstreams_targets["t"..upstreamid]) do
+    for i, v in ipairs(m_upstreams_targets["t" .. upstreamid]) do
         if v.id == tagetid then
             index = i
         end
     end
     if index > 0 then
-        table.remove(m_upstreams_targets["t"..upstreamid], index)
+        table.remove(m_upstreams_targets["t" .. upstreamid], index)
     end
     return index
 end
 
 function balancer.get_service(serviceid, ctx)
     ctx = ctx or ngx.ctx.ctx
-    if not m_services["t"..serviceid] then
-        m_services["t"..serviceid] = ctx.model.services:find(serviceid)
+    if not m_services["t" .. serviceid] then
+        m_services["t" .. serviceid] = ctx.model.services:find(serviceid)
     end
-    return m_services["t"..serviceid]
+    return m_services["t" .. serviceid]
 end
 
 function balancer.get_upstream(service, ctx)
     ctx = ctx or ngx.ctx.ctx
-    local upstream = m_services_upstreams["t"..service.id]
+    local upstream = m_services_upstreams["t" .. service.id]
     if not upstream then
         upstream = ctx.model.upstreams:where({
             name = service.host
-        }):find()
+        })            :find()
         if not upstream then
             return nil
         end
-        m_services_upstreams["t"..service.id] = upstream
-        m_upstreams_services["t"..upstream.id] = service
-        m_upstreams["t"..upstream.id] = upstream
+        m_services_upstreams["t" .. service.id] = upstream
+        m_upstreams_services["t" .. upstream.id] = service
+        m_upstreams["t" .. upstream.id] = upstream
     end
     return upstream
 end
 
 function balancer.get_targets(upstream, ctx)
     ctx = ctx or ngx.ctx.ctx
-    if not m_upstreams_targets["t"..upstream.id] then
-        m_upstreams_targets["t"..upstream.id] = ctx.model.targets:where({
+    if not m_upstreams_targets["t" .. upstream.id] then
+        m_upstreams_targets["t" .. upstream.id] = ctx.model.targets:where({
             upstreamid = upstream.id
-        }):select()
-        for _, v in ipairs(m_upstreams_targets["t"..upstream.id]) do
-            m_targets_upstreams["t"..v.id] = upstream
-            m_targets['t'..v.id] = v
+        })                                           :select()
+        for _, v in ipairs(m_upstreams_targets["t" .. upstream.id]) do
+            m_targets_upstreams["t" .. v.id] = upstream
+            m_targets['t' .. v.id] = v
         end
     end
-    return m_upstreams_targets["t"..upstream.id]
+    return m_upstreams_targets["t" .. upstream.id]
 end
 
 function balancer.add_targets(bal, targets, start)
@@ -148,8 +152,8 @@ function balancer.create_balancer(upstream, ctx, force_create)
     local health_threshold = upstream.healthchecks and
             upstream.healthchecks.threshold or nil
 
-    if m_balancers["t"..upstream.id] and not force_create then
-        return m_balancers["t"..upstream.id]
+    if m_balancers["t" .. upstream.id] and not force_create then
+        return m_balancers["t" .. upstream.id]
     end
 
     local bal, err = balancer_types[upstream.algorithm].new({
@@ -166,13 +170,13 @@ function balancer.create_balancer(upstream, ctx, force_create)
     if targets then
         balancer.add_targets(bal, targets, 1)
     end
-    m_balancers["t"..upstream.id] = bal
+    m_balancers["t" .. upstream.id] = bal
     return bal
 end
 
 function balancer.create_hash(upstream, ctx)
     if not upstream then
-         return nil
+        return nil
     end
 
     local request = ctx.request

@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
-    <title>挡板服务器</title>
+    <title>TiluaGateWay</title>
     <link href="/static/layui/css/layui.css" rel="stylesheet">
     <script src="/static/js/jquery.min.js" charset="utf-8"></script>
     <style type="text/css">
@@ -40,7 +40,16 @@
                 <input type="checkbox" name="methods" lay-skin="primary" title="HEAD" value="HEAD">
             </div>
         </div>
-
+        <div class="layui-form-item" pane="">
+            <label class="layui-form-label">匹配规则</label>
+            <div class="layui-input-block">
+                <select name="matcher">
+                    <option value="~">正则匹配</option>
+                    <option value="*">最长匹配</option>
+                    <option value="=">精确匹配</option>
+                </select>
+            </div>
+        </div>
         <div class="layui-form-item">
             <label class="layui-form-label">匹配主机</label>
             <div class="layui-input-block">

@@ -16,6 +16,9 @@ end
 function request.get_query_string()
     return ngx_var.query_string
 end
+function request.get_query()
+    return ngx_req.get_uri_args()
+end
 function request.get_remote_addr()
     return ngx_var.remote_addr
 end

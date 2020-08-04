@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
-    <title>挡板服务器</title>
+    <title>TiluaGateWay</title>
     <link href="/static/layui/css/layui.css" rel="stylesheet">
     <script src="/static/js/jquery.min.js" charset="utf-8"></script>
     <style type="text/css">
@@ -17,7 +17,7 @@
 <script type="text/html" id="toolbarDemo">
     <div class="layui-btn-container">
         <button class="layui-btn layui-btn-sm" lay-event="addService">新增路由</button>
-        <button class="layui-btn layui-btn-sm" lay-event="addPlugin">新增插件</button>
+        <button class="layui-btn layui-btn-sm" lay-event="addPlugin">插件管理</button>
     </div>
 </script>
 
@@ -48,10 +48,21 @@
                         return "反向代理";
                     }
                 }
+                , {
+                    field: 'matcher', width: 180, title: '匹配规则', templet: function (d) {
+                        if (d.matcher == '~') {
+                            return "正则匹配";
+                        }
+                        if (d.matcher =='*'){
+                            return "最长匹配"
+                        }
+                        return '精确匹配'
+                    }
+                }
+                , {field: 'paths', width: 180, title: '匹配路径'}
                 , {field: 'protocols', width: 250, title: '匹配协议'}
                 , {field: 'methods', width: 250, title: '匹配请求方法'}
                 , {field: 'hosts', title: '匹配主机列表', width: 250}
-                , {field: 'paths', width: 180, title: '匹配请求路径'}
                 , {field: 'headers', width: 180, title: '匹配请求头'}
                 , {
                     field: 'preserve_host', width: 180, title: '是否保留请求主机', templet: function (d) {
@@ -141,9 +152,9 @@
                     }
                     layer.open({
                         type: 2,
-                        title: "新增插件",
-                        area: ["540px", '580px'],
-                        content: '/routes/addPlugin?objecttype=route&id=' + checkStatus.data[0].id
+                        title: "插件管理",
+                        area: ["1080px", '580px'],
+                        content: '/plugins/manage?objecttype=route&id=' + checkStatus.data[0].id
                     });
                     break;
             }

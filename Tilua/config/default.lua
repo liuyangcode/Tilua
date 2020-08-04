@@ -88,7 +88,6 @@ local config = {
     db_fields_cache_type = 'redis',
     db_fields_cache_prefix = 'Tilua:',
     db_charset = 'utf8' -- 数据库编码默认采用utf8
-
 }
 
 return config

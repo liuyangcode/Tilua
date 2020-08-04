@@ -7,19 +7,30 @@
 
 local token_check = require('Tilua.midware').derive()
 local apiv1 = require("ApiGateWay.util").apiv1
+local encode = require("Tilua.util").json_encode
+local update = require("pl.tablex").update
 local ngx_req = ngx.req
 
-function token_check:_init(...)
-    self:super(...)
+function token_check:_init(ctx, config)
+    self:super(ctx)
+    ctx.logger:debug("ApiGateWay.midware.token_check init config:",encode(config))
+    self.config = update({
+        tokenName = 'accessToken',
+        tokenFrom = 'query'
+    },config)
+end
+
+function token_check:get_token()
+    local request = self.ctx.request
+    return request[self.config.tokenFrom][self.config.tokenName]
 end
 
 function token_check:handle(next, ...)
-    local request = ngx_req.get_uri_args()
     if apiv1({
         service = "token",
         action = "valid",
         data = {
-            accessToken = request.accessToken or self.ctx.request.header.accessToken
+            accessToken = self:get_token()
         } }) then
         return next(...)
     end

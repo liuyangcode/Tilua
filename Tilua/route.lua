@@ -400,14 +400,14 @@ function route.run(ctx)
     local request_method = request.method
     ---@type log
     local log = ctx.logger
-    local pathinfo = request.path_info
+    local pathinfo = string.gsub(request.path_info,'.html','')
     log:debug('route:start route pathinfo:', pathinfo)
     local rule_caches = route.get_routes(ctx.name, '=', request_method)
     if rule_caches then
         for _, router in ipairs(rule_caches) do
             router, _ = unpack(router)
             if router.path == pathinfo then
-                return {
+                return true,{
                     router.responser,
                     {},
                     combine_prefix_midware(ctx.name, pathinfo, tablex.copy(router.midware)),
@@ -429,6 +429,7 @@ function route.run(ctx)
         local validation, extra_path
         router, validation = unpack(router)
         local url, parsed_regex, params = route.parse_path_to_regex(router.path)
+        ctx.logger:debug(router.path," parsed into ",parsed_regex)
         local path_params = {}
         local newpath, n, _ = re_sub(pathinfo, parsed_regex, function(m)
             path_params = route.parse_path_params(params, m, stringx.replace(pathinfo, m[0], ''))
@@ -459,7 +460,7 @@ function route.run(ctx)
     if not lw_util.empty(matched_path) then
         request.routed_uri = matched_path
         request.params = matched_params
-        return {
+        return true,{
             matched_path,
             matched_params.args,
             combine_prefix_midware(ctx.name, pathinfo, matched_midware),
@@ -487,14 +488,14 @@ function route.run(ctx)
     if not lw_util.empty(matched_path) then
         request.routed_uri = pathinfo
         request.params = matched_params
-        return {
+        return true,{
             matched_path,
             matched_params.args,
             combine_prefix_midware(ctx.name, pathinfo, matched_midware),
             matched_router
         }
     end
-    return pathinfo
+    return false,pathinfo
 end
 
 return setmetatable(route, {

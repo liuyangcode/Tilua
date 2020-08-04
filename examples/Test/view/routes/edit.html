@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
-    <title>挡板服务器</title>
+    <title>TiluaGateWay</title>
     <link href="/static/layui/css/layui.css" rel="stylesheet">
     <script src="/static/js/jquery.min.js" charset="utf-8"></script>
     <style type="text/css">
@@ -24,6 +24,7 @@
                 <input type="radio" name="protocols" lay-skin="primary" value="STREAM" title="STREAM" {% if string.find(protocols,'STREAM') then %} checked {% end  %}>
             </div>
         </div>
+
         <div class="layui-form-item" pane="">
             <label class="layui-form-label">匹配请求方法</label>
             <div class="layui-input-block">
@@ -32,6 +33,16 @@
                 <input type="checkbox" name="methods" lay-skin="primary" title="PUT" value="PUT"{% if string.find(methods,'PUT') then %} checked {% end  %}>
                 <input type="checkbox" name="methods" lay-skin="primary" title="DELETE" value="DELETE"{% if string.find(methods,'DELETE') then %} checked {% end  %}>
                 <input type="checkbox" name="methods" lay-skin="primary" title="HEAD" value="HEAD"{% if string.find(methods,'HEAD') then %} checked {% end  %}>
+            </div>
+        </div>
+        <div class="layui-form-item" pane="">
+            <label class="layui-form-label">匹配规则</label>
+            <div class="layui-input-block">
+                <select name="matcher">
+                    <option value="~" {% if matcher=='~' then %}selected{% end %}>正则匹配</option>
+                    <option value="*" {% if matcher=='*' then %}selected{% end %}>最长匹配</option>
+                    <option value="=" {% if matcher=='=' then %}selected{% end %}>精确匹配</option>
+                </select>
             </div>
         </div>
         <div class="layui-form-item">

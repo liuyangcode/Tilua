@@ -225,7 +225,7 @@ function app.startup(app_instance)
         "config",
         app_instance.status
     }, '.'))
-    if config then
+    if type(config) =='table' then
         lw_utils.extend(app_config, config or {})
     end
     midware_manager = require('Tilua.midware.manager').load(app_config)

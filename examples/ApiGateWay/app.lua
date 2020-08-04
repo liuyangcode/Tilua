@@ -4,6 +4,22 @@ local route_service = require("ApiGateWay.routes")
 local balancer = require("ngx.balancer")
 local plugins = require("ApiGateWay.plugins")
 
+local ssl_certificate = require("ApiGateWay.certificate")
+local load_cert_and_key = require("ApiGateWay.certificate").load_cert_and_key
+
+
+local pl_utils = require("pl.utils")
+local ngx_ssl = require "ngx.ssl"
+local server_name = ngx_ssl.server_name
+local clear_certs = ngx_ssl.clear_certs
+local parse_pem_cert = ngx_ssl.parse_pem_cert
+local parse_pem_priv_key = ngx_ssl.parse_pem_priv_key
+local set_cert = ngx_ssl.set_cert
+local set_priv_key = ngx_ssl.set_priv_key
+
+
+
+
 local balancer_service = require("ApiGateWay.balancer")
 ApiGateWay.name = "ApiGateWay"
 ApiGateWay.path = "/usr/local/openresty/lua/ApiGateWay/"
@@ -32,6 +48,42 @@ function ApiGateWay.init_worker()
     we.register(balancer_service.ev_handler)
 
 end
+
+
+
+function ApiGateWay.ssl_certificate()
+    local sn, err = server_name()
+    if err then
+        ngx.log(ERR, "could not get server name ", err)
+        return ngx.exit(ngx.ERROR)
+    end
+
+    ngx.log(ngx.ERR,"ApiGateWay.ssl_certificate")
+    local cert_and_key,err = ssl_certificate.find_key_and_cert(sn)
+    if not cert_and_key then
+        ngx.log(ngx.ERR, err)
+        return ngx.exit(500)
+    end
+
+    local ok, err = clear_certs()
+    if not ok then
+        ngx.log(ngx.ERR, "could not clear existing (default) certificates: ", err)
+        return ngx.exit(500)
+    end
+
+    ok, err = set_cert(cert_and_key.cert)
+    if not ok then
+        ngx.log(ngx.ERR, "could not set configured certificate: ", err)
+        return ngx.exit(500)
+    end
+
+    ok, err = set_priv_key(cert_and_key.key)
+    if not ok then
+        ngx.log(ngx.ERR, "could not set configured private key: ", err)
+        return ngx.exit(500)
+    end
+end
+
 function ApiGateWay:on_body_filter()
     self.logger:debug("on_body_filter ", self.name)
 end
@@ -57,37 +109,38 @@ end
 ---@param ctx app
 function ApiGateWay.on_app_init(ctx)
     ctx.logger:debug("on_app_init --- ", ctx.name)
-    route_service.load(ctx)
 end
 
 function ApiGateWay.access(ApiGateWay)
     local ctx = ngx.ctx.ctx
-    local ak = ctx.request.args.accessToken or ctx.request.header.accessToken
-    local midwares
-    if ak then
-        midwares = plugins.get_secret_midwares(ctx, 'access', ak)
-    end
-    ctx.dispatcher:make_chain_call(midwares, ctx.route.run, ctx)
 
-    local handler = ctx.dispatcher:create_responser({
-        ctx.route.run, { ctx }, midwares or {}
-    })
-    local response = ctx.dispatcher:prepare_response(handler())
-    if response.status ~= 0 and response.status ~= 200 then
+    local midwares = route_service.find_prefix_midwares(ctx)
+    local handler = function
+    ()
+        local matched,router = ctx.route.run(ctx)
+        if matched then
+            ctx:dispatch({
+                proxy = router[1], params = router[2], midware = router[3], router = router[4]
+            })
+            return 200
+        else
+            return 404
+        end
+    end
+    local  response = ctx.dispatcher:prepare_response(ctx.dispatcher:create_responser({
+        handler, {}, midwares or {}
+    })())
+    if response.status ~= 200 then
         response:send()
-    else
-        local router = response.body
-        response.body = nil
-        ctx:dispatch({
-            proxy = router[1], params = router[2], midware = router[3], router = router[4]
-        })
     end
 end
 
 function ApiGateWay.rewrite(ApiGateWay)
     lw_utils.elapse_time_start("BALANCER_START")
-    ApiGateWay:init()
-
+    local ctx = ApiGateWay:init()
+    plugins.load(ctx)
+    route_service.load(ctx)
+    load_cert_and_key(ctx)
 end
 
 function ApiGateWay.on_app_end(ctx)

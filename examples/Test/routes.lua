@@ -16,19 +16,14 @@ route {
 --    ['/'] = '[mvc] /'
 --}
 
-route.get('~/user/find/([^\\/]+)/{name}$', function(ctx, uid, name)
-    ctx.response.body = { uid, name }
-end, {'json'})
+--route.get('~/user/find/([^\\/]+)/{name}$', function(ctx, uid, name)
+--    ctx.response.body = { uid, name }
+--end, {'json'})
 
 
 route.group(function()
-    route.rest('^/(services|secrets|targets|routes|upstreams|baffle|midwares|users)', 'controller.$1')
-    route {
-        ["=/routes/addPlugin"] = {
-            get = 'controller.routes@add_plugin',
-            post = 'controller.routes@do_add_plugin'
-        }
-    }
+    route.rest('^/(services|certificate|secrets|targets|routes|upstreams|baffle|midwares|users)', 'controller.$1')
+    route ['~^/plugins/{action}'] = 'controller.plugins@$action'
 end, 'json', 'body_parser')
 
 --route {

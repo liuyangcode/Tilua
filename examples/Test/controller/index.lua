@@ -30,6 +30,10 @@ end
 function index:secrets(ctx)
     return 'secrets/index.html'
 end
+function index:certificate(ctx)
+    return 'certificate/index.html'
+end
+
 function index:login()
     self:display()
 end

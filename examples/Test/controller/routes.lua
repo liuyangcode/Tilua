@@ -6,35 +6,6 @@ local M = {
     table = 'routes',
     view = 'routes'
 }
-function M.add_plugin(ctx)
-    local plugins = ctx.model.midwares:where({ status = 1 }):select()
-    return 'routes/add_plugin.html', { id = ctx.request.body.id, objecttype = ctx.request.body.objecttype, plugins = plugins }
-end
-function M.do_add_plugin(ctx)
-    local request, response = ctx:unpack()
-    local req = request.body
-    local configs = type(req.config) == 'table' and table.concat(req.config, ',') or req.config
-
-    local services = ctx.model.plugins
-
-    local result = services:add({
-        objectid = req.objectid,
-        objecttype = req.objecttype,
-        phase = req.phase,
-        mid = req.mid,
-        status = 1,
-        config = configs,
-        created_at = { 'exp', 'now()' },
-        updated_at = { 'exp', 'now()' }
-    })
-    if result.affected_rows == 1 then
-        we.post('route', 'add_plugin', req.routeid, true)
-    end
-    response.body = {
-        code = result.affected_rows == 1 and 0 or -1,
-        msg = "错误",
-    }
-end
 function M.edit(ctx, id)
     local request, response = ctx:unpack()
     local req = request.body
@@ -58,6 +29,7 @@ function M.before_create(ctx)
         paths = paths or '/',
         methods = methods or '*',
         headers = req.headers or '',
+        matcher = req.matcher,
         strip_path = req.strip_path == 'on' and 0 or 1,
         preserve_host = req.preserve_host == 'on' and 1 or 0,
         serviceid = req.serviceid or 0,
@@ -87,6 +59,7 @@ function M.before_update(ctx, id)
         paths = paths or '/',
         methods = methods or '*',
         headers = req.headers or '',
+        matcher = req.matcher,
         strip_path = req.strip_path == 'on' and 0 or 1,
         preserve_host = req.preserve_host == 'on' and 1 or 0,
         serviceid = req.serviceid or 0,
@@ -101,6 +74,10 @@ end
 function M.after_update(ctx, id, data)
     data.id = id
     we.post('route', 'update', data)
+end
+
+function M.after_destory(ctx, id)
+    we.post('route', 'delete', id)
 end
 
 return derive(M)

@@ -5,23 +5,23 @@ local session = { 'session', {
     --cookie_domain = '32.254.48.92'
 } }
 
-local html_cache = {
-    'html_cache',
-    {
-        type = 'redis',
-        --suffix = '.html',
-        enable = true,
-        lifetime = 3600,
-        rules = {
-            ['get /user/login'] = 'user-login',
-            ['get /record/view/{certNo}/{id}'] = 'record-view-$certNo-$id',
-            ['get /record/index/record'] = function(ctx)
-                return ctx.session:get('user').uname..'record-list-'..ctx.request.body.page..'-'..ctx.request.body.limit
-            end
-        }
-    }
-}
-route.prefix('/', { html_cache })
+--local html_cache = {
+--    'html_cache',
+--    {
+--        type = 'redis',
+--        --suffix = '.html',
+--        enable = true,
+--        lifetime = 3600,
+--        rules = {
+--            --['get /user/login'] = 'user-login',
+--            ['get /record/view/{certNo}/{id}'] = 'record-view-$certNo-$id',
+--            ['get /record/index/record'] = function(ctx)
+--                return ctx.session:get('user').uname .. 'record-list-' .. ctx.request.body.page .. '-' .. ctx.request.body.limit
+--            end
+--        }
+--    }
+--}
+--route.prefix('/', { html_cache })
 local mid = { session, 'body_parser', 'json', 'Lwhc.midware.session_check' }
 route.get('=/', function(ctx)
     local user = ctx.session:get('user')
@@ -43,6 +43,14 @@ route['~/record/{action}'] = {
     mid = mid
 }
 
+route['=/test'] = function
+(ctx)
+    ctx.db:instance():beginTransaction()
+
+
+    ctx.db.instance():commitTrans()
+    ctx.response.body = lw_util.json_encode(ngx.re.match('test1111', 'test1'))
+end
 --route.group(function()
 --    route {
 --        ['~/record/{action}'] = 'controller.record@$action'

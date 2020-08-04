@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
-    <title>挡板服务器</title>
+    <title>TiluaGateWay</title>
     <link href="/static/layui/css/layui.css" rel="stylesheet">
     <script src="/static/js/jquery.min.js" charset="utf-8"></script>
     <style type="text/css">
@@ -45,28 +45,28 @@
                        class="layui-input">
             </div>
         </div>
-        <div class="layui-form-item">
-            <label class="layui-form-label">配置项</label>
-            <div class="layui-input-block">
-                <table id="demo"></table>
-            </div>
-        </div>
-        <!--        <div class="layui-form-item">-->
-        <!--            <label class="layui-form-label">配置项</label>-->
-        <!--            <div class="layui-input-block">-->
-        <!--                <div class="layui-input-inline" style="width: 300px">-->
-        <!--                    <input type="text" name="config" placeholder="请添加配置项"-->
-        <!--                           autocomplete="off"-->
-        <!--                           class="layui-input"/>-->
-        <!--                </div>-->
-        <!--                <div class="layui-form-mid layui-word-aux">-->
-        <!--                    <button type="button" class="layui-btn layui-btn-sm" onclick="addPath(this,'config')"><i-->
-        <!--                            class="layui-icon layui-icon-addition"></i></button>-->
-        <!--                    <button type="button" class="layui-btn layui-btn-sm" onclick="removePath(this)"><i-->
-        <!--                            class="layui-icon layui-icon-subtraction"></i></button>-->
-        <!--                </div>-->
-        <!--            </div>-->
-        <!--        </div>-->
+<!--        <div class="layui-form-item">-->
+<!--            <label class="layui-form-label">配置项</label>-->
+<!--            <div class="layui-input-block">-->
+<!--                <table id="demo"></table>-->
+<!--            </div>-->
+<!--        </div>-->
+                <div class="layui-form-item">
+                    <label class="layui-form-label">配置项</label>
+                    <div class="layui-input-block">
+                        <div class="layui-input-inline" style="width: 300px">
+                            <input type="text" name="config" placeholder="请添加配置项"
+                                   autocomplete="off"
+                                   class="layui-input"/>
+                        </div>
+                        <div class="layui-form-mid layui-word-aux">
+                            <button type="button" class="layui-btn layui-btn-sm" onclick="addPath(this,'config')"><i
+                                    class="layui-icon layui-icon-addition"></i></button>
+                            <button type="button" class="layui-btn layui-btn-sm" onclick="removePath(this)"><i
+                                    class="layui-icon layui-icon-subtraction"></i></button>
+                        </div>
+                    </div>
+                </div>
         <div class="layui-form-item">
             <div class="layui-input-block">
                 <button class="layui-btn" lay-submit lay-filter="formDemo">立即提交</button>
@@ -86,23 +86,23 @@
         $(item).parent().prev().children().last().remove();
     }
 
-    layui.use(['form', 'table'], function () {
-        var data = []
-        var table = layui.table;
-
-        //第一个实例
-        table.render({
-            elem: '#demo'
-            , height: 200
-            , toolbar: '#toolbarDemo'
-            , data: data
-            , size: 'sm'
-            , skin: 'row'
-            , cols: [[ //表头
-                {field: 'item', title: '配置项', width: '50%', edit: 'text'}
-                , {field: 'type', title: '类型', width: '50%', edit: 'text'}
-            ]]
-        });
+     layui.use(['form'], function () {
+    //     var data = []
+    //     var table = layui.table;
+    //
+    //     //第一个实例
+    //     table.render({
+    //         elem: '#demo'
+    //         , height: 200
+    //         , toolbar: '#toolbarDemo'
+    //         , data: data
+    //         , size: 'sm'
+    //         , skin: 'row'
+    //         , cols: [[ //表头
+    //             {field: 'item', title: '配置项', width: '50%', edit: 'text'}
+    //             , {field: 'type', title: '类型', width: '50%', edit: 'text'}
+    //         ]]
+    //     });
 
 
         var form = layui.form;
