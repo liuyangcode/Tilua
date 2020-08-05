@@ -3,7 +3,7 @@
 --- Created by liuyang.
 --- DateTime: 2020/6/28 5:00 下午
 ---
-local lw_util = require("Tilua.util")
+local lw_util = require("Tilua.utils.util")
 
 local user = {}
 

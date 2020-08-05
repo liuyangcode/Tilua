@@ -4,7 +4,7 @@
 --- DateTime: 2020/5/26 9:06 上午
 ---
 local pl_date = require("pl.Date")
-local path = require("pl.path")
+local path = require("Tilua.utils.path")
 
 local file = {}
 function file.init(config)

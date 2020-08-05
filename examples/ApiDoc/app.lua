@@ -1,7 +1,6 @@
 local app = require("Tilua.app").derive()
 
 app.name = "ApiDoc"
-app.path = "/usr/local/openresty/lua/ApiDoc/"
 app.debug = true
 app.status = 'dev'
 

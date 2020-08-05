@@ -3,16 +3,16 @@
 --- Created by liuyang.
 --- DateTime: 2020/6/12 4:39 下午
 ---
-local lw_util = require("Tilua.util")
+local lw_util = require("Tilua.utils.util")
 local is_routes_loaded = false
 local routes = {}
-local lw_utils = require("Tilua.util")
+local lw_utils = require("Tilua.utils.util")
 local tablex = require("pl.tablex")
 local split = require("pl.utils").split
 local add_route_rule = require("Tilua.route").add_route_rule
 local parse_validation = require("Tilua.route").parse_validation
 local clear_route_rule = require("Tilua.route").clear_route_rule
-local midwares = require("ApiGateWay.plugins")
+local midwares = require("ApiGateWay.service.plugins")
 local prefix_midwares = {}
 
 local re_match = ngx.re.match

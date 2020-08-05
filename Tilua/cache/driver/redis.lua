@@ -1,5 +1,5 @@
 local redis_c = require "resty.redis"
-local lw_util = require('Tilua.util')
+local lw_util = require('Tilua.utils.util')
 
 local commands = {
     "append", "bgsave", "blpop", "brpoplpush", "auth", "bitcount",
@@ -29,7 +29,7 @@ local commands = {
     "zrevrank", "unwatch", "zcard", "zinterstore"
 }
 
-local redis = require "Tilua.cache".derive()
+local redis = {}
 local function is_redis_null(res)
     if type(res) == "table" then
         for k, v in pairs(res) do
@@ -45,14 +45,6 @@ local function is_redis_null(res)
     end
 
     return false
-end
-
-function redis:_init(...)
-    self:super(...)
-    self._reqs = ''
-    self.connected = false
-    self._redisc = false
-    self.handler = {}
 end
 
 function redis:get_redis()
@@ -72,8 +64,8 @@ function redis:connect_mod()
     end
     self:get_redis():set_timeout(self.config.timeout)
     local ok, err = self:get_redis():connect(self.config.host, self.config.port)
-    assert(ok, 'redis '..self.config.host..' connect failed err:'..(err or ''))
-    self.logger:debug('cache redis ', self.config.host, ' connection has been used ', self:get_redis():get_reused_times()," times ")
+    assert(ok, 'redis ' .. self.config.host .. ' connect failed err:' .. (err or ''))
+    self.logger:debug('cache redis ', self.config.host, ' connection has been used ', self:get_redis():get_reused_times(), " times ")
     self.connected = true
 end
 
@@ -186,5 +178,23 @@ for i = 1, #commands do
         return redis.do_command(self, cmd, ...)
     end
 end
+
+local function new(self,config, ctx,logger)
+    local instance = {
+        ctx = ctx,
+        _reqs = '',
+        connected = false,
+        _redisc = false,
+        config = config,
+        logger = logger,
+        handler = {},
+    }
+    return setmetatable(instance, {
+        __index = self
+    })
+end
+setmetatable(redis, {
+    __call = new
+})
 
 return redis

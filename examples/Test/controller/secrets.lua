@@ -1,6 +1,6 @@
 local we = require "resty.worker.events"
-local uuid = require("Tilua.util").uuid
-local CreateUUID = require("Tilua.util").CreateUUID
+local uuid = require("Tilua.utils.util").uuid
+local CreateUUID = require("Tilua.utils.util").random_string
 local derive = require "Test.controller.base.rest".derive
 
 local M = {

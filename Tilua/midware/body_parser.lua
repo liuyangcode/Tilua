@@ -5,12 +5,9 @@
 --- body_parser.lua
 ---
 local ngx = ngx
-local var = ngx.var
-
-local class = require('pl.class')
 local req = ngx.req
 local read_body = req.read_body
-local util = require("Tilua.util")
+local util = require("Tilua.utils.util")
 local pl_utils = require("pl.utils")
 local strip = require("pl.stringx").strip
 local split = require("pl.stringx").split
@@ -18,15 +15,13 @@ local string_startsWith = require("pl.stringx").startswith
 local tablex = require("pl.tablex")
 
 local map = tablex.map
-local path = require "pl.path"
-local dirname = path.dirname
-local getmtime = path.getmtime
+local path = require "Tilua.utils.path"
 local io_open = io.open
 local makepath = require "pl.dir".makepath
 local path_exists = path.exists
 
 ---@class body_parser
-local body_parser = require('Tilua.midware').derive()
+local body_parser = {}
 local _config = nil
 local _sock = nil
 ---parse_disposition_headers
@@ -251,8 +246,18 @@ function body_parser:handle(next, ...)
     return next(...)
 end
 
-function body_parser:_init(ctx)
-    self:super(ctx)
+local  function new (self,ctx)
+    local instance = {
+        ctx = ctx
+    }
     _config = ctx.config.multipart
+    return setmetatable(instance,{
+        __index = body_parser
+    })
 end
+
+setmetatable(body_parser,{
+    __call = new
+})
+
 return body_parser

@@ -1,17 +1,17 @@
-local class = require("pl.class")
 ---@class controller
+---
+---
+local class = require("Tilua.utils.class")
 local controller = class()
-function controller:_init(ctx)
+
+function controller:_construct(ctx)
     ---@type app
     self.ctx = ctx
+    return self
 end
 
 function controller:assign(...)
     self.ctx.view:assign(...)
-end
-
-function controller.derive()
-    return class(controller)
 end
 
 function controller:display(template_file)
@@ -24,7 +24,7 @@ function controller:display(template_file)
 end
 
 function controller:_call()
-    --魔术方法
+    return 404
 end
 
 return controller

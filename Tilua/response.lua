@@ -1,6 +1,6 @@
 local ngx = ngx
 local send = ngx.print
-local lw_util = require('Tilua.util')
+local lw_util = require('Tilua.utils.util')
 
 local ngx_redirect = ngx.redirect
 local setmetatable = setmetatable
@@ -215,14 +215,14 @@ end
 
 response.redirect = ngx_redirect
 
-function response.new(ctx)
+local function new(self,ctx)
     return setmetatable({
         ctx = ctx,
         headers = {},
         status = 0,
         body = nil,
     }, {
-        __index = response
+        __index = self
     })
 end
 
@@ -232,4 +232,7 @@ function response:send()
     self:send_body()
 end
 
+setmetatable(response,{
+    __call = new
+})
 return response

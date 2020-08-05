@@ -14,10 +14,10 @@ local m_targets_upstreams = {}
 local m_upstreams_targets = {}
 
 local dns = require("resty.dns.client")
-local util = require("Tilua.util")
+local util = require("Tilua.utils.util")
 local crc32 = ngx.crc32_short
-local routes = require("ApiGateWay.routes")
-local certificate = require("ApiGateWay.certificate")
+local routes = require("ApiGateWay.service.routes")
+local certificate = require("ApiGateWay.service.certificate")
 
 local balancer_types = {
     ["consistent-hashing"] = require("resty.dns.balancer.ring"),

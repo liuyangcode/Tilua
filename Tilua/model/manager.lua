@@ -4,7 +4,7 @@
 --- DateTime: 2020/6/1 10:41 上午
 ---
 ---
-local lw_utils = require('Tilua.util')
+local lw_utils = require('Tilua.utils.util')
 local bind1 = require("pl.utils").bind1
 local rawget,type,setmetatable = rawget,type,setmetatable
 local model_class = require('Tilua.model')
@@ -30,7 +30,7 @@ function manager:instance(name, connection)
     return self.models[name]
 end
 
-function manager.new(ctx)
+local function new(self,ctx)
     return setmetatable({
         ctx = ctx,
         logger = ctx.logger,
@@ -49,5 +49,9 @@ function manager.new(ctx)
         end
     })
 end
+
+setmetatable(manager,{
+    __call = new
+})
 
 return manager

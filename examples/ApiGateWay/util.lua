@@ -4,8 +4,8 @@
 --- DateTime: 2020/7/12 10:06 上午
 ---
 local http = require "resty.http"
-local json_encode = require "Tilua.util" .json_encode
-local json_decode = require "Tilua.util" .json_decode
+local json_encode = require "Tilua.utils.util" .json_encode
+local json_decode = require "Tilua.utils.util" .json_decode
 
 local util = {}
 function util.apiv1(request, method, headers, time_out)

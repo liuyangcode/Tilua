@@ -1,15 +1,16 @@
 local class = require("pl.class")
-local path = require "pl.path"
-local table_concat = table.concat
-local stringx = require('pl.stringx')
-local split = stringx.split
-local lw_utils = require('Tilua.util')
-local bind1 = require("pl.utils").bind1
-local deepcopy = require('pl.tablex').deepcopy
+local lw_utils = require('Tilua.utils.util')
+local path = require("Tilua.utils.path")
+local path_exists = path.isdir
+local path_join = path.join
+local import = lw_utils.import
+local bind1 = require("Tilua.utils.util").bind1
+local deepcopy = require('Tilua.utils.tables').deep_copy
+
 local model_manager = require("Tilua.model.manager")
 local db_manager = require("Tilua.db.manager")
-local midware_manager = require("Tilua.midware.manager")
-local cache_manager = require("Tilua.cache.manager")
+local midware_manager = require("Tilua.midware")
+local cache_manager = require("Tilua.cache")
 local template = require "resty.template"
 ---@class app
 local app = class()
@@ -22,18 +23,20 @@ local configs = {}
 function app:_init()
     self:initialize()
 end
+
 function app:initialize()
     self.config = configs[self.name]
     self:init_logger()
     self.request = request.capture(self)
-    self.response = require("Tilua.response").new(self)
+    self.response = import("Tilua.response")(self)
     self:init_view()
-    self.midware = midware_manager.new(self)
+    self.midware = midware_manager(self)
     self:init_cache_manager()
     self:init_db_manager()
     self:init_model_manager()
     self:init_dispatcher()
 end
+
 ---分发路由
 ---@return dispatch
 function app:dispatch(...)
@@ -43,8 +46,8 @@ function app:init_dispatcher()
     local dispatcher = self.config.dispatch
     self.logger:debug('init dispatch named:', dispatcher)
     assert(not lw_utils.empty(dispatcher), 'no dispatcher defined')
-    local found, dispatch = pcall(require, dispatcher)
-    if not found then
+    local dispatch = import(dispatcher)
+    if not dispatch then
         error('not dispatcher defined')
     end
     assert(dispatch.run, 'dispatch must has a run method')
@@ -56,13 +59,13 @@ function app:get_html_cache_interceptor()
     if self.cache_interceptor then
         return self.cache_interceptor
     end
-    self.cache_interceptor = require "Tilua.cache.page"(self)
+    self.cache_interceptor = import "Tilua.cache.page"(self)
     return self.cache_interceptor
 end
 
 ---@return cache
 function app:init_cache_manager()
-    self.cache = cache_manager.new(self.config, self.logger)
+    self.cache = cache_manager(self.config, self.logger)
     if self.on_app_handled then
         self:on_app_handled(bind1(self.cache.close, self.cache))
     end
@@ -70,7 +73,7 @@ function app:init_cache_manager()
 end
 
 function app:init_db_manager()
-    self.db = db_manager.new({
+    self.db = db_manager({
         ctx = self.config,
         logger = self.logger
     })
@@ -81,7 +84,7 @@ function app:init_db_manager()
 end
 
 function app:init_model_manager()
-    self.model = model_manager.new(self)
+    self.model = model_manager(self)
     return self.model
 end
 
@@ -94,7 +97,7 @@ function app.init_logger(ctx)
 end
 
 function app:init_view()
-    self.view = require("Tilua.view")(self)
+    self.view = import("Tilua.view")(self)
     return self.view
 end
 
@@ -186,12 +189,12 @@ function app.init_worker(app_instance)
 end
 
 local function init_view_engine(root)
-    local view_path = path.join(root, 'view', '')
-    local view_cache_path = path.join(root, 'cache', 'view', '')
-    local html_cache_path = path.join(root, 'cache', 'html', '')
+    local view_path = path_join(root, 'view', '')
+    local view_cache_path = path_join(root, 'cache', 'view', '')
+    local html_cache_path = path_join(root, 'cache', 'html', '')
 
     local makepath = require "pl.dir".makepath
-    local path_exists = path.exists
+
     if not path_exists(view_cache_path) then
         local _, err = makepath(view_cache_path)
         assert(not err, 'dir ' .. view_cache_path .. ' write ' .. err)
@@ -208,7 +211,7 @@ local function init_view_engine(root)
         view = view_path,
         root = root,
         cache_key_prefix = view_path,
-        view_cache_path = path.join('cache', 'view', ''),
+        view_cache_path = path_join('cache', 'view', ''),
         view_cache_abs_path = view_cache_path,
         html_cache_path = html_cache_path
     }
@@ -218,27 +221,28 @@ end
 function app.startup(app_instance)
     local app_config = {}
     local appname = app_instance.name
+    app_instance.path = path.get_module_path(appname, 'app')
     --加载系统默认配置
-    lw_utils.extend(app_config, deepcopy(require "Tilua.config.default"))
-    local _, config = pcall(require, table_concat({
-        appname,
-        "config",
-        app_instance.status
-    }, '.'))
-    if type(config) =='table' then
-        lw_utils.extend(app_config, config or {})
-    end
-    midware_manager = require('Tilua.midware.manager').load(app_config)
-    request = require('Tilua.request')
-
+    lw_utils.extend(app_config, deepcopy(import "Tilua.config.default"))
+    lw_utils.foreach({ 'default', app_instance.status }, function(status)
+        local config = lw_utils.import(appname, "config", status)
+        if type(config) == 'table' then
+            lw_utils.extend(app_config, config or {})
+        end
+    end)
+    midware_manager = import('Tilua.midware').load(app_config)
+    request = import('Tilua.request')
     app_instance.view_engine = init_view_engine(app_instance.path)
     app_instance.view_engine.template.caching(not app_instance.debug)
-    app_instance.route = require('Tilua.route')
+    app_instance.route = import('Tilua.route')
     app_instance.route.set_app_name(appname)
-    app_config.log.path = path.join(app_instance.path, app_config.log.path)
-    logger_class = require("Tilua.log").init(app_config.log)
+    app_config.log.path = path_join(app_instance.path, app_config.log.path)
+    logger_class = import("Tilua.log").init(app_config.log)
     --加载应用自定义路由
-    pcall(require, appname .. '.routes')
+    local route = lw_utils.import(appname .. '.routes')
+    if type(route) == 'function' then
+        route(app_instance, app_instance.route)
+    end
     --解析路由
     app_instance.route.init_rule_caches(app_config.route)
     configs[appname] = app_config
@@ -270,8 +274,9 @@ end
 
 function app.run()
     local ctx = ngx.ctx.ctx
-    assert(ctx, 'no application context found')
-
+    if not ctx then
+        error('no application context found')
+    end
     if (ctx.debug) then
         xpcall(function()
             ctx:dispatch(ctx.route.run(ctx))

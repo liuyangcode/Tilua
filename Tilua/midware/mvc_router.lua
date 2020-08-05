@@ -1,5 +1,4 @@
-local lw_util = require('Tilua.util')
-local pl_utils = require('pl.utils')
+local lw_util = require('Tilua.utils.util')
 
 local stringx = require "pl.stringx"
 local split = stringx.split
@@ -9,7 +8,7 @@ local update = require("pl.tablex").update
 
 local callable = lw_util.callable
 ---@class mvc
-local mvc_router = require "Tilua.midware" .derive()
+local mvc_router = {}
 mvc_router.alias = 'mvc'
 
 local default_config = {
@@ -19,11 +18,6 @@ local default_config = {
     controller_layer = 'controller',
     model_layer = 'model'
 }
-
-function mvc_router:_init(ctx, config)
-    self.config = update(default_config, config or {})
-    self:super(ctx)
-end
 
 function mvc_router:handle(next, ...)
     local ctx = self.ctx
@@ -37,15 +31,18 @@ function mvc_router:handle(next, ...)
 
     self.controller_name = not lw_util.empty(controller) and controller or self.config.default_controller
     self.action_name = not lw_util.empty(action) and action or self.config.default_action
-    local found, hanlder = pcall(require, table_concat({
-        self.ctx.name,
-        self.config.controller_layer,
-        self.controller_name
-    }, '.'))
+    local hanlder = lw_util.import(
+            self.ctx.name,
+            self.config.controller_layer,
+            self.controller_name
+    )
+    ctx.logger:debug("Mvc router midware end route controller:",            self.ctx.name,
+            self.config.controller_layer,
+            self.controller_name)
 
-    if found then
+    if hanlder then
         self.controller = hanlder(self.ctx)
-        if rawget(hanlder, self.action_name) and callable(self.controller[self.action_name]) and string.sub(self.action_name, 1, 1) ~= '_' then
+        if callable(self.controller[self.action_name]) and string.sub(self.action_name, 1, 1) ~= '_' then
             self.action = self.controller[self.action_name]
             ctx.logger:debug("Mvc router midware end route controller:", self.controller_name, " action:", self.action_name)
         elseif callable(self.controller._call) then
@@ -62,5 +59,19 @@ function mvc_router:handle(next, ...)
     end
     return next(...)
 end
+
+local function new (self, ctx, config)
+    local instance = {
+        ctx = ctx,
+        config = update(default_config, config or {})
+    }
+    return setmetatable(instance, {
+        __index = self
+    })
+end
+
+setmetatable(mvc_router, {
+    __call = new
+})
 
 return mvc_router

@@ -18,18 +18,6 @@ local function getnavs(module, action)
                     this = module == 'lua' and action == 'introduce'
                 },
                 {
-                    title = "环境搭建",
-                    href = "/lua/build_env.html",
-                    em = "Lua build env",
-                    this = module == 'lua' and action == 'build_env'
-                },
-                {
-                    title = "编辑器选择",
-                    href = "/lua/editor.html",
-                    em = "Lua editor",
-                    this = module == 'lua' and action == 'editor'
-                },
-                {
                     title = "基本语法",
                     href = "/lua/syntax.html",
                     em = "Basic syntax",
@@ -39,7 +27,13 @@ local function getnavs(module, action)
                     title = "数据类型",
                     href = "/lua/types.html",
                     em = "types",
-                    this = module == 'lua' and action == 'types'
+                    this = module == 'lua' and (
+                            action == 'types' or
+                            action =='strings' or
+                            action == 'arrays' or
+                            action == 'tables' or
+                            action == 'functions'
+                    )
                 },
                 {
                     title = "变量",
@@ -47,43 +41,18 @@ local function getnavs(module, action)
                     em = "variables",
                     this = module == 'lua' and action == 'variables'
                 },
-                --{
-                --    title = "字符串",
-                --    href = "/lua/strings.html",
-                --    em = "types",
-                --    this = module == 'lua' and action == 'strings'
-                --},
-                --{
-                --    title = "函数",
-                --    href = "/lua/functions.html",
-                --    em = "function",
-                --    this = module == 'lua' and action == 'functions'
-                --},
                 {
                     title = "运算符",
                     href = "/lua/operator.html",
                     em = "operator",
                     this = module == 'lua' and action == 'operator'
                 },
-
-                --{
-                --    title = "数组",
-                --    href = "/lua/arrays.html",
-                --    em = "array",
-                --    this = module == 'lua' and action == 'arrays'
-                --},
                 {
                     title = "迭代器",
                     href = "/lua/iterators.html",
                     em = "iterators",
                     this = module == 'lua' and action == 'iterators'
                 },
-                --{
-                --    title = "表",
-                --    href = "/lua/tables.html",
-                --    em = "table",
-                --    this = module == 'lua' and action == 'tables'
-                --},
                 {
                     title = "模块与包",
                     href = "/lua/packages.html",
@@ -126,6 +95,54 @@ local function getnavs(module, action)
                     em = "database access",
                     this = module == 'lua' and action == 'database-access'
                 }
+            }
+        },
+        {
+            title = "Nginx 起步",
+            items = {
+
+            }
+        },
+        {
+            title = "Tilua 基础",
+            items = {
+
+            }
+        },
+        {
+            title = "Tilua 配置",
+            items = {
+
+            }
+        },
+        {
+            title = "Tilua 路由",
+            items = {
+
+            }
+        },
+        {
+            title = "Tilua 控制器",
+            items = {
+
+            }
+        },
+        {
+            title = "Tilua 模型",
+            items = {
+
+            }
+        },
+        {
+            title = "Tilua 视图",
+            items = {
+
+            }
+        },
+        {
+            title = "Tilua 模板",
+            items = {
+
             }
         }
     }

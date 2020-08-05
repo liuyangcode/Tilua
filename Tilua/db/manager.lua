@@ -4,7 +4,7 @@
 --- DateTime: 2020/6/1 3:17 下午
 ---
 local require = require
-local lw_utils = require('Tilua.util')
+local lw_utils = require('Tilua.utils.util')
 local bind1 = require("pl.utils").bind1
 local deepcopy = require("pl.tablex").deepcopy
 local rawget, type, setmetatable, string_lower, string_sub = rawget, type, setmetatable, string.lower, string.sub
@@ -83,7 +83,7 @@ function manager:close()
     end)
 end
 
-function manager.new(ctx)
+local function new(_,ctx)
     return setmetatable({
         ctx = ctx.ctx,
         logger = ctx.logger,
@@ -102,5 +102,9 @@ function manager.new(ctx)
         end
     })
 end
+
+setmetatable(manager,{
+    __call = new
+})
 
 return manager

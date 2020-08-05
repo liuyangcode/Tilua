@@ -13,8 +13,8 @@ local strip = stringx.strip
 local split = require('pl.utils').split
 local unpack = require('pl.utils').unpack
 local string_lower, type, pairs, select, table_insert, ipairs, table_unpack, setmetatable = string.lower, type, pairs, select, table.insert, ipairs, table.unpack, setmetatable
-local lw_util = require('Tilua.util')
-local midware_manager = require("Tilua.midware.manager")
+local lw_util = require('Tilua.utils.util')
+local midware_manager = require("Tilua.midware")
 
 ---@class route
 local route = {

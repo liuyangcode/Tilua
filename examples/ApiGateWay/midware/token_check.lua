@@ -7,7 +7,7 @@
 
 local token_check = require('Tilua.midware').derive()
 local apiv1 = require("ApiGateWay.util").apiv1
-local encode = require("Tilua.util").json_encode
+local encode = require("Tilua.utils.util").json_encode
 local update = require("pl.tablex").update
 local ngx_req = ngx.req
 

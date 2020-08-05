@@ -1,7 +1,7 @@
 local ngx = ngx
 local class = require("pl.class")
 local tablex = require "pl.tablex"
-local lw_util = require('Tilua.util')
+local lw_util = require('Tilua.utils.util')
 local pl_utils = require('pl.utils')
 local string_find = string.find
 ---@class dispatch

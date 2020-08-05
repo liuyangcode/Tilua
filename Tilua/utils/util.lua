@@ -7,14 +7,43 @@ local now, update_time = ngx.now, ngx.update_time
 local md5 = ngx.md5
 local string = string
 local table = table
-local table_concat = table.concat
+local gsub          = string.gsub
 local json = require("cjson.safe")
 local split = require("pl.utils").split
 local assert_arg = require("pl.utils").assert_arg
-local string_format = string.format
-local string_sub = string.sub
-local table_insert = table.insert
-local math_random = math.random
+local ffi = require "ffi"
+
+local re_find       = ngx.re.find
+local re_match      = ngx.re.match
+local C             = ffi.C
+local ffi_fill      = ffi.fill
+local ffi_new       = ffi.new
+local ffi_str       = ffi.string
+
+
+local uuid = require("resty.jit-uuid")
+
+
+ffi.cdef[[
+typedef unsigned char u_char;
+
+int gethostname(char *name, size_t len);
+
+int RAND_bytes(u_char *buf, int num);
+
+unsigned long ERR_get_error(void);
+void ERR_load_crypto_strings(void);
+void ERR_free_strings(void);
+
+const char *ERR_reason_error_string(unsigned long e);
+
+int open(const char * filename, int flags, int mode);
+size_t read(int fd, void *buf, size_t count);
+int write(int fd, const void *ptr, int numbytes);
+int close(int fd);
+char *strerror(int errnum);
+]]
+
 
 local lrandom = require "random"
 
@@ -22,6 +51,29 @@ local lrandom = require "random"
 local util = {
     split = split
 }
+
+util.is_windows = _G.package.config:sub(1, 1) == '\\'
+
+
+--- bind the first argument of the function to a value.
+-- @param fn a function of at least two values (may be an operator string)
+-- @param p a value
+-- @return a function such that f(x) is fn(p,x)
+-- @raise same as @{function_arg}
+-- @see func.bind1
+-- @usage local function f(msg, name)
+--   print(msg .. " " .. name)
+-- end
+--
+-- local hello = utils.bind1(f, "Hello")
+--
+-- print(hello("world"))     --> "Hello world"
+-- print(hello("sunshine"))  --> "Hello sunshine"
+function util.bind1 (fn, p)
+    return function(...)
+        return fn(p, ...)
+    end
+end
 
 ---choose
 ---@param condition boolean
@@ -86,10 +138,11 @@ end
 function util.md5(str)
     return md5(str)
 end
+
 ---is_array
----@param val any
-function util.is_array(val)
-    return type(val) == 'table'
+---@param t any
+function util.is_array(t)
+    return type(t) == "table"
 end
 
 local function pairsByKeys(t)
@@ -150,35 +203,143 @@ function util.dump(...)
         ngx.say(pretty.write(params[i]) .. '<br/>')
     end
 end
-
-function util.CreateUUID()
-
-    local template = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-    local d = io.open("/dev/urandom", "r"):read(4)
-    math.randomseed(os.time() + d:byte(1) + (d:byte(2) * 256) + (d:byte(3) * 65536) + (d:byte(4) * 4294967296))
-    return string.gsub(template, "x", function(c)
-        local v = (c == "x") and math.random(0, 0xf) or math.random(8, 0xb)
-        return string.format("%x", v)
-    end)
+util.CreateUUID =  function
+()
+    uuid.seed()
+    return uuid()
 end
----uuid
-function util.uuid()
-    local seed = { 'e', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f' }
-    local tb = {}
-    ngx.update_time()
-    math.randomseed(ngx.now())
-    for i = 1, 32 do
-        table_insert(tb, seed[math_random(1, 16)])
+
+util.uuid = function
+(seed)
+    uuid.seed(seed)
+    return uuid()
+end
+
+function util.get_hostname()
+    local result
+    local SIZE = 128
+
+    local buf = ffi_new("unsigned char[?]", SIZE)
+    local res = C.gethostname(buf, SIZE)
+
+    if res == 0 then
+        local hostname = ffi_str(buf, SIZE)
+        result = gsub(hostname, "%z+$", "")
+    else
+        local f = io.popen("/bin/hostname")
+        local hostname = f:read("*a") or ""
+        f:close()
+        result = gsub(hostname, "\n$", "")
     end
-    local sid = table_concat(tb)
-    return string_format('%s-%s-%s-%s-%s',
-            string_sub(sid, 1, 8),
-            string_sub(sid, 9, 12),
-            string_sub(sid, 13, 16),
-            string_sub(sid, 17, 20),
-            string_sub(sid, 21, 32)
-    )
+
+    return result
 end
+
+local get_rand_bytes
+
+do
+    local ngx_log = ngx.log
+    local WARN    = ngx.WARN
+
+    local bytes_buf_t = ffi.typeof "char[?]"
+
+    local function urandom_bytes(buf, size)
+        local fd = ffi.C.open("/dev/urandom", 0, 0) -- mode is ignored
+        if fd < 0 then
+            ngx_log(WARN, "Error opening random fd: ",
+                    ffi_str(ffi.C.strerror(ffi.errno())))
+
+            return false
+        end
+
+        local res = ffi.C.read(fd, buf, size)
+        if res <= 0 then
+            ngx_log(WARN, "Error reading from urandom: ",
+                    ffi_str(ffi.C.strerror(ffi.errno())))
+
+            return false
+        end
+
+        if ffi.C.close(fd) ~= 0 then
+            ngx_log(WARN, "Error closing urandom: ",
+                    ffi_str(ffi.C.strerror(ffi.errno())))
+        end
+
+        return true
+    end
+
+    -- try to get n_bytes of CSPRNG data, first via /dev/urandom,
+    -- and then falling back to OpenSSL if necessary
+    get_rand_bytes = function(n_bytes, urandom)
+        local buf = ffi_new(bytes_buf_t, n_bytes)
+        ffi_fill(buf, n_bytes, 0x0)
+
+        -- only read from urandom if we were explicitly asked
+        if urandom then
+            local rc = urandom_bytes(buf, n_bytes)
+
+            -- if the read of urandom was successful, we returned true
+            -- and buf is filled with our bytes, so return it as a string
+            if rc then
+                return ffi_str(buf, n_bytes)
+            end
+        end
+
+        if C.RAND_bytes(buf, n_bytes) == 0 then
+            -- get error code
+            local err_code = C.ERR_get_error()
+            if err_code == 0 then
+                return nil, "could not get SSL error code from the queue"
+            end
+
+            -- get human-readable error string
+            C.ERR_load_crypto_strings()
+            local err = C.ERR_reason_error_string(err_code)
+            C.ERR_free_strings()
+
+            return nil, "could not get random bytes (" ..
+                    "reason:" .. ffi_str(err) .. ") "
+        end
+
+        return ffi_str(buf, n_bytes)
+    end
+
+    util.get_rand_bytes = get_rand_bytes
+end
+
+do
+    local char = string.char
+    local rand = math.random
+    local encode_base64 = ngx.encode_base64
+
+    -- generate a random-looking string by retrieving a chunk of bytes and
+    -- replacing non-alphanumeric characters with random alphanumeric replacements
+    -- (we dont care about deriving these bytes securely)
+    -- this serves to attempt to maintain some backward compatibility with the
+    -- previous implementation (stripping a UUID of its hyphens), while significantly
+    -- expanding the size of the keyspace.
+    local function random_string()
+        -- get 24 bytes, which will return a 32 char string after encoding
+        -- this is done in attempt to maintain backwards compatibility as
+        -- much as possible while improving the strength of this function
+        return encode_base64(get_rand_bytes(24, true))
+                :gsub("/", char(rand(48, 57)))  -- 0 - 10
+                :gsub("+", char(rand(65, 90)))  -- A - Z
+                :gsub("=", char(rand(97, 122))) -- a - z
+    end
+
+    util.random_string = random_string
+end
+
+local uuid_regex = "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+function util.is_valid_uuid(str)
+    if type(str) ~= 'string' or #str ~= 36 then
+        return false
+    end
+    return re_find(str, uuid_regex, 'ioj') ~= nil
+end
+
+
 ---check vals is nil
 function util.is_set(...)
     local params = { ... }
@@ -189,7 +350,14 @@ function util.is_set(...)
     end
     return true
 end
-function util.import(module)
+
+function util.import(...)
+    local module = select(1, ...)
+    if util.is_array(module) then
+        module = table.concat(module, '.')
+    else
+        module = table.concat({ ... }, '.')
+    end
     local ok, m = pcall(require, module)
     return ok and m or nil
 end
@@ -222,6 +390,7 @@ function util.get_now_ms()
     update_time()
     return now() * 1000
 end
+
 function util.elapse_time_start(tag, ctx)
     if not ctx then
         ctx = ngx.ctx

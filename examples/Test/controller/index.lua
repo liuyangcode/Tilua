@@ -1,7 +1,5 @@
-local index = require("Tilua.controller").derive()
-function index:_init(ctx)
-    self:super(ctx)
-end
+local controller = require("Tilua.controller")
+local index = controller()
 ---index
 ---@param ctx app
 function index:index(ctx)
@@ -54,4 +52,5 @@ function index:upload(ctx)
         self:display()
     end
 end
+
 return index

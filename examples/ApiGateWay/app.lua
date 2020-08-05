@@ -1,11 +1,11 @@
 local ApiGateWay = require("Tilua.app").derive()
-local lw_utils = require("Tilua.util")
-local route_service = require("ApiGateWay.routes")
+local lw_utils = require("Tilua.utils.util")
+local route_service = require("ApiGateWay.service.routes")
 local balancer = require("ngx.balancer")
-local plugins = require("ApiGateWay.plugins")
+local plugins = require("ApiGateWay.service.plugins")
 
-local ssl_certificate = require("ApiGateWay.certificate")
-local load_cert_and_key = require("ApiGateWay.certificate").load_cert_and_key
+local ssl_certificate = require("ApiGateWay.service.certificate")
+local load_cert_and_key = ssl_certificate.load_cert_and_key
 
 
 local pl_utils = require("pl.utils")
@@ -22,7 +22,6 @@ local set_priv_key = ngx_ssl.set_priv_key
 
 local balancer_service = require("ApiGateWay.balancer")
 ApiGateWay.name = "ApiGateWay"
-ApiGateWay.path = "/usr/local/openresty/lua/ApiGateWay/"
 ApiGateWay.debug = true
 ApiGateWay.status = 'dev'
 function ApiGateWay:_init()

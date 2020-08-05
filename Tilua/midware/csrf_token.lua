@@ -4,10 +4,9 @@
 --- DateTime: 2020/6/26 11:05 上午
 ---csrf_token.lua
 ---
-local csrf_token = require('Tilua.midware').derive()
-local lw_util = require("Tilua.util")
+local csrf_token = {}
+local lw_util = require("Tilua.utils.util")
 csrf_token.alias = 'csrf'
-
 function csrf_token:_init(...)
     self:super(...)
 end
@@ -36,5 +35,17 @@ function csrf_token:check()
     self.ctx.session:unset('csrf_token')
     return true
 end
+
+local  function new (self,ctx)
+    local instance = {
+        ctx = ctx
+    }
+    return setmetatable(instance,{
+        __index = self
+    })
+end
+setmetatable(csrf_token,{
+    __call = new
+})
 
 return csrf_token

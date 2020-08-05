@@ -3,6 +3,7 @@ local md5 = ngx.md5
 local ngx_cookie_time = ngx.cookie_time
 local format = string.format
 local ngx_time = ngx.time
+local random_string = require("Tilua.utils.util").random_string
 ---@class session
 local session = {}
 
@@ -268,7 +269,7 @@ function session.send_cookie(self)
     return true
 end
 
-function session.new(cfg, ctx)
+local  function new(self,cfg, ctx)
     local sess = {
         log = ctx.logger,
         id = nil,
@@ -287,7 +288,9 @@ function session.new(cfg, ctx)
 end
 
 function session.create_id(self)
-    return ngx.md5(ngx.var.remote_addr .. ngx.now() .. math.random(1, 10000000))
+    return random_string()
 end
-
+setmetatable(session,{
+    __call = new
+})
 return session

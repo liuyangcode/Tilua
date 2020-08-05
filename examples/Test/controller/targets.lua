@@ -42,7 +42,7 @@ function targets.create(ctx)
         updated_at = { 'exp', 'now()' }
     }
     local result = services:add(data)
-    ctx.logger:debug(require("Tilua.util").json_encode(result))
+    ctx.logger:debug(require("Tilua.utils.util").json_encode(result))
 
     if result.affected_rows == 1 then
         data.id = result.insert_id

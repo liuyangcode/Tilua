@@ -5,7 +5,7 @@
 ---
 ---
 ---
-local util = require("Tilua.util")
+local util = require("Tilua.utils.util")
 local json_encode = util.json_encode
 local json_decode = util.json_decode
 

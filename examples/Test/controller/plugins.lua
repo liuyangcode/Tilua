@@ -5,7 +5,7 @@
 ---
 local we = require "resty.worker.events"
 
-local util = require("Tilua.util")
+local util = require("Tilua.utils.util")
 local M = {}
 
 function M.add(ctx,objecttype,id)

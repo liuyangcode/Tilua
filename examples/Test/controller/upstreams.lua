@@ -1,4 +1,4 @@
-local lw_util = require("Tilua.util")
+local lw_util = require("Tilua.utils.util")
 local we = require "resty.worker.events"
 local upstreams = {}
 ---index

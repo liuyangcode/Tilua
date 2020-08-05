@@ -5,7 +5,7 @@
 ---
 
 local M = {}
-local lw_util = require("Tilua.util")
+local lw_util = require("Tilua.utils.util")
 local is_plugins_loaded = false
 local plugins = {}
 function M.load(ctx)

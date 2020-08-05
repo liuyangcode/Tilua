@@ -1,4 +1,4 @@
-local lw_util = require("Tilua.util")
+local lw_util = require("Tilua.utils.util")
 local derive = require "Test.controller.base.rest".derive
 
 local M = {

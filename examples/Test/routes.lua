@@ -1,5 +1,5 @@
 local route = require("Tilua.route")
-local lw_util = require("Tilua.util")
+local lw_util = require("Tilua.utils.util")
 --route.prefix('/posts', {
 --    'json', 'body_parser'
 --})

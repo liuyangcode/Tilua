@@ -1,10 +1,5 @@
-local json_response = require('Tilua.midware').derive()
-local json_encode = require("Tilua.util").json_encode
-local lw_util = require('Tilua.util')
-
-function json_response:_init(...)
-    self:super(...)
-end
+local json_response = {}
+local json_encode = require("Tilua.utils.util").json_encode
 
 function json_response:handle(next, ...)
     local response = next(...)
@@ -14,5 +9,18 @@ function json_response:handle(next, ...)
     end
     return response
 end
+
+local  function new (self,ctx)
+    local instance = {
+        ctx = ctx
+    }
+    return setmetatable(instance,{
+        __index = self
+    })
+end
+
+setmetatable(json_response,{
+    __call = new
+})
 
 return json_response

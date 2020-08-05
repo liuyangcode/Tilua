@@ -3,7 +3,7 @@
 --- Created by liuyang.
 --- DateTime: 2020/8/4 10:14 上午
 ---
-local lw_util = require("Tilua.util")
+local lw_util = require("Tilua.utils.util")
 local derive = require "Test.controller.base.rest".derive
 local we = require "resty.worker.events"
 
