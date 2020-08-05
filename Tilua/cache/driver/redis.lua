@@ -28,8 +28,9 @@ local commands = {
     "zremrangebyrank", "zremrangebyscore", "zrevrangebyscore",
     "zrevrank", "unwatch", "zcard", "zinterstore"
 }
+local base = require("Tilua.cache.base")
+local redis = base.define()
 
-local redis = {}
 local function is_redis_null(res)
     if type(res) == "table" then
         for k, v in pairs(res) do
@@ -179,22 +180,11 @@ for i = 1, #commands do
     end
 end
 
-local function new(self,config, ctx,logger)
-    local instance = {
-        ctx = ctx,
-        _reqs = '',
-        connected = false,
-        _redisc = false,
-        config = config,
-        logger = logger,
-        handler = {},
-    }
-    return setmetatable(instance, {
-        __index = self
-    })
+function redis:_construct(...)
+    self._reqs = ''
+    self.connected = false
+    self._redisc = false
+    self.handler = {}
 end
-setmetatable(redis, {
-    __call = new
-})
 
 return redis

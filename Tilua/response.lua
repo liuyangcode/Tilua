@@ -1,6 +1,6 @@
 local ngx = ngx
 local send = ngx.print
-local lw_util = require('Tilua.utils.util')
+local class = require('Tilua.utils.class')
 
 local ngx_redirect = ngx.redirect
 local setmetatable = setmetatable
@@ -9,10 +9,10 @@ local lower = string.lower
 local format = string.format
 local rawget, type = rawget, type
 ---@class response
-local response = {}
+local response = class.define()
 
 function response:get_body()
-    return self.body
+    return self._body
 end
 
 function response:set_body(content)
@@ -20,10 +20,10 @@ function response:set_body(content)
     if tcontent == 'string' then
         self.headers.content_length = #content
     elseif tcontent == 'nil' then
-        self.body = ''
+        self._body = ''
         self.headers.content_length = 0
     end
-    self.body = content
+    self._body = content
 end
 
 ---发送响应头
@@ -60,13 +60,6 @@ function response:send_headers(without_body)
         add_header('content-type', self.ctx.config.default_content_type .. '; charset=' .. self.ctx.config.default_charset)
     end
 
-    local tcontent = type(self.body)
-    if tcontent == 'string' then
-        add_header('Content-Length', #self.body)
-    elseif tcontent == 'nil' then
-        self.body = ''
-        add_header('Content-Length', 0)
-    end
     return self
 end
 
@@ -74,7 +67,7 @@ function response:render(view, context, content_type)
     if content_type then
         self.headers.content_type = content_type
     end
-    self.body = self.ctx.view:render(view, context)
+    self:set_body(self.ctx.view:render(view, context))
     return self
 end
 
@@ -209,30 +202,22 @@ function response:jump(url, success, message, waitSecond)
     else
         context.error = message
     end
-    self.body = self.ctx.view_engine.template.process(self.ctx.config.jump_tpl or default_jump_tpl, context, nil, not self.ctx.config.jump_tpl)
+    self:set_body(self.ctx.view_engine.template.process(self.ctx.config.jump_tpl or default_jump_tpl, context, nil, not self.ctx.config.jump_tpl))
     return self
 end
 
 response.redirect = ngx_redirect
 
-local function new(self,ctx)
-    return setmetatable({
-        ctx = ctx,
-        headers = {},
-        status = 0,
-        body = nil,
-    }, {
-        __index = self
-    })
+function response:_construct(ctx)
+    self.ctx = ctx
+    self.headers = {}
+    self.status = 0
+    self._body = nil
 end
-
 ---发送
 function response:send()
     self:send_headers()
     self:send_body()
 end
 
-setmetatable(response,{
-    __call = new
-})
 return response

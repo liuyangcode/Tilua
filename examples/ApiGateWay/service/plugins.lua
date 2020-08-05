@@ -17,11 +17,14 @@ function M.load(ctx)
     local sql = [[select mid.package,plugins.config,plugins.phase,plugins.objecttype,plugins.objectid from plugins  left join midwares as mid
     on (mid.id=plugins.mid) where plugins.status =1 order by plugins.indexNo asc ]]
     local data = db:query(sql)
+    if not data then
+        return false
+    end
     for _, mid in ipairs(data) do
         plugins[ctx.name][mid.objecttype] = plugins[ctx.name][mid.objecttype] or {}
         plugins[ctx.name][mid.objecttype][mid.phase] = plugins[ctx.name][mid.objecttype][mid.phase] or {}
-        plugins[ctx.name][mid.objecttype][mid.phase]['t'..mid.objectid] = plugins[ctx.name][mid.objecttype][mid.phase]['t'..mid.objectid] or {}
-        table.insert(plugins[ctx.name][mid.objecttype][mid.phase]['t'..mid.objectid], {
+        plugins[ctx.name][mid.objecttype][mid.phase]['t' .. mid.objectid] = plugins[ctx.name][mid.objecttype][mid.phase]['t' .. mid.objectid] or {}
+        table.insert(plugins[ctx.name][mid.objecttype][mid.phase]['t' .. mid.objectid], {
             mid.package,
             lw_util.parse_expression(mid.config == ngx.null and "" or mid.config, ',', '=')
         })

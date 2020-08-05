@@ -1,4 +1,3 @@
-local class = require("pl.class")
 local lw_utils = require('Tilua.utils.util')
 local path = require("Tilua.utils.path")
 local path_exists = path.isdir
@@ -6,12 +5,14 @@ local path_join = path.join
 local import = lw_utils.import
 local bind1 = require("Tilua.utils.util").bind1
 local deepcopy = require('Tilua.utils.tables').deep_copy
+local makepath = require "pl.dir".makepath
 
-local model_manager = require("Tilua.model.manager")
-local db_manager = require("Tilua.db.manager")
+local model_manager = require("Tilua.model")
+local db_manager = require("Tilua.db")
 local midware_manager = require("Tilua.midware")
 local cache_manager = require("Tilua.cache")
 local template = require "resty.template"
+local class = require("Tilua.utils.class")
 ---@class app
 local app = class()
 local logger_class = nil
@@ -20,29 +21,17 @@ local request = nil
 ---全局配置文件
 local configs = {}
 ---_init
-function app:_init()
-    self:initialize()
-end
-
-function app:initialize()
-    self.config = configs[self.name]
-    self:init_logger()
-    self.request = request.capture(self)
-    self.response = import("Tilua.response")(self)
-    self:init_view()
+function app:_construct()
+    --self.config = configs[self.name]
     self.midware = midware_manager(self)
-    self:init_cache_manager()
-    self:init_db_manager()
-    self:init_model_manager()
-    self:init_dispatcher()
 end
-
 ---分发路由
 ---@return dispatch
 function app:dispatch(...)
     return self.dispatcher:run(...)
 end
-function app:init_dispatcher()
+
+function app:get_dispatcher()
     local dispatcher = self.config.dispatch
     self.logger:debug('init dispatch named:', dispatcher)
     assert(not lw_utils.empty(dispatcher), 'no dispatcher defined')
@@ -52,19 +41,21 @@ function app:init_dispatcher()
     end
     assert(dispatch.run, 'dispatch must has a run method')
     self.dispatcher = dispatch(self)
+    return self.dispatcher
 end
----get_html_cache_interceptor
----@return page
-function app:get_html_cache_interceptor()
-    if self.cache_interceptor then
-        return self.cache_interceptor
-    end
-    self.cache_interceptor = import "Tilua.cache.page"(self)
-    return self.cache_interceptor
+
+function app:get_request()
+    self.request = request.capture(self)
+    return self.request
+end
+
+function app:get_response()
+    self.response = import("Tilua.response")(self)
+    return self.response
 end
 
 ---@return cache
-function app:init_cache_manager()
+function app:get_cache()
     self.cache = cache_manager(self.config, self.logger)
     if self.on_app_handled then
         self:on_app_handled(bind1(self.cache.close, self.cache))
@@ -72,7 +63,7 @@ function app:init_cache_manager()
     return self.cache
 end
 
-function app:init_db_manager()
+function app:get_db()
     self.db = db_manager({
         ctx = self.config,
         logger = self.logger
@@ -83,12 +74,12 @@ function app:init_db_manager()
     return self.db
 end
 
-function app:init_model_manager()
+function app:get_model()
     self.model = model_manager(self)
     return self.model
 end
 
-function app.init_logger(ctx)
+function app.get_logger(ctx)
     ctx.logger = logger_class.new(ctx.config.log)
     if ctx.on_request_end then
         ctx:on_request_end(bind1(ctx.logger.flush, ctx.logger))
@@ -96,7 +87,7 @@ function app.init_logger(ctx)
     return ctx.logger
 end
 
-function app:init_view()
+function app:get_view()
     self.view = import("Tilua.view")(self)
     return self.view
 end
@@ -129,7 +120,8 @@ function app.init(app_instance)
 end
 
 function app:get_config()
-    return configs[self.name]
+    self.config = configs[self.name]
+    return self.config
 end
 
 function app:on_request_end(callback)
@@ -190,19 +182,18 @@ end
 
 local function init_view_engine(root)
     local view_path = path_join(root, 'view', '')
+    local cache_path = path_join(root, 'cache', '')
     local view_cache_path = path_join(root, 'cache', 'view', '')
     local html_cache_path = path_join(root, 'cache', 'html', '')
 
-    local makepath = require "pl.dir".makepath
-
-    if not path_exists(view_cache_path) then
-        local _, err = makepath(view_cache_path)
-        assert(not err, 'dir ' .. view_cache_path .. ' write ' .. err)
-    end
-    if not path_exists(html_cache_path) then
-        local _, err = makepath(html_cache_path)
-        assert(not err, 'dir ' .. html_cache_path .. ' write ' .. (err or ''))
-    end
+    lw_utils.foreach({ cache_path, view_cache_path, html_cache_path }, function(p)
+        if not path_exists(p) then
+            local _, err = makepath(p)
+            if err then
+                error('dir ' .. p .. ' write ' .. err)
+            end
+        end
+    end)
     local view_engine = template.new({
         root = root
     })
@@ -292,10 +283,6 @@ function app.run()
         end)
         ctx.response:send()
     end
-end
-
-function app.derive()
-    return class(app)
 end
 
 return app

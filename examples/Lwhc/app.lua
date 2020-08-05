@@ -1,7 +1,6 @@
-local app = require("Tilua.app").derive()
+local app = require("Tilua.app").define()
 
 app.name = "Lwhc"
-app.path = "/usr/local/openresty/lua/Lwhc/"
 app.debug = false
 app.status = 'dev'
 

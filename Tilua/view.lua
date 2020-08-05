@@ -1,8 +1,8 @@
 local path = require "Tilua.utils.path"
 local getmtime = path.getmtime
-
+local class = require("Tilua.utils.class")
 ---@class view
-local view = {}
+local view = class.define()
 
 function view:get(name)
     if not name then
@@ -77,19 +77,11 @@ function view:fetch(view_file)
     return self.ctx.view_engine.template.process(view_file, self.context, cache_key, false)
 end
 
-local function new(self,ctx, context)
-    local instance = {
-        ctx = ctx,
-        context = context or {},
-        mounted_context = {}
-    }
-    setmetatable(instance, { __index = self })
-    return instance
+function view:_construct(ctx, context)
+    self.ctx = ctx
+    self.context = context or {}
+    self.mounted_context = {}
 end
-
-setmetatable(view,{
-    __call = new
-})
 
 return view
 

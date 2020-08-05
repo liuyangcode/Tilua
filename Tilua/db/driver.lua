@@ -1,4 +1,4 @@
-local class = require('pl.class')
+local class = require('Tilua.utils.class')
 local pl_utils = require "pl.utils"
 local stringx = require "pl.stringx"
 local tablex = require "pl.tablex"
@@ -14,7 +14,7 @@ local is_scalar = lw_utils.is_scalar
 local foreach = lw_utils.foreach
 local in_array = lw_utils.in_array
 ---@class driver
-local driver = class()
+local driver = class.define()
 
 function driver:properties()
     -- 当前操作所属的模型名
@@ -71,7 +71,7 @@ function driver:properties()
     self.executeTimes = 0
 end
 
-function driver:_init(config, context, logger)
+function driver:_construct(config, context, logger)
     self:properties()
     if config then
         tablex.update(self.config, config)
@@ -80,9 +80,6 @@ function driver:_init(config, context, logger)
     self.ctx = context
 end
 
-function driver.derive()
-    return class(driver)
-end
 function driver:connect(config, linkNum, autoConnection)
     --todo
 end
@@ -103,7 +100,10 @@ function driver:query(str, fetchSql, master)
 
     self.queryTimes = self.queryTimes + 1
     self:debug(true)
-    self:execute_sql(str)
+    local res, err = self:execute_sql(str)
+    if err then
+        return nil, err
+    end
     self:debug(false)
     return self:getResult()
 end
@@ -124,7 +124,10 @@ function driver:execute(str, fetchSql)
     --todo
     self.executeTimes = self.executeTimes + 1
     self:debug(true)
-    self:execute_sql(str)
+    local res, err = self:execute_sql(str)
+    if err then
+        return nil, err
+    end
     self:debug(false)
     return self:getResult()
 end
@@ -170,7 +173,7 @@ end
 
 ---获得所有的查询数据
 function driver:getResult()
-    self.numRows = #self.result_sets
+    self.numRows = #(self.result_sets or {})
     return self.result_sets
 end
 
@@ -208,7 +211,7 @@ function driver:parseSet(data)
     local this = self
     foreach(data, function(val, key)
         local tval = type(val)
-        if tval=='table' and 'exp' == val[1] then
+        if tval == 'table' and 'exp' == val[1] then
             set[#set + 1] = this:parseKey(key) .. '=' .. val[2]
         elseif val == 'null' then
             set[#set + 1] = this:parseKey(key) .. '= NULL'

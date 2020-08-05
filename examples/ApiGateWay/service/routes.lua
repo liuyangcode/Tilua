@@ -78,7 +78,10 @@ function routes.load(ctx, force)
         is_routes_loaded = true
         clear_route_rule(ctx.name)
         ctx.logger:debug("start load routes")
-        local _routes = ctx.model.routes:select()
+        local _routes, err = ctx.model.routes:select()
+        if err then
+            error(err)
+        end
         prefix_midwares[ctx.name] = {}
 
         lw_utils.foreach(_routes, function(route)
@@ -88,7 +91,7 @@ function routes.load(ctx, force)
 
             lw_utils.foreach(methods, function(verb)
                 lw_utils.foreach(paths, function(path)
-                    local pre_mid =midwares.get_midwares(ctx, 'route',route.id, 'access')
+                    local pre_mid = midwares.get_midwares(ctx, 'route', route.id, 'access')
                     if pre_mid then
                         table.insert(prefix_midwares[ctx.name], {
                             matcher = route.matcher,

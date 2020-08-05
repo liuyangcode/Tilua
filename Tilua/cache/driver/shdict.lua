@@ -1,4 +1,5 @@
-local shdict = {}
+local base = require("Tilua.cache.base")
+local shdict = base.define()
 local ngx_shared = ngx.shared
 local json = require("cjson.safe")
 local commands = {
@@ -6,7 +7,6 @@ local commands = {
                  "rpush", "lpop", "rpop", "llen", "ttl", "expire", "flush_all", "flush_expired", "get_keys",
                  "capacity", "free_space"
 }
-
 
 function shdict:get(name)
     if not name then
@@ -56,22 +56,11 @@ for i = 1, #commands do
         return shdict.do_command(self, cmd, ...)
     end
 end
-local function new(self,config,ctx,logger)
-    if not ngx_shared[config.dict] then
+function shdict:_construct(...)
+    if not ngx_shared[self.config.dict] then
         error('nginx shared not loaded dict ')
     end
-    local instance = {
-        ctx = ctx,
-        config = config,
-        logger = logger,
-        dict = ngx_shared[config.dict]
-    }
-    return setmetatable(instance, {
-        __index = self
-    })
+    self.dict = ngx_shared[self.config.dict]
 end
-setmetatable(shdict, {
-    __call = new
-})
 
 return shdict

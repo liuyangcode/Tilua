@@ -1,14 +1,11 @@
 ---@class mysql
-local mysql = require("Tilua.db.driver").derive()
+local mysql = require("Tilua.db.driver").define()
 local mysqlc = require "resty.mysql"
 local stringx = require "pl.stringx"
 local lower = string.lower
 local tablex = require("pl.tablex")
 local foreach = tablex.foreach
 local split = stringx.split
-function mysql:_init(...)
-    self:super(...)
-end
 
 function mysql:connect(config, linkNum, autoConnection)
     linkNum = linkNum or 1
@@ -98,7 +95,10 @@ function mysql:getFields(tableName)
     else
         sql = 'SHOW COLUMNS FROM `' .. tableName .. '`'
     end
-    local result = self:execute_sql(sql)
+    local result, err = self:execute_sql(sql)
+    if not result then
+        error(err)
+    end
     local info = {}
     foreach(result, function(val, key)
         foreach(val, function(v, k)

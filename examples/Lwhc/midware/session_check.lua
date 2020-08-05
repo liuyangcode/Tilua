@@ -4,11 +4,7 @@
 --- DateTime: 2020/6/23 5:45 下午
 ---
 
-local session_check = require('Tilua.midware').derive()
-
-function session_check:_init(ctx)
-    self:super(ctx)
-end
+local session_check = require('Tilua.midware.base').define()
 
 function session_check:handle(next, ...)
     local request, response = self.ctx:unpack()

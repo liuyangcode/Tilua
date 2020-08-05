@@ -7,8 +7,9 @@ local table_concat = table.concat
 local update = require("pl.tablex").update
 
 local callable = lw_util.callable
+local base = require("Tilua.midware.base")
 ---@class mvc
-local mvc_router = {}
+local mvc_router = base.define()
 mvc_router.alias = 'mvc'
 
 local default_config = {
@@ -36,7 +37,7 @@ function mvc_router:handle(next, ...)
             self.config.controller_layer,
             self.controller_name
     )
-    ctx.logger:debug("Mvc router midware end route controller:",            self.ctx.name,
+    ctx.logger:debug("Mvc router midware end route controller:", self.ctx.name,
             self.config.controller_layer,
             self.controller_name)
 
@@ -60,18 +61,8 @@ function mvc_router:handle(next, ...)
     return next(...)
 end
 
-local function new (self, ctx, config)
-    local instance = {
-        ctx = ctx,
-        config = update(default_config, config or {})
-    }
-    return setmetatable(instance, {
-        __index = self
-    })
+function mvc_router:_construct(ctx, config)
+    self.config = update(default_config, config or {})
 end
-
-setmetatable(mvc_router, {
-    __call = new
-})
 
 return mvc_router

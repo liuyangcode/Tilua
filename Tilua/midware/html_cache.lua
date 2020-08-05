@@ -9,10 +9,44 @@ local re_match = ngx.re.match
 local re_gsub = ngx.re.gsub
 local tablex = require('pl.tablex')
 
-
-local html_cache = {}
+local base = require("Tilua.midware.base")
+---@class html_cache
+local html_cache = base.define()
 local rules = {}
 local caches = {}
+
+function html_cache:_construct(ctx, config)
+    local instance = {
+        ctx = ctx,
+        config = tablex.update({
+            type = 'memory',
+            enable = false,
+            lifetime = 3600,
+            rules = {}
+        }, config or {})
+    }
+    if not rules[instance.ctx.name] then
+        rules[instance.ctx.name] = {}
+        for rule, re_path in pairs(instance.config.rules) do
+            local method, matcher, _rule, validation = parse_rule(rule)
+            local _, regex_path, params = parse_path_to_regex(_rule)
+            table.insert(rules[instance.ctx.name], {
+                method = method,
+                matcher = matcher,
+                path = {
+                    rule = re_path,
+                    regex_path = regex_path,
+                    params = params
+                },
+                validation = validation
+            })
+        end
+    end
+    if not caches[instance.ctx.name] and instance.config.type == 'memory' then
+        caches[instance.ctx.name] = {}
+    end
+end
+
 function html_cache:match_rule()
     local cur_rules = rules[self.ctx.name]
     local method = string_lower(self.ctx.request.method)
@@ -95,44 +129,6 @@ function html_cache:handle(next, ...)
     end
 end
 
-local  function new (self,ctx,config)
-    local instance = {
-        ctx = ctx,
-        config = tablex.update({
-            type = 'memory',
-            enable = false,
-            lifetime = 3600,
-            rules = {}
-        },config or {})
-    }
-    if not rules[instance.ctx.name] then
-        rules[instance.ctx.name] = {}
-        for rule, re_path in pairs(instance.config.rules) do
-            local method, matcher, _rule, validation = parse_rule(rule)
-            local _, regex_path, params = parse_path_to_regex(_rule)
-            table.insert(rules[instance.ctx.name], {
-                method = method,
-                matcher = matcher,
-                path = {
-                    rule = re_path,
-                    regex_path = regex_path,
-                    params = params
-                },
-                validation = validation
-            })
-        end
-    end
-    if not caches[instance.ctx.name] and instance.config.type == 'memory' then
-        caches[instance.ctx.name] = {}
-    end
 
-    return setmetatable(instance,{
-        __index = self
-    })
-end
-
-setmetatable(html_cache,{
-    __call = new
-})
 
 return html_cache

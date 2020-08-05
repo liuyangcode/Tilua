@@ -1,11 +1,7 @@
-local app = require("Tilua.app").derive()
+local app = require("Tilua.app")()
 
 app.name = "ApiDoc"
 app.debug = true
 app.status = 'dev'
-
-function app:_init()
-    self:super(self)
-end
 
 return app

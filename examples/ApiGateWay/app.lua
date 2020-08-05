@@ -1,4 +1,4 @@
-local ApiGateWay = require("Tilua.app").derive()
+local ApiGateWay = require("Tilua.app")()
 local lw_utils = require("Tilua.utils.util")
 local route_service = require("ApiGateWay.service.routes")
 local balancer = require("ngx.balancer")
@@ -24,9 +24,6 @@ local balancer_service = require("ApiGateWay.balancer")
 ApiGateWay.name = "ApiGateWay"
 ApiGateWay.debug = true
 ApiGateWay.status = 'dev'
-function ApiGateWay:_init()
-    self:super(self)
-end
 function ApiGateWay.init_worker()
     --local healthcheck = require("resty.healthcheck")
     --
@@ -98,7 +95,7 @@ function ApiGateWay.on_startup(ctx)
         config = ctx
     }
     local localtime = ngx.localtime
-    local logger = ApiGateWay.init_logger(context)
+    local logger = ApiGateWay.get_logger(context)
     require("ApiGateWay.balancer").init()
     logger:write("\n[", localtime(), "]", "ApiGateWay Worker init success worker pid ", ngx.worker.pid())
     logger:flush()
