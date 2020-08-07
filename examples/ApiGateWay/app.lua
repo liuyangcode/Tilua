@@ -24,7 +24,7 @@ local balancer_service = require("ApiGateWay.balancer")
 ApiGateWay.name = "ApiGateWay"
 ApiGateWay.debug = true
 ApiGateWay.status = 'dev'
-function ApiGateWay.init_worker()
+function ApiGateWay.on_init_worker()
     --local healthcheck = require("resty.healthcheck")
     --
     local we = require "resty.worker.events"
@@ -89,7 +89,7 @@ function ApiGateWay:on_header_filter()
 end
 
 
-function ApiGateWay.on_startup(ctx)
+function ApiGateWay.on_init_by_lua(ctx)
     local ngx = ngx
     local context = {
         config = ctx
@@ -107,7 +107,7 @@ function ApiGateWay.on_app_init(ctx)
     ctx.logger:debug("on_app_init --- ", ctx.name)
 end
 
-function ApiGateWay.access(ApiGateWay)
+function ApiGateWay.on_access(ApiGateWay)
     local ctx = ngx.ctx.ctx
 
     local midwares = route_service.find_prefix_midwares(ctx)
@@ -131,7 +131,7 @@ function ApiGateWay.access(ApiGateWay)
     end
 end
 
-function ApiGateWay.rewrite(ApiGateWay)
+function ApiGateWay.on_rewrite(ApiGateWay)
     lw_utils.elapse_time_start("BALANCER_START")
     local ctx = ApiGateWay:init()
     plugins.load(ctx)
@@ -166,10 +166,6 @@ function ApiGateWay.balancer()
     end
     app.response.headers['BALANCER_LATENCY'] = lw_utils.get_now_ms() - lw_utils.elapse_time_start("BALANCER_START")
     app.response:send_headers(true)
-end
-
-function ApiGateWay.log(ApiGateWay)
-    ApiGateWay.request_end()
 end
 
 return ApiGateWay

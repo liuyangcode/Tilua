@@ -161,9 +161,11 @@ local function pairsByKeys(t)
         return a[i], t[a[i]]
     end
 end
+
 function util.addslashes(str)
     return ngx.re.gsub(str, "([\'\\\"])", "\\$1", "jo")
 end
+
 ---extend
 ---@param dest table
 ---@param src table
@@ -178,6 +180,7 @@ function util.extend(dest, src)
         end
     end
 end
+
 function util.prequire(module)
     local found, hanlder = pcall(require, module)
     if found then
@@ -387,8 +390,11 @@ function util.in_array(array, val)
 end
 
 function util.get_now_ms()
-    update_time()
     return now() * 1000
+end
+
+function util.get_timestamp()
+    return now()
 end
 
 function util.elapse_time_start(tag, ctx)
@@ -399,6 +405,7 @@ function util.elapse_time_start(tag, ctx)
     ctx.tag = util.get_now_ms()
     return ctx.tag
 end
+
 function util.elapse_time_end(tag, ctx)
     if not ctx then
         ctx = ngx.ctx

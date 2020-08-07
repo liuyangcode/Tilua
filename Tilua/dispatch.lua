@@ -20,7 +20,6 @@ function dispatch:make_chain_call(midware, handler)
     ()
         return self:prepare_response(handler())
     end
-    --初始化响应前中间件
     return tablex.reduce(function(res, next_midware)
         mid = self.ctx.midware.instance(next_midware)
         local func = pl_utils.bind1(mid.handle, mid)
@@ -87,7 +86,6 @@ function dispatch:run(matched,router)
         local responser = self:create_responser(router)
         return self:prepare_response(responser())
     end
-    return 404
 end
 
 function dispatch:get_handler(hanlder, args)

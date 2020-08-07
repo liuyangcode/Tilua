@@ -11,8 +11,9 @@ function M:_construct(ctx, config)
     self.config = config
 end
 
+---handle
 function M:handle(...)
-    error("Midware base class cannot be initialized!")
+    error("Midware class method handle must override!")
 end
 
 return M

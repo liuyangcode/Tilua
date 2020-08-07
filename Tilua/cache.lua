@@ -7,7 +7,7 @@ local lw_util = require('Tilua.utils.util')
 local bind1 = require("pl.utils").bind1
 local deepcopy = require("pl.tablex").deepcopy
 local rawget, type, setmetatable = rawget, type, setmetatable
-
+---@class cache_manager
 local manager = {}
 
 function manager:close()

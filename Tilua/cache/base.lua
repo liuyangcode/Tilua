@@ -6,12 +6,55 @@
 
 local class = require("Tilua.utils.class")
 
+---@class cache
 local M = class.define()
 
+---_construct
+---@param config view
+---@param ctx app
+---@param logger log
 function M:_construct(config, ctx, logger)
     self.ctx = ctx
     self.config = config
     self.logger = logger
+end
+
+---@param key string
+---@return boolean
+function M:exists(key)
+    error("cache method exists must override!")
+end
+
+---del
+---@param key string
+---@return boolean
+function M:del(key)
+    error("cache method del must override!")
+end
+
+---expire
+---@param key string
+---@param exptime number
+function M:expire(key, exptime)
+    error("cache method expire must override!")
+
+end
+
+---get
+---@param key string
+---@return any
+function M:get(key)
+    error("cache method get must override!")
+
+end
+
+---set
+---@param key string
+---@param value any
+---@param expires number
+function M:set(key, value, expires)
+    error("cache method set must override!")
+
 end
 
 return M

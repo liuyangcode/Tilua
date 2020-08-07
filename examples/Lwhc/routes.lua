@@ -42,15 +42,6 @@ route['~/record/{action}'] = {
     res = 'controller.record@$action',
     mid = mid
 }
-
-route['=/test'] = function
-(ctx)
-    ctx.db:instance():beginTransaction()
-
-
-    ctx.db.instance():commitTrans()
-    ctx.response.body = lw_util.json_encode(ngx.re.match('test1111', 'test1'))
-end
 --route.group(function()
 --    route {
 --        ['~/record/{action}'] = 'controller.record@$action'

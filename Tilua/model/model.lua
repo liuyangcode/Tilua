@@ -91,7 +91,7 @@ function model:_construct(ctx, name, tablePrefix, connection)
     elseif '' ~= tablePrefix then
         self.tablePrefix = tablePrefix
     elseif not self.tablePrefix then
-        self.tablePrefix = self.ctx:C(self.connection .. '.db_prefix') or self.ctx:C('db_prefix')
+        self.tablePrefix = self.ctx:get_config(self.connection .. '.db_prefix') or self.ctx:get_config('db_prefix')
     end
     self:db_instance(1, connection or self.connection, true)
 end

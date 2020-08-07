@@ -9,6 +9,7 @@ local bind1 = require("pl.utils").bind1
 local rawget, type, setmetatable = rawget, type, setmetatable
 local model_class = require('Tilua.model.model')
 
+---@class model_manager
 local manager = {}
 
 function manager:instance(name, connection)

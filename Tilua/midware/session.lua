@@ -34,7 +34,7 @@ local function new (self,ctx,config)
         gc_probability = 1,
         cookie_path = '/',
         cookie_domain = '',
-        cookie_expires = 30,
+        cookie_expires = 0,
         cookie_http_only = true
     }
 

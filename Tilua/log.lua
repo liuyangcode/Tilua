@@ -16,8 +16,6 @@ local log = {
 local mt = {
     __index = log
 }
----@type app
-
 function log:write(...)
     self:record("", ...)
 end

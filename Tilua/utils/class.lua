@@ -34,7 +34,17 @@ function get_definable_class()
     ()
         return M.define(class)
     end
+
     return class
+end
+function M.is_sub_class(parent,child)
+    if not parent or not child then
+        return false
+    end
+    if not child.__parent then
+        return false
+    end
+    return parent == child.__parent
 end
 
 function M.define(parent)
