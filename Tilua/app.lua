@@ -3,6 +3,7 @@ local path = require("Tilua.utils.path")
 local path_exists = path.isdir
 local path_join = path.join
 local import = lw_utils.import
+local combine = lw_utils.extend
 local bind1 = require("Tilua.utils.util").bind1
 local deepcopy = require('Tilua.utils.tables').deep_copy
 local makepath = require "pl.dir".makepath
@@ -16,13 +17,12 @@ local class = require("Tilua.utils.class")
 ---@class app
 local app = class.define()
 local logger_class = nil
-
-local request = nil
 ---全局配置文件
 local configs = {}
 ---_construct
 function app:_construct()
     self.midware = midware_manager(self)
+    self.on_app_handled_callbacks = {}
 end
 ----------------------- lazy init begin -------------------------
 ---
@@ -49,7 +49,7 @@ end
 ---lazy init request
 ---@return request
 function app:get_request()
-    self.request = request.capture(self)
+    self.request = import("Tilua.request").capture(self)
     return self.request
 end
 
@@ -127,7 +127,6 @@ function app:get_config(key)
     if key then
         return lw_utils.index_value(self.config, key)
     end
-    self.config = deepcopy(configs[self.name])
     return self.config
 end
 
@@ -146,8 +145,8 @@ end
 local function init_view_engine(root)
     local view_path = path_join(root, 'view', '')
     local cache_path = path_join(root, 'cache', '')
-    local view_cache_path = path_join(root, 'cache', 'view', '')
-    local html_cache_path = path_join(root, 'cache', 'html', '')
+    local view_cache_path = path_join(cache_path, 'view', '')
+    local html_cache_path = path_join(cache_path, 'html', '')
 
     lw_utils.foreach({ cache_path, view_cache_path, html_cache_path }, function(p)
         if not path_exists(p) then
@@ -195,46 +194,79 @@ function app.init_by_lua(app_instance)
     ---if not class.is_sub_class(app,app_instance) then
     ---    error("instance must be derived from Tilua.app"..app.identifier..app_instance.identifier)
     ---end
-    if app_instance._inited_by_lua then
+    if app_instance:is_inited_by_lua() then
         return
     end
-    local app_config = {}
-    local appname = app_instance.name
-    app_instance.path = path.get_module_path(appname, 'app')
-    ---加载系统默认配置
-    lw_utils.extend(app_config, deepcopy(import "Tilua.config.default"))
-    lw_utils.foreach({ 'default', app_instance.status }, function(status)
-        local config = lw_utils.import(appname, "config", status)
-        if type(config) == 'table' then
-            lw_utils.extend(app_config, config or {})
-        end
-    end)
+    local app_config = app_instance:load_config()
+
+    app_instance:load_route()
 
     midware_manager = import('Tilua.midware').load(app_config)
-    request = import('Tilua.request')
+
     app_instance.view_engine = init_view_engine(app_instance.path)
     app_instance.view_engine.template.caching(not app_instance.debug)
-    app_instance.route = import('Tilua.route')
-    app_instance.route.set_app_name(appname)
+
     app_config.log.path = path_join(app_instance.path, app_config.log.path)
     logger_class = import("Tilua.log").init(app_config.log)
+
+    if app_instance.on_init_by_lua then
+        app_instance:on_init_by_lua()
+    end
+    app_instance:set_pid()
+end
+
+function app.init_logger(app_instance)
+
+end
+---load_config
+---@param app_instance app
+---@return table
+function app.load_config(app_instance)
+    local app_config = {}
+
+    local appname = app_instance.name
+    app_instance.path = path.get_module_path(appname, 'app')
+    ---load Tilua default config
+    combine(app_config, import "Tilua.config.default")
+
+    ---load user app default config
+    combine(app_config, import(appname, "config", 'default') or {})
+
+    ---load user app status config,like debug,prod,etc.
+    combine(app_config, import(appname, "config", app_instance.status) or {})
+
+    app_instance.config = app_config
+
+    return app_config
+end
+---load app route and cache 
+---@param app_instance app
+---@return void
+function app.load_route(app_instance)
+    local appname = app_instance.name
+    app_instance.route = import('Tilua.route')
+    app_instance.route.set_app_name(app_instance.name)
+
     ---加载应用自定义路由
-    local route = lw_utils.import(appname .. '.routes')
+    local route = import(appname .. '.routes')
     if type(route) == 'function' then
         route(app_instance, app_instance.route)
     end
     ---解析路由
-    app_instance.route.init_rule_caches(app_config.route)
-
-    configs[appname] = app_config
-
-    if app_instance.on_init_by_lua then
-        app_instance.on_init_by_lua(app_config)
-    end
-
-    app_instance._inited_by_lua = true
+    app_instance.route.init_rule_caches(app_instance.config.route)
 end
 
+function app.set_pid(app_instance)
+    app_instance.pid = ngx.worker.pid()
+    return true
+end
+---is_app_inited
+---@param app_instance app
+---@return boolean
+function app.is_inited_by_lua(app_instance)
+    return (app_instance.pid or 0) > 0
+end
+---
 ---init_worker_by_lua_block
 ---context: http
 ---
@@ -251,6 +283,10 @@ end
 ---doc from https://github.com/openresty/lua-nginx-module#init_worker_by_lua_block
 ---
 function app.init_worker_by_lua(app_instance)
+    if not app_instance:is_app_inited() then
+        app_instance:init_by_lua()
+    end
+
     if app_instance.on_init_worker then
         app_instance.on_init_worker()
     end
@@ -288,8 +324,10 @@ end
 ---
 ---doc from https://github.com/openresty/lua-nginx-module#ssl_certificate_by_lua_block
 ---
-function app.ssl_certificate()
-
+function app.ssl_certificate(app_instance)
+    if not app_instance:is_app_inited() then
+        app_instance:init_by_lua()
+    end
 end
 
 
@@ -336,22 +374,29 @@ end
 ---However, a workaround is possible using the ngx.var.VARIABLE interface.
 ---
 function app.set_by_lua(app_instance)
+    if not app_instance:is_inited_by_lua() then
+        app_instance:init_by_lua()
+    end
+
     local ngx = ngx
     ngx.update_time()
-    local ctx = ngx.ctx.ctx
-    if ctx then
-        return
-    end
-    if not app_instance._inited_by_lua then
-        app.init_by_lua(app_instance)
-    end
+
     lw_utils.elapse_time_start('app_excution_time')
     local context = app_instance()
     if context.on_app_init then
         context:on_app_init()
     end
+
     ngx.ctx.ctx = context
+
     return context
+end
+
+---is_app_instanced
+---@param app_instance app
+---@return boolean|app
+function app.is_setted_by_lua(app_instance)
+    return ngx.ctx.ctx
 end
 ---
 ---rewrite_by_lua
@@ -368,9 +413,17 @@ end
 ---doc from https://github.com/openresty/lua-nginx-module#rewrite_by_lua_block
 ---
 function app.rewrite_by_lua(app_instance)
-    if app_instance.on_rewrite then
-        app_instance:on_rewrite()
+
+    local ctx = ngx.ctx.ctx
+    if not app_instance:is_setted_by_lua() then
+        ctx = app_instance:set_by_lua()
     end
+
+    if ctx.on_rewrite then
+        ctx:on_rewrite()
+    end
+
+
 end
 
 ---
@@ -388,8 +441,13 @@ end
 ---doc from https://github.com/openresty/lua-nginx-module#access_by_lua
 ---
 function app.access_by_lua(app_instance)
-    if app_instance.on_access then
-        app_instance:on_access()
+    local ctx = ngx.ctx.ctx
+    if not app_instance:is_setted_by_lua() then
+        ctx = app_instance:set_by_lua()
+    end
+
+    if ctx.on_access then
+        ctx:on_access()
     end
 end
 -------------- content phase -----------------
@@ -411,17 +469,17 @@ end
 ---
 function app.content_by_lua(app_instance)
     local ctx = ngx.ctx.ctx
-    if not ctx then
+    if not app_instance:is_setted_by_lua() then
         ctx = app_instance:set_by_lua()
-        if not ctx then
-            error('no application context found')
-        end
     end
+
     xpcall(function()
         ctx:dispatch(ctx.route.run(ctx))
-        lw_utils.foreach(ctx.after_app_handled_callbacks or {}, function(callback)
+
+        for _, callback in ipairs(ctx.on_app_handled_callbacks) do
             callback()
-        end)
+        end
+
         ctx.response:send()
     end, app.error_handle)
 end
@@ -445,8 +503,13 @@ end
 ---doc from https://github.com/openresty/lua-nginx-module#header_filter_by_lua
 ---
 function app.header_filter_by_lua(app_instance)
-    if app_instance.on_header_filter then
-        app_instance.on_header_filter()
+    local ctx = ngx.ctx.ctx
+    if not app_instance:is_setted_by_lua() then
+        ctx = app_instance:set_by_lua()
+    end
+
+    if ctx.on_header_filter then
+        ctx:on_header_filter()
     end
 end
 ---body_filter_by_lua
@@ -478,8 +541,13 @@ end
 ---doc from https://github.com/openresty/lua-nginx-module#body_filter_by_lua
 ---
 function app.body_filter_by_lua(app_instance)
-    if app_instance.on_body_filter then
-        app_instance.on_body_filter()
+    local ctx = ngx.ctx.ctx
+    if not app_instance:is_setted_by_lua() then
+        ctx = app_instance:set_by_lua()
+    end
+
+    if ctx.on_body_filter then
+        ctx:on_body_filter()
     end
 end
 
@@ -506,12 +574,12 @@ end
 ---doc from https://github.com/openresty/lua-nginx-module#log_by_lua
 function app.log_by_lua(app_instance)
     local ctx = ngx.ctx.ctx
-    if not ctx then
-        return
+    if not app_instance:is_setted_by_lua() then
+        ctx = app_instance:set_by_lua()
     end
 
-    if app_instance.on_app_end then
-        app_instance.on_app_end()
+    if ctx.on_app_end then
+        ctx:on_app_end()
     end
 
     ctx.logger:debug('App Request elapsed time ', lw_utils.elapse_time_end('app_excution_time') or 0, ' ms')
@@ -526,10 +594,7 @@ function app:dispatch(...)
 end
 
 function app:on_app_handled(func)
-    if not self.after_app_handled_callbacks then
-        self.after_app_handled_callbacks = {}
-    end
-    table.insert(self.after_app_handled_callbacks, func)
+    table.insert(self.on_app_handled_callbacks, func)
     return self
 end
 
