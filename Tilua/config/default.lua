@@ -17,10 +17,9 @@ local config = {
             'session',
             'json'
         },
-        mvc = {
+        web = {
             'body_parser',
             'session',
-            'mvc',
             'json',
             'html_cache'
         }

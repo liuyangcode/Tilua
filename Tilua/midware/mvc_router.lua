@@ -15,9 +15,7 @@ mvc_router.alias = 'mvc'
 local default_config = {
     default_controller = 'index',
     default_action = 'index',
-    view_layer = 'view',
-    controller_layer = 'controller',
-    model_layer = 'model'
+    controller_layer = 'controller'
 }
 
 function mvc_router:handle(next, ...)

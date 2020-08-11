@@ -1,4 +1,4 @@
-local ApiGateWay = require("Tilua.app")()
+local ApiGateWay = require("Tilua.app").define()
 local lw_utils = require("Tilua.utils.util")
 local route_service = require("ApiGateWay.service.routes")
 local balancer = require("ngx.balancer")
@@ -92,7 +92,7 @@ end
 function ApiGateWay.on_init_by_lua(ctx)
     local ngx = ngx
     local context = {
-        config = ctx
+        config = ctx.config
     }
     local localtime = ngx.localtime
     local logger = ApiGateWay.get_logger(context)
@@ -107,36 +107,34 @@ function ApiGateWay.on_app_init(ctx)
     ctx.logger:debug("on_app_init --- ", ctx.name)
 end
 
-function ApiGateWay.on_access(ApiGateWay)
-    local ctx = ngx.ctx.ctx
-
-    local midwares = route_service.find_prefix_midwares(ctx)
+function ApiGateWay:on_access()
+    local midwares = route_service.find_prefix_midwares(self)
     local handler = function
     ()
-        local matched,router = ctx.route.run(ctx)
+        local matched,router = self.route.run(self)
         if matched then
-            ctx:dispatch({
-                proxy = router[1], params = router[2], midware = router[3], router = router[4]
-            })
+            self:dispatch(router)
             return 200
         else
             return 404
         end
+        return 404
     end
-    local  response = ctx.dispatcher:prepare_response(ctx.dispatcher:create_responser({
-        handler, {}, midwares or {}
+    local  response = self.dispatcher:prepare_response(self.dispatcher:create_responser({
+        responser = handler,
+        midware = midwares or {}
     })())
     if response.status ~= 200 then
         response:send()
     end
 end
 
-function ApiGateWay.on_rewrite(ApiGateWay)
+function ApiGateWay:on_rewrite()
     lw_utils.elapse_time_start("BALANCER_START")
-    local ctx = ApiGateWay:init()
-    plugins.load(ctx)
-    route_service.load(ctx)
-    load_cert_and_key(ctx)
+    plugins.load(self)
+    route_service.load(self)
+    load_cert_and_key(self)
+    ngx.log(ngx.ERR,'ApiGateWay:on_rewrite')
 end
 
 function ApiGateWay.on_app_end(ctx)

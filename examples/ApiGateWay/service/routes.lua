@@ -10,6 +10,7 @@ local lw_utils = require("Tilua.utils.util")
 local tablex = require("pl.tablex")
 local split = require("pl.utils").split
 local add_route_rule = require("Tilua.route").add_route_rule
+local parse_path_to_regex = require("Tilua.route").parse_path_to_regex
 local parse_validation = require("Tilua.route").parse_validation
 local clear_route_rule = require("Tilua.route").clear_route_rule
 local midwares = require("ApiGateWay.service.plugins")
@@ -19,14 +20,15 @@ local re_match = ngx.re.match
 
 function routes.find_prefix_midwares(ctx)
     local pathinfo = ctx.request.path_info
-    local method = ctx.request.method
+    local method = string.lower(ctx.request.method)
     local mids = {}
-    ctx.logger:debug("find_prefix_midwares prefix:", pathinfo, ' method:', method, lw_utils.json_encode(prefix_midwares[ctx.name]) )
+    ctx.logger:debug("find_prefix_midwares prefix:", pathinfo, ' method:', method, lw_utils.json_encode(prefix_midwares[ctx.name]))
+    ngx.log(ngx.ERR, '-----', require("pl.pretty").write(prefix_midwares[ctx.name]))
 
     for _, v in ipairs(prefix_midwares[ctx.name]) do
-        if (v.method == method or v.method == '*')  then
+        if tablex.find(v.method, '*') or tablex.find(v.method, method) then
             if v.matcher == '=' and v.path == pathinfo then
-                ctx.logger:debug("find_prefix_midwares prefix path:",v.path," pathinfo:",pathinfo)
+                ctx.logger:debug("find_prefix_midwares prefix path:", v.path, " pathinfo:", pathinfo)
                 tablex.move(mids, v.midwares)
             elseif v.matcher == '~' and re_match(pathinfo, v.path, 'jo') then
                 tablex.move(mids, v.midwares)
@@ -35,7 +37,7 @@ function routes.find_prefix_midwares(ctx)
             end
         end
     end
-    ctx.logger:debug("find_prefix_midwares prefix:", pathinfo, ' method:', method,' midwares:', lw_utils.json_encode(mids))
+    ctx.logger:debug("find_prefix_midwares prefix:", pathinfo, ' method:', method, ' midwares:', lw_utils.json_encode(mids))
     return mids
 end
 
@@ -85,42 +87,42 @@ function routes.load(ctx, force)
         prefix_midwares[ctx.name] = {}
 
         lw_utils.foreach(_routes, function(route)
-            local methods = split(route.methods, ',', true)
+            local methods = split(string.lower(route.methods), ',', true)
             local paths = split(route.paths, ',', true)
             local validations = routes.parse_validation(route)
 
-            lw_utils.foreach(methods, function(verb)
-                lw_utils.foreach(paths, function(path)
-                    local pre_mid = midwares.get_midwares(ctx, 'route', route.id, 'access')
-                    if pre_mid then
-                        table.insert(prefix_midwares[ctx.name], {
-                            matcher = route.matcher,
-                            path = path,
-                            method = verb,
-                            midwares = pre_mid,
-                            phase = 'access'
-                        })
-                    end
+            lw_utils.foreach(paths, function(path)
+                local pre_mid = midwares.get_midwares(ctx, 'route', route.id, 'access')
+                if pre_mid then
+                    table.insert(prefix_midwares[ctx.name], {
+                        matcher = route.matcher,
+                        path = path,
+                        method = methods,
+                        midwares = pre_mid,
+                        phase = 'access'
+                    })
+                end
+                local _, regex, args
+                if route.matcher == '~' then
+                     _, regex, args =parse_path_to_regex(path)
+                end
 
-                    add_route_rule(
-                            ctx.name,
-                            string.lower(verb),
-                            route.matcher,
-                            path,
-                            {
-                                {
-                                    responser = {
-                                        type = route.proxy_type,
-                                        serviceid = route.serviceid
-                                    },
-                                    midware = midwares.get_midwares(ctx, 'route',route.id, 'content'),
-                                    path = path,
-                                    route = route
-                                },
-                                validations
-                            }
-                    )
-                end)
+
+                add_route_rule(ctx.name,{
+                    matcher = route.matcher,
+                    method = methods,
+                    path = path,
+                    regex = regex,
+                    args = args,
+                    responser = {
+                        type = route.proxy_type,
+                        serviceid = route.serviceid
+                    },
+                    midware = midwares.get_midwares(ctx, 'route', route.id, 'content'),
+                    path = path,
+                    route = route,
+                    validation = validations
+                })
             end)
         end)
     end

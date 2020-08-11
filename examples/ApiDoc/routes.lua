@@ -161,6 +161,7 @@ route['=/test'] = function
     --ngx.re.gmatch
     ctx.response.body = 1
 end
+
 route['~^/{module}/{action}.html$'] = function
 (ctx, module, action)
     return "index.html", {

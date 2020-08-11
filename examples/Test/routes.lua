@@ -8,7 +8,7 @@ local lw_util = require("Tilua.utils.util")
 --})
 route {
     ['/'] = {
-        ['*'] = '[mvc] /'
+        ['*'] = '[web] /'
     }
 }
 
@@ -23,7 +23,7 @@ route {
 
 route.group(function()
     route.rest('^/(services|certificate|secrets|targets|routes|upstreams|baffle|midwares|users)', 'controller.$1')
-    route ['~^/plugins/{action}'] = 'controller.plugins@$action'
+    route ['~^/plugins/([\\w]+)'] = 'controller.plugins@$1'
 end, 'json', 'body_parser')
 
 --route {

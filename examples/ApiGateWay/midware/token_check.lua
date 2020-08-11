@@ -5,14 +5,12 @@
 ---token_check.lua
 ---
 
-local token_check = require('Tilua.midware').derive()
+local token_check = require('Tilua.midware.base').define()
 local apiv1 = require("ApiGateWay.util").apiv1
 local encode = require("Tilua.utils.util").json_encode
 local update = require("pl.tablex").update
-local ngx_req = ngx.req
 
-function token_check:_init(ctx, config)
-    self:super(ctx)
+function token_check:_construct(ctx, config)
     ctx.logger:debug("ApiGateWay.midware.token_check init config:",encode(config))
     self.config = update({
         tokenName = 'accessToken',

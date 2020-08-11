@@ -212,7 +212,9 @@ function app.init_by_lua(app_instance)
     if app_instance.on_init_by_lua then
         app_instance:on_init_by_lua()
     end
-    app_instance:set_pid()
+
+    app_instance.pid = ngx.worker.pid()
+    return true
 end
 
 function app.init_logger(app_instance)
@@ -239,7 +241,7 @@ function app.load_config(app_instance)
 
     return app_config
 end
----load app route and cache 
+---load app route and init caches
 ---@param app_instance app
 ---@return void
 function app.load_route(app_instance)
@@ -256,10 +258,6 @@ function app.load_route(app_instance)
     app_instance.route.init_rule_caches(app_instance.config.route)
 end
 
-function app.set_pid(app_instance)
-    app_instance.pid = ngx.worker.pid()
-    return true
-end
 ---is_app_inited
 ---@param app_instance app
 ---@return boolean

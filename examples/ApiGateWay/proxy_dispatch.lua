@@ -9,20 +9,16 @@ local util = require("Tilua.utils.util")
 local json_encode = util.json_encode
 local json_decode = util.json_decode
 
-local proxy_dispatch = require("Tilua.dispatch").derive()
+local proxy_dispatch = require("Tilua.dispatch").define()
 local trim = require("pl.stringx").strip
 local dns = require("resty.dns.client")
 local balancer = require("ApiGateWay.balancer")
 
-function proxy_dispatch:_init(ctx)
-    self:super(ctx)
-end
-
 function proxy_dispatch:get_striped_path(router)
-    local matched_route = router.router.route
+    local matched_route = router.route
     local striped_path
     if matched_route.strip_path == 1 then
-        striped_path = table.concat(router.params, '/')
+        striped_path = table.concat(router.params or {}, '/')
         if matched_route.path_handle ~= 'v1' then
             striped_path = "/" .. striped_path
         end
@@ -39,16 +35,17 @@ function proxy_dispatch:get_striped_path(router)
 end
 
 function proxy_dispatch:run(router)
-    if not router.proxy then
+    local responser = router.responser
+    if not responser then
         ngx.exit(404)
         return
     end
     local ctx = self.ctx
     local model = ctx.model
     local handler = {}
-    if router.proxy.type == 'baffle' then
+    if responser.type == 'baffle' then
         handler = function()
-            local baffle = model.baffle:find(router.proxy.serviceid)
+            local baffle = model.baffle:find(responser.serviceid)
             local response = ctx.response
             local header = json_decode(baffle.header)
             util.foreach(header, function(v)
@@ -57,12 +54,13 @@ function proxy_dispatch:run(router)
             response.body = baffle.body
         end
     else
-        local service = balancer.get_service(router.proxy.serviceid, self.ctx)
+        local service = balancer.get_service(responser.serviceid, self.ctx)
+
         if not service then
             ngx.exit(404)
             return
         end
-        local matched_route = router.router.route
+        local matched_route = router.route
         local upstream_base = '/' .. trim(service.path, '/')
         handler = function()
             local upstream = balancer.get_upstream(service, ctx)
@@ -87,9 +85,9 @@ function proxy_dispatch:run(router)
 
             hash_value = ngx.ctx.peer and ngx.ctx.peer.hash_value or balancer.create_hash(upstream, ctx)
             if upstream then
-                local bal,err = balancer.create_balancer(upstream, ctx, false)
+                local bal, err = balancer.create_balancer(upstream, ctx, false)
                 if not bal then
-                    self.ctx.logger:debug("upstream backend ",err )
+                    self.ctx.logger:debug("upstream backend ", err)
                     return 500
                 end
                 ip, port, host, handle = bal:getPeer(true,
@@ -113,10 +111,11 @@ function proxy_dispatch:run(router)
         end
     end
     handler = self:create_responser({
-        handler,{},router.midware
+        responser = handler,
+        midware = router.midware
     })
     local response = self:prepare_response(handler())
-    if router.proxy.type == 'baffle' then
+    if responser.type == 'baffle' then
         response:send()
     else
         if response.status ~= 0 and response.status ~= 200 then
