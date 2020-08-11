@@ -1,12 +1,13 @@
 local string_find = string.find
 local table_concat = table.concat
+local import = require("Tilua.utils.util").import
 ---@class log
 local log = {
     STDERR = "STDERR",
     EMERG = "EMERG",
     ALERT = "ALERT",
     CRIT = "CRIT",
-    ERR = "ERROR",
+    ERR = "ERR",
     WARN = "WARN",
     NOTICE = "NOTICE",
     INFO = "INFO",
@@ -24,12 +25,19 @@ function log:record(level, ...)
     if level == log.NONE then
         return true
     end
-    if string_find(self.config.level,level,1,true) then
-        self.log_data[#self.log_data + 1] = {
-            level = level,
-            msg = table_concat({...})
-        }
+    if self.config.type ~= 'syslog' then
+        if string_find(self.config.level, level, 1, true) then
+            self.log_data[#self.log_data + 1] = {
+                level = level,
+                msg = table_concat({ ... })
+            }
+        end
+    else
+        if string_find(self.config.level, level, 1, true) then
+            ngx.log(ngx[level] or ngx.INFO, ...)
+        end
     end
+
     return true
 end
 
@@ -57,8 +65,10 @@ function log.new(cfg)
 end
 
 function log.init(cfg)
-    _, log.handler = pcall(require, "Tilua.log." .. cfg.type)
-    log.handler.init(cfg)
+    log.handler = import("Tilua.log." .. cfg.type)
+    if log.handler then
+        log.handler.init(cfg)
+    end
     return log
 end
 

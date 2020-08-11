@@ -28,7 +28,7 @@ local function setter(t, key, value, class)
     end
 end
 
-function get_definable_class()
+local function get_definable_class()
     local class = {}
     class.define = function
     ()

@@ -1,6 +1,7 @@
 return {
     db_debug = false,
     log = {
-        level = "DEBUG,ERROR"
+        level = "DEBUG,ERR",
+        type = 'syslog'
     }
 }

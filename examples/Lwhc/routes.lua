@@ -2,7 +2,7 @@ local route = require("Tilua.route")
 local lw_util = require("Tilua.utils.util")
 
 local session = { 'session', {
-    --cookie_domain = '32.254.48.92'
+    cookie_domain = '32.254.48.92'
 } }
 
 --local html_cache = {
@@ -31,15 +31,15 @@ route.get('=/', function(ctx)
     }
 end, mid)
 
-route['~/user/{action}'] = {
-    res = 'controller.user@$action',
+route['~/user/([a-zA-Z]+)'] = {
+    res = 'controller.user@$1',
     mid = { 'body_parser', session, 'csrf' }
 }
 
 --route['~^/user/login$'] = 'body_parser controller.user@login'
 
-route['~/record/{action}'] = {
-    res = 'controller.record@$action',
+route['~/record/([a-zA-Z]+)'] = {
+    res = 'controller.record@$1',
     mid = mid
 }
 --route.group(function()

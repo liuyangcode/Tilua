@@ -105,10 +105,16 @@ end
 ---run
 ---@param router table
 function dispatch:run(matched, router)
+    local responser = nil
     if matched then
-        local responser = self:create_responser(router)
-        return self:prepare_response(responser())
+        responser = self:create_responser(router)
+    else
+        responser = function
+        ()
+            return 404
+        end
     end
+    return self:prepare_response(responser())
 end
 
 ---find_responser
