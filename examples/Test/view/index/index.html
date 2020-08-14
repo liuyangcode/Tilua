@@ -15,32 +15,18 @@
     <div class="layui-side layui-bg-black">
         <div class="layui-side-scroll">
             <ul class="layui-nav layui-nav-tree" lay-filter="test">
-                <li class="layui-nav-item layui-nav-itemed"><a href="#">服务</a>
+                {% for _,m in ipairs(menu) do %}
+                <li class="layui-nav-item{% if tag== m.tag then %} layui-nav-itemed{% end %}">
+                    <a href="#">{{m.title}}</a>
+                    {% for _,item in ipairs(m.items) do %}
                     <dl class="layui-nav-child">
-                        <dd><a href="/?url=/index/services">服务列表</a></dd>
+                        <dd class="{% if string.sub(item.link,7)==url then %}layui-this{% end %}">
+                            <a href="{{item.link}}&tag={{m.tag}}">{{item.title}}</a>
+                        </dd>
                     </dl>
-                    <dl class="layui-nav-child">
-                        <dd><a href="/?url=/index/certificate">证书管理</a></dd>
-                    </dl>
-                    <dl class="layui-nav-child">
-                        <dd><a href="/?url=/index/baffle">挡板资源</a></dd>
-                    </dl>
-                    <dl class="layui-nav-child">
-                        <dd><a href="/?url=/index/routes">路由列表</a></dd>
-                    </dl>
-                    <dl class="layui-nav-child">
-                        <dd><a href="/?url=/index/midwares">插件管理</a></dd>
-                    </dl>
-                    <dl class="layui-nav-child">
-                        <dd><a href="/?url=/index/upstreams">负载列表</a></dd>
-                    </dl>
-                    <dl class="layui-nav-child">
-                        <dd><a href="/?url=/index/targets">节点列表</a></dd>
-                    </dl>
-                    <dl class="layui-nav-child">
-                        <dd><a href="/?url=/index/secrets">秘钥管理</a></dd>
-                    </dl>
+                    {% end %}
                 </li>
+                {% end %}
             </ul>
         </div>
     </div>
@@ -54,14 +40,13 @@
 
     <div class="layui-footer">
         <!-- 底部固定区域 -->
-        © layui.com - 底部固定区域
+        © T-GateWay - By www.Tilua.cn
     </div>
 </div>
 <script src="/static/layui/layui.js"></script>
 <script>
     //JavaScript代码区域
     layui.use('element', function () {
-        var element = layui.element;
     });
 </script>
 </body>

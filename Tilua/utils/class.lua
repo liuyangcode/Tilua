@@ -31,8 +31,8 @@ end
 local function get_definable_class()
     local class = {}
     class.define = function
-    ()
-        return M.define(class)
+    (...)
+        return M.define(class,...)
     end
 
     return class

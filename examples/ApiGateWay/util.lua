@@ -4,19 +4,31 @@
 --- DateTime: 2020/7/12 10:06 上午
 ---
 local http = require "resty.http"
-local json_encode = require "Tilua.utils.util" .json_encode
-local json_decode = require "Tilua.utils.util" .json_decode
-
+local lw_util = require("Tilua.utils.util")
+local reduce = require("pl.tablex").reduce
+local bind1 = lw_util.bind1
+local json_encode = lw_util .json_encode
+local json_decode = lw_util .json_decode
 local util = {}
 function util.apiv1(request, method, headers, time_out)
-    return util.request("http://32.254.48.88/api/v1",request, method, headers, time_out)
+    return util.request("http://32.254.48.88/api/v1", request, method, headers, time_out)
 end
 
 function util.apiv2(request, method, headers, time_out)
-    return util.request("http://32.254.48.88/api/v2",request, method, headers, time_out)
+    return util.request("http://32.254.48.88/api/v2", request, method, headers, time_out)
 end
 
-function util.request(api,request, method, headers, time_out)
+function util.do_chain_call(ctx, midware, handler, ...)
+    return reduce(function(res, next_midware)
+        local mid = ctx.midware.instance(next_midware)
+        local func = bind1(mid.handle, mid)
+        return function(...)
+            return func(res, ...)
+        end
+    end, lw_util.reverseTable(midware or {}), handler)(...)
+end
+
+function util.request(api, request, method, headers, time_out)
     local httpc = http.new()
 
     method = method or "POST"

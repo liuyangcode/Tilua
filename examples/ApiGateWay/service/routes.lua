@@ -23,8 +23,6 @@ function routes.find_prefix_midwares(ctx)
     local method = string.lower(ctx.request.method)
     local mids = {}
     ctx.logger:debug("find_prefix_midwares prefix:", pathinfo, ' method:', method, lw_utils.json_encode(prefix_midwares[ctx.name]))
-    ngx.log(ngx.ERR, '-----', require("pl.pretty").write(prefix_midwares[ctx.name]))
-
     for _, v in ipairs(prefix_midwares[ctx.name]) do
         if tablex.find(v.method, '*') or tablex.find(v.method, method) then
             if v.matcher == '=' and v.path == pathinfo then
@@ -121,6 +119,7 @@ function routes.load(ctx, force)
                     midware = midwares.get_midwares(ctx, 'route', route.id, 'content'),
                     path = path,
                     route = route,
+                    api = true,
                     validation = validations
                 })
             end)

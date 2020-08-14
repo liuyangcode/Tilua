@@ -13,6 +13,7 @@ local proxy_dispatch = require("Tilua.dispatch").define()
 local trim = require("pl.stringx").strip
 local dns = require("resty.dns.client")
 local balancer = require("ApiGateWay.balancer")
+local do_chain_call = require("ApiGateWay.util").do_chain_call
 
 function proxy_dispatch:get_striped_path(router)
     local matched_route = router.route
@@ -34,16 +35,18 @@ function proxy_dispatch:get_striped_path(router)
     return striped_path
 end
 
-function proxy_dispatch:run(router)
-    local responser = router.responser
-    if not responser then
-        ngx.exit(404)
-        return
+function proxy_dispatch:run(matched, router)
+    if not matched then
+        return 404
     end
+    local responser = router.responser
     local ctx = self.ctx
     local model = ctx.model
     local handler = {}
-    if responser.type == 'baffle' then
+    ---route rule defined in routes.lua
+    if not router.api and self.ctx.request then
+        return self.__parent.run(self, matched, router)
+    elseif responser.type == 'baffle' then
         handler = function()
             local baffle = model.baffle:find(responser.serviceid)
             local response = ctx.response
@@ -53,12 +56,10 @@ function proxy_dispatch:run(router)
             end)
             response.body = baffle.body
         end
-    else
+    elseif responser.type == 'proxy' then
         local service = balancer.get_service(responser.serviceid, self.ctx)
-
         if not service then
-            ngx.exit(404)
-            return
+            return 404
         end
         local matched_route = router.route
         local upstream_base = '/' .. trim(service.path, '/')
@@ -95,7 +96,6 @@ function proxy_dispatch:run(router)
                         hash_value
                 )
             else
-
                 ip = dns.toip(service.host)
                 port = service.port
             end
@@ -110,20 +110,7 @@ function proxy_dispatch:run(router)
             }
         end
     end
-    handler = self:create_responser({
-        responser = handler,
-        midware = router.midware
-    })
-    local response = self:prepare_response(handler())
-    if responser.type == 'baffle' then
-        response:send()
-    else
-        if response.status ~= 0 and response.status ~= 200 then
-            response:send()
-        else
-            ngx.ctx.peer = response.body
-        end
-    end
+    return do_chain_call(self.ctx, router.midware, handler)
 end
 
 return proxy_dispatch

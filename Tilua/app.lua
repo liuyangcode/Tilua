@@ -5,7 +5,6 @@ local path_join = path.join
 local import = lw_utils.import
 local combine = lw_utils.extend
 local bind1 = require("Tilua.utils.util").bind1
-local deepcopy = require('Tilua.utils.tables').deep_copy
 local makepath = require "pl.dir".makepath
 
 local model_manager = require("Tilua.model")
@@ -281,10 +280,6 @@ end
 ---doc from https://github.com/openresty/lua-nginx-module#init_worker_by_lua_block
 ---
 function app.init_worker_by_lua(app_instance)
-    if not app_instance:is_app_inited() then
-        app_instance:init_by_lua()
-    end
-
     if app_instance.on_init_worker then
         app_instance.on_init_worker()
     end

@@ -8,18 +8,24 @@ local ngx_ssl = require "ngx.ssl"
 local parse_pem_cert = ngx_ssl.parse_pem_cert
 local parse_pem_priv_key = ngx_ssl.parse_pem_priv_key
 local pl_utils = require("pl.utils")
+local json_encode = require("Tilua.utils.util").json_encode
+local json_decode = require("Tilua.utils.util").json_decode
 
-local certificate = {}
+local certificate = ngx.shared.ssl_certificate
 local pem_certs = {}
 local default_cert_and_key = {}
-local cert_loaded = false
 local M = {}
 
 function M.find_key_and_cert(server_name)
     if pem_certs[server_name] then
         return pem_certs[server_name]
     end
-    local matched_cert = certificate[server_name] or default_cert_and_key
+    local matched_cert
+    if certificate:get(server_name) then
+        matched_cert = json_decode(certificate:get(server_name))
+    else
+        matched_cert = json_decode(certificate:get("default_cert_and_key"))
+    end
     local cert, err = parse_pem_cert(matched_cert.cert)
     if not cert then
         return nil, "could not parse PEM certificate: " .. err
@@ -32,11 +38,11 @@ function M.find_key_and_cert(server_name)
         cert = cert,
         key = key
     }
-    return pem_certs[server_name ]
+    return pem_certs[server_name]
 end
 
 function M.reload()
-    cert_loaded = false
+    certificate:delete("cert_loaded")
 end
 
 function M.load_default_cert_and_key(cert,key)
@@ -46,25 +52,25 @@ function M.load_default_cert_and_key(cert,key)
     }
 end
 
-function M.load_cert_and_key(ctx)
-    if cert_loaded then
+function M.load_cert_and_key(ctx,force)
+    if certificate:get("cert_loaded") and not force then
         return
     end
     ctx.logger:debug("start to load_cert_and_keys --- ")
-    default_cert_and_key = {
+    certificate:set("default_cert_and_key",json_encode({
         cert = pl_utils.readfile(ctx.config.default_ssl_cert),
         key = pl_utils.readfile(ctx.config.default_ssl_key)
-    }
+    }))
     local cert = ctx.model.certificate:where({
         status = 1
     }):select()
     for _, v in ipairs(cert) do
-        certificate[v.server_name] = {
+        certificate:set(v.server_name,json_encode({
             cert = v.cert,
             key = v.cert_key
-        }
+        }))
     end
-    cert_loaded = true
+    certificate:set("cert_loaded",1)
 end
 
 

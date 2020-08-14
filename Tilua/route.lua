@@ -23,9 +23,12 @@ local route = {
     rules = {},
     rule_caches = {}
 }
+local matched_rule_caches = {}
 local group_midwares = nil
 local verbstack = {}
 local parsed_paths_to_regex = {}
+
+
 function route.set_app_name(name)
     route.cur_app = name
     route.rules[name] = {}
@@ -58,8 +61,18 @@ function route.add_route_rule(cur_app, router)
     table_insert(route.rule_caches[cur_app], router)
 end
 
+--- remove rule caches defined by gateway
+--- except routes defined in app routes.lua
+---
+--- clear matched rule caches
+---@param cur_app string app name
 function route.clear_route_rule(cur_app)
-    route.rule_caches[cur_app] = {}
+    for i, v in ipairs(route.rule_caches[cur_app]) do
+        if v.api then
+            table.remove(route.rule_caches[cur_app],i)
+        end
+    end
+    matched_rule_caches = {}
 end
 
 local function add_route(verbs, path, handler, ...)
@@ -152,13 +165,13 @@ end
 ---@param handler any
 function route.rest(path, handler, ...)
     local rest = {
-        { 'get', '$', 'index', '~' },
-        { 'get', '/new$', 'new', '~' },
-        { 'get', '/{id}$ id:neq,new', 'show', '~' },
+        { 'get', '/?$', 'index', '~' },
+        { 'get', '/new/?$', 'new', '~' },
+        { 'get', '/{id}/?$ id:neq,new', 'show', '~' },
         { 'get', '/{id}/edit$', 'edit', '~' },
-        { 'post', '', 'create', '~' },
-        { 'put', '/{id}$', 'update', '~' },
-        { 'delete', '/{id}$', 'destroy', '~' }
+        { 'post', '/?$', 'create', '~' },
+        { 'put', '/{id}/?$', 'update', '~' },
+        { 'delete', '/{id}/?$', 'destroy', '~' }
     }
     for _, v in ipairs(rest) do
         if lw_util.is_string(handler) then
@@ -404,7 +417,7 @@ function route.find_matched_route(app, method, path)
     return mathced_route
 end
 
-local matched_rule_caches = {}
+
 local function get_matched_rules(app, method, pathinfo)
     return tablex.deepcopy(matched_rule_caches[app .. method .. pathinfo])
 end
@@ -430,7 +443,7 @@ function route.run(ctx)
         end
         if rule.matcher == '~' then
             local path_params = lw_util.combine(rule.args, rule.vals)
-            if route.validate(setmetatable(path_params, { __index = ctx })) then
+            if route.validate(setmetatable(path_params, { __index = ctx }), rule.validation) then
                 best_match = rule
                 if type(best_match.responser) == 'string' then
                     best_match.responser = string.gsub(best_match.responser, "%$(%d+)", function(var)

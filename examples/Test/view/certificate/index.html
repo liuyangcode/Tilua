@@ -17,6 +17,7 @@
 <script type="text/html" id="toolbarDemo">
     <div class="layui-btn-container">
         <button class="layui-btn layui-btn-sm" lay-event="addService">创建证书</button>
+        <button class="layui-btn layui-btn-sm" lay-event="sync">同步证书</button>
     </div>
 </script>
 
@@ -98,6 +99,14 @@
             var checkStatus = table.checkStatus(obj.config.id);
             switch (obj.event) {
                 case 'addService':
+                    layer.open({
+                        type: 2,
+                        title: "新增证书",
+                        area: ["600px", '400px'],
+                        content: '/certificate/new'
+                    });
+                    break;
+                case 'sync':
                     layer.open({
                         type: 2,
                         title: "新增证书",

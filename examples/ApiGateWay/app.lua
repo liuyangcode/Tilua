@@ -3,10 +3,9 @@ local lw_utils = require("Tilua.utils.util")
 local route_service = require("ApiGateWay.service.routes")
 local balancer = require("ngx.balancer")
 local plugins = require("ApiGateWay.service.plugins")
-
+local do_chain_call = require("ApiGateWay.util").do_chain_call
 local ssl_certificate = require("ApiGateWay.service.certificate")
 local load_cert_and_key = ssl_certificate.load_cert_and_key
-
 
 local pl_utils = require("pl.utils")
 local ngx_ssl = require "ngx.ssl"
@@ -17,35 +16,44 @@ local parse_pem_priv_key = ngx_ssl.parse_pem_priv_key
 local set_cert = ngx_ssl.set_cert
 local set_priv_key = ngx_ssl.set_priv_key
 
-
-
-
 local balancer_service = require("ApiGateWay.balancer")
 ApiGateWay.name = "ApiGateWay"
 ApiGateWay.debug = true
 ApiGateWay.status = 'dev'
+
+
+function ApiGateWay.on_init_by_lua(ctx)
+    local ngx = ngx
+    local context = {
+        config = ctx.config
+    }
+    local localtime = ngx.localtime
+    local logger = ApiGateWay.get_logger(context)
+    require("ApiGateWay.balancer").init()
+    logger:write("\n[", localtime(), "]", "ApiGateWay Worker init success worker pid ", ngx.worker.pid())
+    logger:flush()
+end
+
+
 function ApiGateWay.on_init_worker()
     --local healthcheck = require("resty.healthcheck")
     --
     local we = require "resty.worker.events"
     local ok, err = we.configure({
         shm = "events", -- defined by "lua_shared_dict"
-        timeout = 2,            -- life time of unique event data in shm
-        interval = 1,           -- poll interval (seconds)
+        timeout = 2, -- life time of unique event data in shm
+        interval = 1, -- poll interval (seconds)
 
-        wait_interval = 0.010,  -- wait before retry fetching event data
-        wait_max = 0.5,         -- max wait time before discarding event
-        shm_retries = 999,      -- retries for shm fragmentation (no memory)
+        wait_interval = 0.010, -- wait before retry fetching event data
+        wait_max = 0.5, -- max wait time before discarding event
+        shm_retries = 999, -- retries for shm fragmentation (no memory)
     })
     if not ok then
         ngx.log(ngx.ERR, "failed to configure worker events: ", err)
         return
     end
     we.register(balancer_service.ev_handler)
-
 end
-
-
 
 function ApiGateWay.ssl_certificate()
     local sn, err = server_name()
@@ -54,8 +62,8 @@ function ApiGateWay.ssl_certificate()
         return ngx.exit(ngx.ERROR)
     end
 
-    ngx.log(ngx.ERR,"ApiGateWay.ssl_certificate")
-    local cert_and_key,err = ssl_certificate.find_key_and_cert(sn)
+    ngx.log(ngx.ERR, "ApiGateWay.ssl_certificate server name ",sn)
+    local cert_and_key, err = ssl_certificate.find_key_and_cert(sn)
     if not cert_and_key then
         ngx.log(ngx.ERR, err)
         return ngx.exit(500)
@@ -80,66 +88,65 @@ function ApiGateWay.ssl_certificate()
     end
 end
 
-function ApiGateWay:on_body_filter()
-    self.logger:debug("on_body_filter ", self.name)
-end
-
-function ApiGateWay:on_header_filter()
-    self.logger:debug("on_header_filter ", self.name)
-end
-
-
-function ApiGateWay.on_init_by_lua(ctx)
-    local ngx = ngx
-    local context = {
-        config = ctx.config
-    }
-    local localtime = ngx.localtime
-    local logger = ApiGateWay.get_logger(context)
-    require("ApiGateWay.balancer").init()
-    logger:write("\n[", localtime(), "]", "ApiGateWay Worker init success worker pid ", ngx.worker.pid())
-    logger:flush()
-end
 
 ---on_app_init
+---context:app
 ---@param ctx app
-function ApiGateWay.on_app_init(ctx)
-    ctx.logger:debug("on_app_init --- ", ctx.name)
+function ApiGateWay:on_app_init()
+    self.logger:debug("on_app_init --- ", self.name)
 end
 
-function ApiGateWay:on_access()
-    local midwares = route_service.find_prefix_midwares(self)
-    local handler = function
-    ()
-        local matched,router = self.route.run(self)
-        if matched then
-            self:dispatch(router)
-            return 200
-        else
-            return 404
-        end
-        return 404
-    end
-    local  response = self.dispatcher:prepare_response(self.dispatcher:create_responser({
-        responser = handler,
-        midware = midwares or {}
-    })())
-    if response.status ~= 200 then
-        response:send()
-    end
-end
-
+---context:app
 function ApiGateWay:on_rewrite()
     lw_utils.elapse_time_start("BALANCER_START")
     plugins.load(self)
     route_service.load(self)
     load_cert_and_key(self)
-    ngx.log(ngx.ERR,'ApiGateWay:on_rewrite')
 end
 
-function ApiGateWay.on_app_end(ctx)
+---access phase
+---context:app
+function ApiGateWay:on_access()
+    local midwares = route_service.find_prefix_midwares(self)
+    local response = do_chain_call(
+            self,
+            midwares or {},
+            function()
+                return self.dispatcher:run(self.route.run(self))
+            end
+    )
+    ngx.log(ngx.ERR,'----',self.request.server_port)
+    local tresponse = type(response)
+    ---response has body to send
+    ---then send response
+    if tresponse ~= 'table' then
+        ngx.exit(response)
+    elseif tresponse =='table' and response.body then
+        response:send()
+    else
+        ngx.ctx.peer = response
+    end
+end
+
+---header_filter phase
+---context:app
+function ApiGateWay:on_header_filter()
+    self.logger:debug("on_header_filter ", self.name)
+    ngx.header['X-Powered-By'] = 'TGateWay by Tilua'
+    ngx.header['Server'] = nil
+end
+
+---body_filter phase
+---context:app
+function ApiGateWay:on_body_filter()
+    self.logger:debug("on_body_filter ", self.name)
+end
+---app_end phase
+---context:app
+function ApiGateWay:on_app_end()
 
 end
+
 function ApiGateWay.balancer()
     local ctx = ngx.ctx
     local peer = ctx.peer

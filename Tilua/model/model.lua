@@ -646,12 +646,12 @@ end
 function model:count(field)
     field = field or '*'
     field = 'COUNT(' .. field .. ') AS tilua_count'
-    return self:getField(field)
+    return tonumber(self:getField(field))
 end
 function model:sum(field)
     field = field or '*'
     field = 'SUM(' .. field .. ') AS tilua_sum'
-    return self:getField(field)
+    return tonumber(self:getField(field))
 end
 function model:min(field)
     field = field or '*'
