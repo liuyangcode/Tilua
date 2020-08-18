@@ -4,6 +4,7 @@ local route_service = require("ApiGateWay.service.routes")
 local balancer = require("ngx.balancer")
 local plugins = require("ApiGateWay.service.plugins")
 local do_chain_call = require("ApiGateWay.util").do_chain_call
+local call_midwares_stack = require("ApiGateWay.util").call_midwares_stack
 local ssl_certificate = require("ApiGateWay.service.certificate")
 local load_cert_and_key = ssl_certificate.load_cert_and_key
 
@@ -15,7 +16,7 @@ local parse_pem_cert = ngx_ssl.parse_pem_cert
 local parse_pem_priv_key = ngx_ssl.parse_pem_priv_key
 local set_cert = ngx_ssl.set_cert
 local set_priv_key = ngx_ssl.set_priv_key
-
+local monitor = require("ApiGateWay.midware.monitor")
 local balancer_service = require("ApiGateWay.balancer")
 ApiGateWay.name = "ApiGateWay"
 ApiGateWay.debug = true
@@ -53,6 +54,7 @@ function ApiGateWay.on_init_worker()
         return
     end
     we.register(balancer_service.ev_handler)
+    monitor.init_worker(ApiGateWay)
 end
 
 function ApiGateWay.ssl_certificate()
@@ -91,22 +93,33 @@ end
 
 ---on_app_init
 ---context:app
----@param ctx app
 function ApiGateWay:on_app_init()
     self.logger:debug("on_app_init --- ", self.name)
 end
 
 ---context:app
 function ApiGateWay:on_rewrite()
+    self:set_phase('rewrite')
+    call_midwares_stack(self)
+
     lw_utils.elapse_time_start("BALANCER_START")
     plugins.load(self)
     route_service.load(self)
     load_cert_and_key(self)
 end
 
+function ApiGateWay:set_phase(phase)
+    self._phase = phase
+end
+
+function ApiGateWay:get_phase()
+    return self._phase
+end
 ---access phase
 ---context:app
 function ApiGateWay:on_access()
+    self:set_phase('access')
+
     local midwares = route_service.find_prefix_midwares(self)
     local response = do_chain_call(
             self,
@@ -115,7 +128,6 @@ function ApiGateWay:on_access()
                 return self.dispatcher:run(self.route.run(self))
             end
     )
-    ngx.log(ngx.ERR,'----',self.request.server_port)
     local tresponse = type(response)
     ---response has body to send
     ---then send response
@@ -131,20 +143,36 @@ end
 ---header_filter phase
 ---context:app
 function ApiGateWay:on_header_filter()
-    self.logger:debug("on_header_filter ", self.name)
+    self:set_phase('header_filter')
+
+    call_midwares_stack(self)
+
+    local access = ngx.ctx.access or {}
+    access.content_type = ngx.header.content_type
+    access.content_length = ngx.header.content_length
+    access.response_code = ngx.status
+
     ngx.header['X-Powered-By'] = 'TGateWay by Tilua'
     ngx.header['Server'] = nil
+
+    ngx.ctx.access = access
 end
 
 ---body_filter phase
 ---context:app
 function ApiGateWay:on_body_filter()
+    self:set_phase('body_filter')
+    call_midwares_stack(self)
+
     self.logger:debug("on_body_filter ", self.name)
 end
----app_end phase
+---log_by_lua phase
 ---context:app
 function ApiGateWay:on_app_end()
+    self:set_phase('log')
+    call_midwares_stack(self)
 
+    ngx.log(ngx.ERR,'----',self.request.server_port,self.phase)
 end
 
 function ApiGateWay.balancer()

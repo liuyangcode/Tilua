@@ -7,4 +7,7 @@ local route = require("Tilua.route")
 
 route.group(function()
     route.rest('^/(services|certificate|secrets|targets|routes|upstreams|baffle|midwares)', 'controller.$1')
+
+    route['=/certificate_sync'] = 'controller.certificate@sync'
+
 end, 'json', 'body_parser')

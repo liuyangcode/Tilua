@@ -28,6 +28,17 @@ function util.do_chain_call(ctx, midware, handler, ...)
     end, lw_util.reverseTable(midware or {}), handler)(...)
 end
 
+function util.call_midwares_stack(ctx, midwares, ...)
+    local phase = ctx.phase
+    for _, midware in ipairs(midwares) do
+        local mid = ctx.midware.instance(midware)
+        local func = mid["handle_"..phase]
+        if func then
+            func(mid,...)
+        end
+    end
+end
+
 function util.request(api, request, method, headers, time_out)
     local httpc = http.new()
 

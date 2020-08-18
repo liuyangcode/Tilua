@@ -5,7 +5,7 @@
 ---
 local derive = require "ApiGateWay.controller.base.rest".derive
 local we = require "resty.worker.events"
-
+local load_cert_and_key = require("ApiGateWay.service.certificate").load_cert_and_key
 local M = {
     table = 'certificate',
     view = 'certificate'
@@ -51,5 +51,11 @@ function M.after_destroy(ctx, id)
     we.post('certificate', 'delete', id)
 end
 
+function M.sync(ctx)
+    load_cert_and_key(ctx,true)
+    return {
+        code = 0
+    }
+end
 
 return derive(M)

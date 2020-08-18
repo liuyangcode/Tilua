@@ -9,13 +9,13 @@ local util = require("Tilua.utils.util")
 local json_encode = util.json_encode
 local json_decode = util.json_decode
 
-local proxy_dispatch = require("Tilua.dispatch").define()
+local M = require("Tilua.dispatch").define()
 local trim = require("pl.stringx").strip
 local dns = require("resty.dns.client")
 local balancer = require("ApiGateWay.balancer")
 local do_chain_call = require("ApiGateWay.util").do_chain_call
 
-function proxy_dispatch:get_striped_path(router)
+function M:get_striped_path(router)
     local matched_route = router.route
     local striped_path
     if matched_route.strip_path == 1 then
@@ -35,7 +35,7 @@ function proxy_dispatch:get_striped_path(router)
     return striped_path
 end
 
-function proxy_dispatch:run(matched, router)
+function M:run(matched, router)
     if not matched then
         return 404
     end
@@ -43,7 +43,7 @@ function proxy_dispatch:run(matched, router)
     local ctx = self.ctx
     local model = ctx.model
     local handler = {}
-    ---route rule defined in routes.lua
+    ---route rule defined in /routes.lua
     if not router.api and self.ctx.request then
         return self.__parent.run(self, matched, router)
     elseif responser.type == 'baffle' then
@@ -106,11 +106,12 @@ function proxy_dispatch:run(matched, router)
                 send_timeout = service.write_timeout,
                 read_timeout = service.read_timeout,
                 handle = handle,
-                hash_value = hash_value
+                hash_value = hash_value,
+                router = router
             }
         end
     end
     return do_chain_call(self.ctx, router.midware, handler)
 end
 
-return proxy_dispatch
+return M

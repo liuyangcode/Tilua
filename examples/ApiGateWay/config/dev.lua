@@ -12,7 +12,7 @@ return {
     db_pwd = 'app', -- 密码
     db_port = '3306', -- 端口
     db_debug = true,
-    dispatch = 'ApiGateWay.proxy_dispatch',
+    dispatch = 'ApiGateWay.dispatch',
     log = {
         level = "DEBUG,ERROR"
     },

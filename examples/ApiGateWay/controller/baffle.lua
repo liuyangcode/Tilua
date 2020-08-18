@@ -1,5 +1,5 @@
 local lw_util = require("Tilua.utils.util")
-local derive = require "Test.controller.base.rest".derive
+local derive = require "ApiGateWay.controller.base.rest".derive
 
 local M = {
     table = 'baffle'

@@ -25,6 +25,10 @@ end
 
 function manager.instance(self, midware)
     local midware_class = manager.alias[midware[1]] or midware[1]
+    local hash = lw_util.get_hash(midware)
+    if self.midwares[hash] then
+        return self.midwares[hash]
+    end
     local alias_name = ''
     if manager.alias[midware[1]] then
         alias_name = midware[1]
@@ -39,7 +43,7 @@ function manager.instance(self, midware)
         error('midware named ' .. midware[1] .. ' not found')
     end
     local mid = mid_class(self.ctx, midware[2])
-    self.midwares[mid.alias or alias_name] = mid
+    self.midwares[hash]  = mid
     if not mid.handle then
         error('midware named:' .. midware[1] .. ' handle func required')
     end

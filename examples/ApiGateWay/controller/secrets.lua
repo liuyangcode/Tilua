@@ -1,7 +1,7 @@
 local we = require "resty.worker.events"
 local uuid = require("Tilua.utils.util").uuid
 local CreateUUID = require("Tilua.utils.util").random_string
-local derive = require "Test.controller.base.rest".derive
+local derive = require "ApiGateWay.controller.base.rest".derive
 
 local M = {
     table = 'secrets'
@@ -31,5 +31,6 @@ function M.before_update(ctx)
         updated_at = { 'exp', 'now()' }
     }
 end
+
 
 return derive(M)

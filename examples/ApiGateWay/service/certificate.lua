@@ -52,6 +52,9 @@ function M.load_default_cert_and_key(cert,key)
     }
 end
 
+---load ssl cert and key
+---@param ctx app
+---@param force boolean
 function M.load_cert_and_key(ctx,force)
     if certificate:get("cert_loaded") and not force then
         return
@@ -71,6 +74,7 @@ function M.load_cert_and_key(ctx,force)
         }))
     end
     certificate:set("cert_loaded",1)
+    return true
 end
 
 
