@@ -5,9 +5,59 @@
 ---
 
 local M = require('Tilua.midware.base').define()
+local get_now_ms = require("Tilua.utils.util").get_now_ms
+local ngx = ngx
 
+local monitor_shd = ngx.shared.monitor
+
+
+function M:_construct(ctx, config)
+    if not monitor_shd then
+        error("midware need ngx.shared shdict ")
+    end
+    self.access = {
+
+    }
+end
 function M.init_worker(ctx)
-    ngx.log(ngx.ERR,"M.init_worker" )
+    ngx.log(ngx.ERR, "M.init_worker")
+end
+
+function M:handle(next, ...)
+    local req = self.ctx.request
+    ngx.log(ngx.ERR, "M:handle")
+    self.access.request_time =  ngx.req.start_time() * 1000
+    self.access.server_port = req.server_port
+    self.access.remote_addr = req.remote_addr
+    self.access.remote_addr = req.remote_addr
+    self.access.user_agent = req.header.user_agent
+    self.access.host = req.host
+    self.access.raw_request = req.raw_request
+    self.access.method = req.method
+    self.access.path = req.uri
+    self.access.server_protocol = req.server_protocol
+    self.access.server_name = req.server_name
+    self.access.scheme = req.scheme
+    return next(...)
+end
+
+function M:handle_header_filter()
+    self.access.response_content_type = ngx.header.content_type
+    self.access.response_content_length = ngx.header.content_length
+    self.access.response_code = ngx.status
+    self.access.request_elapsed_time = ngx.now()* 1000 - self.access.request_time
+    if ngx.ctx.peer and ngx.ctx.peer.router then
+        self.access.serviceid = ngx.ctx.peer.router.responser.serviceid
+        self.access.routeid = ngx.ctx.peer.router.route.id
+
+    end
+   -- local router =  or {}
+
+    ngx.log(ngx.ERR, "M.handle_header_filter")
+end
+
+function M:handle_log()
+    ngx.log(ngx.ERR, "M.handle_log",require("pl.pretty").write(self.access))
 end
 
 return M

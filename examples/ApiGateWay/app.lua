@@ -8,16 +8,14 @@ local call_midwares_stack = require("ApiGateWay.util").call_midwares_stack
 local ssl_certificate = require("ApiGateWay.service.certificate")
 local load_cert_and_key = ssl_certificate.load_cert_and_key
 
-local pl_utils = require("pl.utils")
 local ngx_ssl = require "ngx.ssl"
 local server_name = ngx_ssl.server_name
 local clear_certs = ngx_ssl.clear_certs
-local parse_pem_cert = ngx_ssl.parse_pem_cert
-local parse_pem_priv_key = ngx_ssl.parse_pem_priv_key
 local set_cert = ngx_ssl.set_cert
 local set_priv_key = ngx_ssl.set_priv_key
 local monitor = require("ApiGateWay.midware.monitor")
 local balancer_service = require("ApiGateWay.balancer")
+
 ApiGateWay.name = "ApiGateWay"
 ApiGateWay.debug = true
 ApiGateWay.status = 'dev'
@@ -100,12 +98,12 @@ end
 ---context:app
 function ApiGateWay:on_rewrite()
     self:set_phase('rewrite')
-    call_midwares_stack(self)
 
     lw_utils.elapse_time_start("BALANCER_START")
     plugins.load(self)
     route_service.load(self)
     load_cert_and_key(self)
+    call_midwares_stack(self)
 end
 
 function ApiGateWay:set_phase(phase)
@@ -119,11 +117,9 @@ end
 ---context:app
 function ApiGateWay:on_access()
     self:set_phase('access')
-
-    local midwares = route_service.find_prefix_midwares(self)
     local response = do_chain_call(
             self,
-            midwares or {},
+            nil,
             function()
                 return self.dispatcher:run(self.route.run(self))
             end
@@ -144,18 +140,9 @@ end
 ---context:app
 function ApiGateWay:on_header_filter()
     self:set_phase('header_filter')
-
     call_midwares_stack(self)
-
-    local access = ngx.ctx.access or {}
-    access.content_type = ngx.header.content_type
-    access.content_length = ngx.header.content_length
-    access.response_code = ngx.status
-
     ngx.header['X-Powered-By'] = 'TGateWay by Tilua'
     ngx.header['Server'] = nil
-
-    ngx.ctx.access = access
 end
 
 ---body_filter phase
@@ -171,8 +158,6 @@ end
 function ApiGateWay:on_app_end()
     self:set_phase('log')
     call_midwares_stack(self)
-
-    ngx.log(ngx.ERR,'----',self.request.server_port,self.phase)
 end
 
 function ApiGateWay.balancer()

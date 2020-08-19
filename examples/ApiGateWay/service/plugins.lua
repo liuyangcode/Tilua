@@ -6,6 +6,8 @@
 
 local M = {}
 local lw_util = require("Tilua.utils.util")
+local move = require("pl.tablex").move
+local sortv = require("pl.tablex").sortv
 local is_plugins_loaded = false
 local plugins = {}
 function M.load(ctx)
@@ -14,7 +16,7 @@ function M.load(ctx)
     end
     plugins[ctx.name] = {}
     local db = ctx.db.instance()
-    local sql = [[select mid.package,plugins.config,plugins.phase,plugins.objecttype,plugins.objectid from plugins  left join midwares as mid
+    local sql = [[select mid.package,plugins.config,plugins.phase,plugins.objecttype,plugins.objectid,plugins.indexNo from plugins  left join midwares as mid
     on (mid.id=plugins.mid) where plugins.status =1 order by plugins.indexNo asc ]]
     local data = db:query(sql)
     if not data then
@@ -25,18 +27,46 @@ function M.load(ctx)
         plugins[ctx.name][mid.objecttype][mid.phase] = plugins[ctx.name][mid.objecttype][mid.phase] or {}
         plugins[ctx.name][mid.objecttype][mid.phase]['t' .. mid.objectid] = plugins[ctx.name][mid.objecttype][mid.phase]['t' .. mid.objectid] or {}
         table.insert(plugins[ctx.name][mid.objecttype][mid.phase]['t' .. mid.objectid], {
-            mid.package,
-            lw_util.parse_expression(mid.config == ngx.null and "" or mid.config, ',', '=')
+            mid = {
+                mid.package,
+                lw_util.parse_expression(mid.config == ngx.null and "" or mid.config, ',', '=')
+            },
+            index = mid.indexNo
         })
     end
     is_plugins_loaded = true
 end
 
-function M.get_midwares(ctx,objecttype,objectid,phase)
-    if plugins[ctx.name][objecttype] and plugins[ctx.name][objecttype][phase] and plugins[ctx.name][objecttype][phase]['t'..objectid] then
-        return plugins[ctx.name][objecttype][phase]['t'..objectid]
+function M.get_midwares(ctx, objecttype, objectid, phase)
+    if is_plugins_loaded
+            and objecttype and objectid
+            and plugins[ctx.name][objecttype]
+            and plugins[ctx.name][objecttype][phase]
+            and plugins[ctx.name][objecttype][phase]['t' .. objectid]
+
+    then
+        return plugins[ctx.name][objecttype][phase]['t' .. objectid]
     end
     return {}
+end
+
+function M.find_midwares(ctx, serviceid, routerid)
+    local phase = ctx.phase
+    local midwares = {}
+    local lifetime_midwares = M.get_midwares(ctx, 'lifetime', 1, phase)
+    local service_midwares = M.get_midwares(ctx, 'service', serviceid, phase)
+    local route_midwares = M.get_midwares(ctx, 'route', routerid, phase)
+    midwares = move(midwares, lifetime_midwares)
+    midwares = move(midwares, service_midwares)
+    midwares = move(midwares, route_midwares)
+    local sorted_midwares = {}
+    local it = sortv(midwares, function(x, y)
+        return x.index < y.index
+    end)
+    for _, v in it do
+        table.insert(sorted_midwares,v.mid)
+    end
+    return sorted_midwares
 end
 
 return M

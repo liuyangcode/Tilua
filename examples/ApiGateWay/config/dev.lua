@@ -17,5 +17,6 @@ return {
         level = "DEBUG,ERROR"
     },
     default_ssl_cert = 'cert/server-root.crt',
-    default_ssl_key = 'cert/server.key'
+    default_ssl_key = 'cert/server.key',
+    secure_key = "4f24d1c5-3dba-bf3d-e6df-2abee67ffee2"
 }

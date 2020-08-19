@@ -6,10 +6,14 @@
 local http = require "resty.http"
 local lw_util = require("Tilua.utils.util")
 local reduce = require("pl.tablex").reduce
+local move = require("pl.tablex").move
+local find_prefix_midwares = require("ApiGateWay.service.routes").find_prefix_midwares
+
 local bind1 = lw_util.bind1
 local json_encode = lw_util .json_encode
 local json_decode = lw_util .json_decode
 local util = {}
+local find_midwares = require("ApiGateWay.service.plugins").find_midwares
 function util.apiv1(request, method, headers, time_out)
     return util.request("http://32.254.48.88/api/v1", request, method, headers, time_out)
 end
@@ -17,24 +21,34 @@ end
 function util.apiv2(request, method, headers, time_out)
     return util.request("http://32.254.48.88/api/v2", request, method, headers, time_out)
 end
-
-function util.do_chain_call(ctx, midware, handler, ...)
+function util.do_chain_call(ctx,midwares, handler, serviceid ,routerid, ...)
+    if not midwares then
+        midwares = {}
+        local lifetime_mids = find_midwares(ctx, serviceid ,routerid)
+        local prefix_midwares = find_prefix_midwares(ctx)
+        midwares = move(midwares,lifetime_mids)
+        midwares = move(midwares,prefix_midwares)
+    end
     return reduce(function(res, next_midware)
         local mid = ctx.midware.instance(next_midware)
         local func = bind1(mid.handle, mid)
         return function(...)
             return func(res, ...)
         end
-    end, lw_util.reverseTable(midware or {}), handler)(...)
+    end, lw_util.reverseTable(midwares), handler)(...)
 end
 
-function util.call_midwares_stack(ctx, midwares, ...)
+function util.call_midwares_stack(ctx, serviceid ,routerid,... )
     local phase = ctx.phase
+    local midwares = find_midwares(ctx, serviceid ,routerid)
+    if #midwares == 0 then
+        return
+    end
     for _, midware in ipairs(midwares) do
         local mid = ctx.midware.instance(midware)
-        local func = mid["handle_"..phase]
+        local func = mid["handle_" .. phase]
         if func then
-            func(mid,...)
+            func(mid, ...)
         end
     end
 end
