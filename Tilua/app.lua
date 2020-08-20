@@ -5,6 +5,8 @@ local path_join = path.join
 local import = lw_utils.import
 local combine = lw_utils.extend
 local bind1 = require("Tilua.utils.util").bind1
+local bind2 = require("Tilua.utils.util").bind2
+
 local makepath = require "pl.dir".makepath
 
 local model_manager = require("Tilua.model")
@@ -280,8 +282,12 @@ end
 ---doc from https://github.com/openresty/lua-nginx-module#init_worker_by_lua_block
 ---
 function app.init_worker_by_lua(app_instance)
+    ngx.log(ngx.DEBUG,'app.init_worker_by_lua ',app_instance.name )
     if app_instance.on_init_worker then
         app_instance.on_init_worker()
+    end
+    if app_instance.warming_up then
+        ngx.timer.at(0, bind1(app_instance.warming_up, app_instance()))
     end
 end
 
@@ -468,11 +474,7 @@ function app.content_by_lua(app_instance)
 
     xpcall(function()
         ctx:dispatch(ctx.route.run(ctx))
-
-        for _, callback in ipairs(ctx.on_app_handled_callbacks) do
-            callback()
-        end
-
+        ctx:release()
         ctx.response:send()
     end, app.error_handle)
 end
@@ -584,6 +586,13 @@ end
 ---@return dispatch
 function app:dispatch(...)
     return self.dispatcher:run(...)
+end
+
+function app:release()
+    for _, callback in ipairs(self.on_app_handled_callbacks) do
+        callback()
+    end
+    self.logger:flush()
 end
 
 function app:on_app_handled(func)

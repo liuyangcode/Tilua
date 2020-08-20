@@ -2,6 +2,8 @@ local ngx = ngx
 local ngx_req = ngx.req
 local ngx_var = ngx.var
 local util = require("Tilua.utils.util")
+local useragent = require("Tilua.utils.useragent")
+
 local trim = require("pl.stringx").strip
 local tablex = require("pl.tablex")
 local string_format = string.format
@@ -21,6 +23,22 @@ function request.get_query()
 end
 function request.get_remote_addr()
     return ngx_var.remote_addr
+end
+function request.get_platform()
+    return useragent.parse_platform(request.get_header('user_agent'))
+end
+function request.get_browser()
+    return useragent.parse_browser(request.get_header('user_agent'))
+end
+function request.get_mobile()
+    return useragent.parse_mobile(request.get_header('user_agent'))
+end
+function request.get_robot()
+    return useragent.parse_robot(request.get_header('user_agent'))
+end
+---get_wechat
+function request.get_wechat()
+    return useragent.parse_wechat(request.get_header('user_agent'))
 end
 function request.get_remote_port()
     return ngx_var.remote_port

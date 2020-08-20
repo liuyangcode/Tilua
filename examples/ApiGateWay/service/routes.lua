@@ -19,6 +19,8 @@ local prefix_midwares = {}
 local re_match = ngx.re.match
 
 function routes.find_prefix_midwares(ctx)
+    routes.load(ctx,false)
+
     local pathinfo = ctx.request.path_info
     local method = string.lower(ctx.request.method)
     local mids = {}

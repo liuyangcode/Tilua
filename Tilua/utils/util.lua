@@ -7,24 +7,22 @@ local now, update_time = ngx.now, ngx.update_time
 local md5 = ngx.md5
 local string = string
 local table = table
-local gsub          = string.gsub
+local gsub = string.gsub
 local json = require("cjson.safe")
 local split = require("pl.utils").split
 local assert_arg = require("pl.utils").assert_arg
 local ffi = require "ffi"
 
-local re_find       = ngx.re.find
-local re_match      = ngx.re.match
-local C             = ffi.C
-local ffi_fill      = ffi.fill
-local ffi_new       = ffi.new
-local ffi_str       = ffi.string
-
+local re_find = ngx.re.find
+local re_match = ngx.re.match
+local C = ffi.C
+local ffi_fill = ffi.fill
+local ffi_new = ffi.new
+local ffi_str = ffi.string
 
 local uuid = require("resty.jit-uuid")
 
-
-ffi.cdef[[
+ffi.cdef [[
 typedef unsigned char u_char;
 
 int gethostname(char *name, size_t len);
@@ -43,7 +41,6 @@ int write(int fd, const void *ptr, int numbytes);
 int close(int fd);
 char *strerror(int errnum);
 ]]
-
 
 local lrandom = require "random"
 
@@ -74,7 +71,24 @@ function util.bind1 (fn, p)
         return fn(p, ...)
     end
 end
-
+--- bind the second argument of the function to a value.
+-- @param fn a function of at least two values (may be an operator string)
+-- @param p a value
+-- @return a function such that f(x) is fn(x,p)
+-- @raise same as @{function_arg}
+-- @usage local function f(a, b, c)
+--   print(a .. " " .. b .. " " .. c)
+-- end
+--
+-- local hello = utils.bind1(f, "world")
+--
+-- print(hello("Hello", "!"))  --> "Hello world !"
+-- print(hello("Bye", "?"))    --> "Bye world ?"
+function util.bind2 (fn, p)
+    return function(x, ...)
+        return fn(x, p, ...)
+    end
+end
 ---choose
 ---@param condition boolean
 ---@param value_true any
@@ -161,7 +175,7 @@ local function pairsByKeys(t)
         return a[i], t[a[i]]
     end
 end
-
+util.pairsByKeys = pairsByKeys
 function util.addslashes(str)
     return ngx.re.gsub(str, "([\'\\\"])", "\\$1", "jo")
 end
@@ -206,7 +220,7 @@ function util.dump(...)
         ngx.say(pretty.write(params[i]) .. '<br/>')
     end
 end
-util.CreateUUID =  function
+util.CreateUUID = function
 ()
     uuid.seed()
     return uuid()
@@ -242,7 +256,7 @@ local get_rand_bytes
 
 do
     local ngx_log = ngx.log
-    local WARN    = ngx.WARN
+    local WARN = ngx.WARN
 
     local bytes_buf_t = ffi.typeof "char[?]"
 
@@ -341,7 +355,6 @@ function util.is_valid_uuid(str)
     end
     return re_find(str, uuid_regex, 'ioj') ~= nil
 end
-
 
 ---check vals is nil
 function util.is_set(...)

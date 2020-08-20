@@ -146,13 +146,15 @@ function dispatch:find_handler(router)
         controller = controller or 'index'
         action = action or 'index'
         local handler = lw_util.import(self.ctx.name, 'controller', controller)
-        if handler._construct then
-            handler = handler(self.ctx, controller, action)
-        end
-        if type(handler[action]) == 'function' then
-            return function
-            ()
-                return handler[action](handler, self.ctx, pl_utils.unpack(params))
+        if  handler then
+            if handler._construct then
+                handler = handler(self.ctx, controller, action)
+            end
+            if type(handler[action]) == 'function' then
+                return function
+                ()
+                    return handler[action](handler, self.ctx, pl_utils.unpack(params))
+                end
             end
         end
     end
