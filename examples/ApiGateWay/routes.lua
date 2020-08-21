@@ -9,5 +9,6 @@ route.group(function()
     route.rest('^/(services|certificate|secrets|targets|routes|upstreams|baffle|midwares)', 'controller.$1')
 
     route['=/certificate_sync'] = 'controller.certificate@sync'
+    route['/'] = '/'
 
 end, 'json', 'body_parser')

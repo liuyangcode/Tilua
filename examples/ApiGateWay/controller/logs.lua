@@ -3,8 +3,22 @@
 --- Created by liuyang.
 --- DateTime: 2020/8/18 3:58 下午
 ---
+local controller = require("Tilua.controller")
+local M = controller.define()
 
-local M = {}
-
+function M:access_logs()
+    local ctx = self.ctx
+    local request, _ = ctx:unpack()
+    local req = request.body
+    local page = req.page or 1
+    local limit = req.limit or 10
+    return {
+        code = 0,
+        count = ctx.model.access_log:count(),
+        data = ctx.model.access_log:limit((page - 1) * limit, limit):select(),
+        page = page,
+        limit = limit
+    }
+end
 
 return M

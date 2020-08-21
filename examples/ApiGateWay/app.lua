@@ -14,7 +14,7 @@ local clear_certs = ngx_ssl.clear_certs
 local set_cert = ngx_ssl.set_cert
 local set_priv_key = ngx_ssl.set_priv_key
 local balancer_service = require("ApiGateWay.balancer")
-local Ip2region = require "ip2region";
+--local Ip2region = require "ip2region";
 
 ApiGateWay.name = "ApiGateWay"
 ApiGateWay.debug = true
@@ -26,12 +26,14 @@ function ApiGateWay.on_init_by_lua(ctx)
         config = ctx.config
     }
 
-    local ip2region = Ip2region.new(ctx.path..'/support/ip2region.db');
+    --local ip2region = Ip2region.new(ctx.path..'/support/ip2region.db');
 
     local localtime = ngx.localtime
     local logger = ApiGateWay.get_logger(context)
     require("ApiGateWay.balancer").init()
     logger:write("\n[", localtime(), "]", "ApiGateWay Worker init success worker pid ", ngx.worker.pid())
+    logger:write("\n[", localtime(), "]", "lua version ", ngx.config.ngx_lua_version ," nginx version ",ngx.config.nginx_version,"\n")
+
     logger:flush()
 end
 

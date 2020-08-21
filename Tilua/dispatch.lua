@@ -150,10 +150,15 @@ function dispatch:find_handler(router)
             if handler._construct then
                 handler = handler(self.ctx, controller, action)
             end
-            if type(handler[action]) == 'function' then
+            if not handler.__parent[action] and type(handler[action]) == 'function' then
                 return function
                 ()
                     return handler[action](handler, self.ctx, pl_utils.unpack(params))
+                end
+            elseif type(handler._call) =='function' then
+                return function
+                ()
+                    return handler._call(handler, self.ctx, pl_utils.unpack(params))
                 end
             end
         end
