@@ -9,25 +9,22 @@ local function match_pattern(pattern, path)
         if err then return nil, err end
         return nil
     end
-    return { string.match(path, pattern) }
+    local captures = { string.match(path, pattern) }
+    if #captures == 0 and not string.match(path, pattern) then return nil end
+    return captures
 end
 
 function Matcher.match(route, method, path)
     if not route or not path then return nil end
-
     local pattern = route.compiled and route.compiled.pattern
     if not pattern then return nil end
 
-    local matches = match_pattern(pattern, path)
-    if not matches then return nil end
-
-    if not route:allows(method) then
-        return nil, "method_not_allowed"
-    end
+    local matches, match_err = match_pattern(pattern, path)
+    if not matches then return nil, match_err end
+    if not route:allows(method) then return nil, "method_not_allowed" end
 
     local params = {}
-    local names = route.params or {}
-    for i, name in ipairs(names) do
+    for i, name in ipairs(route.params or {}) do
         params[name] = matches[i]
     end
 
@@ -41,7 +38,8 @@ end
 
 function Matcher.path(route, path)
     if not route or not route.compiled then return false end
-    return match_pattern(route.compiled.pattern, path) ~= nil
+    local matches = match_pattern(route.compiled.pattern, path)
+    return matches ~= nil
 end
 
 return Matcher
