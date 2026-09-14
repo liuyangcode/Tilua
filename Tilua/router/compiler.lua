@@ -1,7 +1,7 @@
 local Compiler = {}
 
 local function escape(text)
-    return (text:gsub("([%%%^%$%(%)%.%[%]+%-])", "%%%1"))
+    return (text:gsub("([%.%+%-%^%$%(%)%[%]])", "%%%1"))
 end
 
 local function split_path(path)
@@ -16,7 +16,7 @@ local function compile_parameter(token, params)
     local name, pattern = token:match("^([^:]+):(.+)$")
     name = name or token
     params[#params + 1] = name
-    return "([^/]+)"
+    return pattern and "(" .. pattern .. ")" or "([^/]+)"
 end
 
 function Compiler.path(path, options)
@@ -37,18 +37,18 @@ function Compiler.path(path, options)
     end
 
     if matcher == "=" then
-        result.pattern = "^" .. escape(path):gsub("/$", "") .. "/?$"
-        if path == "/" then result.pattern = "^/$" end
+        local exact_path = escape(path):gsub("/$", "")
+        result.pattern = (path == "/") and "^/$" or ("^" .. exact_path .. "/?$")
         return result
     end
 
     local parts = split_path(path)
-    local patterns = { "^" }
     if #parts == 0 then
         result.pattern = "^/$"
         return result
     end
 
+    local patterns = { "^" }
     for _, part in ipairs(parts) do
         patterns[#patterns + 1] = "/"
         if part == "*" then
