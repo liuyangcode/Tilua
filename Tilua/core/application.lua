@@ -9,6 +9,7 @@ function Application:_construct(config)
     self.container = Container()
     self.router = nil
     self.middleware = nil
+    self.invoker = nil
     self.booted = false
     self.worker_initialized = false
     self.name = self.config.name or "application"
@@ -17,17 +18,13 @@ end
 
 function Application:boot()
     if self.booted then return self end
-
     self:register_core()
     self:register_services()
     self:load_router()
     self:load_middleware()
-
+    self:load_controller()
     self.booted = true
-
-    if type(self.config.boot) == "function" then
-        self.config.boot(self)
-    end
+    if type(self.config.boot) == "function" then self.config.boot(self) end
     return self
 end
 
@@ -44,14 +41,12 @@ function Application:register_services()
             return Logger(self.config.log or self.config.logger)
         end)
     end
-
     if self.config.db then
         self.container:singleton("db", function()
             local DatabaseManager = require("Tilua.database.manager")
             return DatabaseManager(self.config.db)
         end)
     end
-
     if self.config.cache then
         self.container:singleton("cache", function()
             local CacheManager = require("Tilua.cache.manager")
@@ -70,7 +65,6 @@ function Application:load_router()
         local Router = require("Tilua.router.router")
         self.router = Router(self.config.route or {})
     end
-
     if self.router.compile then self.router:compile() end
     self.container:value("router", self.router)
     return self
@@ -86,10 +80,16 @@ function Application:load_middleware()
     return self
 end
 
+function Application:load_controller()
+    local Invoker = require("Tilua.controller.invoker")
+    self.invoker = Invoker.new(self)
+    self.container:value("invoker", self.invoker)
+    return self
+end
+
 function Application:init_worker()
     if not self.booted then self:boot() end
     if self.worker_initialized then return self end
-
     local services = { "logger", "db", "cache" }
     for _, name in ipairs(services) do
         if self.container:has(name) then
@@ -97,11 +97,8 @@ function Application:init_worker()
             if service.init_worker then service:init_worker() end
         end
     end
-
     self.worker_initialized = true
-    if type(self.config.init_worker) == "function" then
-        self.config.init_worker(self)
-    end
+    if type(self.config.init_worker) == "function" then self.config.init_worker(self) end
     return self
 end
 
@@ -120,30 +117,32 @@ end
 
 function Application:handle(ctx)
     assert(ctx, "context is required")
-    if self.middleware and self.middleware.run then
-        return self.middleware:run(ctx, function(context)
-            return self:dispatch(context)
-        end)
+    if self.middleware and self.middleware.handle then
+        return self.middleware:handle(ctx, function(context) return self:dispatch(context) end)
+    elseif self.middleware and self.middleware.run then
+        return self.middleware:run(ctx, function(context) return self:dispatch(context) end)
     end
     return self:dispatch(ctx)
 end
 
 function Application:dispatch(ctx)
     if not self.router then error("router is not configured") end
-
     local handler, result = self.router:dispatch(ctx)
     if not handler then
         local reason = result or "not_found"
-        if reason == "method_not_allowed" then
-            return ctx:text("Method Not Allowed", 405)
-        end
+        if reason == "method_not_allowed" then return ctx:text("Method Not Allowed", 405) end
         return ctx:text("Not Found", 404)
     end
 
-    if type(handler) == "function" then
-        return handler(ctx)
-    end
+    if type(handler) == "function" then return handler(ctx) end
 
+    if self.invoker then
+        local value, err = self.invoker:invoke(handler, ctx, result and result.params)
+        if value ~= nil then return value end
+        if err == "controller_not_found" or err == "action_not_found" then
+            return ctx:text("Not Found", 404)
+        end
+    end
     return handler
 end
 
@@ -152,11 +151,7 @@ function Application:shutdown()
     for _, name in ipairs(services) do
         if self.container:has(name) then
             local service = self.container:get(name)
-            if service.shutdown then
-                service:shutdown()
-            elseif service.close then
-                service:close()
-            end
+            if service.shutdown then service:shutdown() elseif service.close then service:close() end
         end
     end
     self.worker_initialized = false
