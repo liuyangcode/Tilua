@@ -10,6 +10,8 @@ local combine    = lw_utils.extend
 local bind1      = lw_utils.bind1
 
 local lifecycle  = require("Tilua.core.lifecycle")
+local Plugin     = require("Tilua.core.plugin")
+local Channel    = require("Tilua.core.channel")
 
 ---@class app
 local App = class.define()
@@ -23,6 +25,21 @@ function App:_construct()
     self.midware = require("Tilua.middleware")(self)
     self.on_app_handled_callbacks = {}
 end
+
+--- Register a framework plugin (OpenAPI / CLI / WebSocket / custom)
+function App:use(plugin)
+    return Plugin.register(plugin)
+end
+
+--- Register an entry channel (http / websocket / cli / custom)
+function App:channel(ch)
+    return Channel.register(ch)
+end
+
+function App:plugin(name)
+    return Plugin.get(name)
+end
+
 
 
 function App:get_dispatcher()
@@ -63,6 +80,11 @@ end
 function App:get_model()
     self.model = require("Tilua.model")(self)
     return self.model
+end
+
+function App:get_service()
+    self.service = require("Tilua.service")(self)
+    return self.service
 end
 
 function App:get_logger()
@@ -121,7 +143,9 @@ function App:load_route()
     end
 
     self.route.init_rule_caches(self.config.route or {})
+    Plugin.emit("on_route_loaded", self, self.route)
 end
+
 
 
 -------------------------------------------------
@@ -151,32 +175,32 @@ function App:on_app_handled(cb)
     table.insert(self.on_app_handled_callbacks, cb)
 end
 
---- Built-in health endpoint (Phase 3 production default)
-local function try_health(self)
-    local path = self.config and self.config.health_path or "/health"
-    local uri = (self.request and self.request.path_info) or ngx.var.uri or ""
-    if uri ~= path and uri ~= path .. "/" then
-        return false
+--- Main entry used by content_by_lua_block (and CLI/WS via Channel)
+function App:run()
+    local result, err = Channel.dispatch(self)
+    if result ~= nil then
+        return result
     end
-    local body = '{"status":"ok","app":"' .. (self.name or "tilua") .. '","pid":' .. tostring(ngx.worker.pid()) .. "}"
-    local resp = self.response
-    resp.status = 200
-    resp.headers = resp.headers or {}
-    resp.headers["Content-Type"] = "application/json; charset=utf-8"
-    resp.body = body
-    return true
+    -- Fallback: classic HTTP path (if channels not loaded)
+    if self.logger and self.logger.warn then
+        self.logger:warn("channel dispatch: ", err or "nil", " – fallback HTTP")
+    end
+    local matched, router = self.route.run(self)
+    Plugin.emit("on_dispatch", self, matched, router)
+    local out = self.dispatcher:run(matched, router)
+    Plugin.emit("on_response", self)
+    return out
 end
 
---- Main entry used by content_by_lua_block
-function App:run()
-    if try_health(self) then
-        return self.response
-    end
-    -- route.run returns (matched:boolean, best_rule) after validation
-    local matched, router = self.route.run(self)
-    return self.dispatcher:run(matched, router)
+--- Explicit CLI entry (no HTTP)
+function App:run_cli(args)
+    self._channel = "cli"
+    self._cli = true
+    self._cli_args = args or {}
+    return Channel.dispatch(self)
 end
 
 
 return App
+
 

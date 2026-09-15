@@ -38,19 +38,107 @@ local midware_manager = require("Tilua.middleware")
 local route = {
     cur_app = "",
     rules = {},
-    rule_caches = {}
+    rule_caches = {},
+    -- Fast lookup indexes per app (rebuilt when rules change)
+    indexes = {},
 }
+-- path-level candidate cache + best-match cache
 local matched_rule_caches = {}
+local best_match_caches = {}
+local MATCH_CACHE_MAX = 2048
+local match_cache_size = 0
 local group_midwares = nil
 local verbstack = {}
 local parsed_paths_to_regex = {}
 
+local function method_set(methods)
+    local s = {}
+    if type(methods) ~= "table" then
+        s[string_lower(tostring(methods or "*"))] = true
+        return s
+    end
+    for _, m in ipairs(methods) do
+        s[string_lower(tostring(m))] = true
+    end
+    return s
+end
+
+local function accepts_method(rule, method)
+    local ms = rule._method_set
+    if not ms then
+        return true
+    end
+    return ms["*"] or ms[method]
+end
+
+local function clear_match_caches()
+    matched_rule_caches = {}
+    best_match_caches = {}
+    match_cache_size = 0
+end
+
+--- Build O(1)/O(k) indexes: exact map, sorted prefixes, regex lists per method
+function route.rebuild_index(app)
+    local list = route.rule_caches[app] or {}
+    local idx = {
+        exact = {},   -- [method][path] = rule
+        prefix = {},  -- [method] = { {path, rule, len}, ... } sorted desc by len
+        regex = {},   -- [method] = { rule, ... }
+    }
+
+    local function bucket(method)
+        if not idx.exact[method] then
+            idx.exact[method] = {}
+            idx.prefix[method] = {}
+            idx.regex[method] = {}
+        end
+    end
+
+    for _, rule in ipairs(list) do
+        rule._method_set = method_set(rule.method)
+        local methods = rule.method
+        if type(methods) ~= "table" then
+            methods = { methods or "*" }
+        end
+        for _, m in ipairs(methods) do
+            m = string_lower(tostring(m))
+            bucket(m)
+            if rule.matcher == "=" then
+                idx.exact[m][rule.path] = rule
+            elseif rule.matcher == "*" then
+                local len = #(rule.path or "")
+                table_insert(idx.prefix[m], { path = rule.path, rule = rule, len = len })
+            elseif rule.matcher == "~" then
+                table_insert(idx.regex[m], rule)
+            end
+        end
+    end
+
+    -- longest prefix first
+    for _, arr in pairs(idx.prefix) do
+        table.sort(arr, function(a, b)
+            return a.len > b.len
+        end)
+    end
+
+    route.indexes[app] = idx
+    clear_match_caches()
+    return idx
+end
+
+local function get_index(app)
+    local idx = route.indexes[app]
+    if not idx then
+        idx = route.rebuild_index(app)
+    end
+    return idx
+end
 
 function route.set_app_name(name)
     route.cur_app = name
     route.rules[name] = {}
     route.rule_caches[name] = {}
-    --route.path_midwares[name] = {}
+    route.indexes[name] = nil
 end
 
 function route.init_rule_caches(config_rules)
@@ -60,8 +148,9 @@ function route.init_rule_caches(config_rules)
         local router = route.to_router(result, url)
         router.matcher = matcher
         router.method = method
+        router._method_set = method_set(method)
 
-        if matcher == '~' then
+        if matcher == "~" then
             local _, regex, args = route.parse_path_to_regex(url)
             router.regex = regex
             router.args = args
@@ -70,27 +159,34 @@ function route.init_rule_caches(config_rules)
         router.validation = validation
         table_insert(route.rule_caches[route.cur_app], router)
     end
+    route.rebuild_index(route.cur_app)
 end
 
 function route.add_route_rule(cur_app, router)
-    --route.rule_caches[cur_app][verbs] = route.rule_caches[cur_app][verbs] or route.get_init_route_rule()
-    --table_insert(route.rule_caches[cur_app][verbs][matchers], router)
+    if router and not router._method_set then
+        router._method_set = method_set(router.method)
+    end
     table_insert(route.rule_caches[cur_app], router)
+    route.rebuild_index(cur_app)
 end
 
 --- remove rule caches defined by gateway
---- except routes defined in app routes.lua
----
---- clear matched rule caches
 ---@param cur_app string app name
 function route.clear_route_rule(cur_app)
-    for i, v in ipairs(route.rule_caches[cur_app]) do
-        if v.api then
-            table.remove(route.rule_caches[cur_app],i)
+    local rules = route.rule_caches[cur_app]
+    if not rules then
+        return
+    end
+    local kept = {}
+    for _, v in ipairs(rules) do
+        if not v.api then
+            kept[#kept + 1] = v
         end
     end
-    matched_rule_caches = {}
+    route.rule_caches[cur_app] = kept
+    route.rebuild_index(cur_app)
 end
+
 
 local function add_route(verbs, path, handler, ...)
     if handler then
@@ -400,8 +496,6 @@ function route.validate(ctx, validations)
     return true
 end
 
---- Return rule list by reference (read-only iteration). Callers that mutate
---- must shallow-copy individual rules first.
 function route.get_route_caches(app)
     return route.rule_caches[app] or {}
 end
@@ -414,85 +508,162 @@ local function shallow_rule(rule)
     return r
 end
 
+local function cache_key(app, method, path)
+    return app .. "\0" .. method .. "\0" .. path
+end
+
+local function store_match_cache(key, value)
+    if match_cache_size >= MATCH_CACHE_MAX then
+        clear_match_caches()
+    end
+    matched_rule_caches[key] = value
+    match_cache_size = match_cache_size + 1
+end
+
+--- Collect candidate matches using indexes (exact → regex → prefix)
 function route.find_matched_route(app, method, path)
-    local route_caches = route.get_route_caches(app)
-    method = string_lower(method)
+    method = string_lower(method or "get")
+    local key = cache_key(app, method, path)
+    local cached = matched_rule_caches[key]
+    if cached then
+        return cached
+    end
+
+    local idx = get_index(app)
     local matched_route = {}
-    for _, rule in ipairs(route_caches) do
-        if tablex.find(rule.method, '*') or tablex.find(rule.method, method) then
-            if rule.matcher == '~' then
-                local iterator = ngx.re.gmatch(path, rule.regex, "i")
-                if iterator then
-                    local m = iterator()
-                    if m then
-                        m[0] = nil
-                        local copy = shallow_rule(rule)
-                        copy.vals = m
-                        copy.extra_path = strip(ngx.re.sub(path, rule.regex, ''), '/')
-                        table_insert(matched_route, copy)
-                    end
-                end
-            elseif rule.matcher == '=' and rule.path == path then
-                table_insert(matched_route, rule)
-            elseif rule.matcher == '*' then
-                local start_pos, end_pos = string_find(path, rule.path, 1, true)
-                if start_pos then
-                    local copy = shallow_rule(rule)
-                    copy.matched_len = end_pos
-                    copy.extra_path = string_sub(path, end_pos + 1)
-                    table_insert(matched_route, copy)
-                end
+
+    local function try_exact(m)
+        local map = idx.exact[m]
+        if map then
+            local rule = map[path]
+            if rule then
+                matched_route[#matched_route + 1] = rule
             end
         end
     end
+
+    local function try_regex(m)
+        local list = idx.regex[m]
+        if not list then
+            return
+        end
+        for i = 1, #list do
+            local rule = list[i]
+            -- "jo" = JIT + once; faster than gmatch for single match
+            local mres = ngx.re.match(path, rule.regex, "jo")
+            if mres then
+                mres[0] = nil
+                local copy = shallow_rule(rule)
+                copy.vals = mres
+                local rest = ngx.re.sub(path, rule.regex, "", "jo")
+                copy.extra_path = strip(rest or "", "/")
+                matched_route[#matched_route + 1] = copy
+            end
+        end
+    end
+
+    local function try_prefix(m)
+        local list = idx.prefix[m]
+        if not list then
+            return
+        end
+        for i = 1, #list do
+            local item = list[i]
+            local p = item.path
+            -- plain find from start only
+            if path == p or (string_find(path, p, 1, true) == 1) then
+                local copy = shallow_rule(item.rule)
+                copy.matched_len = #p
+                copy.extra_path = string_sub(path, #p + 1)
+                matched_route[#matched_route + 1] = copy
+            end
+        end
+    end
+
+    -- specific method then wildcard method rules
+    try_exact(method)
+    try_exact("*")
+    try_regex(method)
+    try_regex("*")
+    try_prefix(method)
+    try_prefix("*")
+
+    store_match_cache(key, matched_route)
     return matched_route
 end
 
-local function get_matched_rules(app, method, pathinfo)
-    return matched_rule_caches[app .. method .. pathinfo]
-end
+--- Select best match with priority: exact > regex > longest prefix
+function route.select_best_match(ctx, matched)
+    local best_match
+    local longest_match_len = 0
 
+    -- prefer exact
+    for i = 1, #matched do
+        local rule = matched[i]
+        if rule.matcher == "=" and route.validate(ctx, rule.validation) then
+            return rule
+        end
+    end
+
+    for i = 1, #matched do
+        local rule = matched[i]
+        if rule.matcher == "~" then
+            local path_params = lw_util.combine(rule.args or {}, rule.vals or {})
+            if route.validate(setmetatable(path_params, { __index = ctx }), rule.validation) then
+                if type(rule.responser) == "string" then
+                    local copy = shallow_rule(rule)
+                    copy.responser = string.gsub(rule.responser, "%$(%d+)", function(var)
+                        return path_params["$" .. var] or ""
+                    end)
+                    return copy
+                end
+                return rule
+            end
+        end
+    end
+
+    for i = 1, #matched do
+        local rule = matched[i]
+        if rule.matcher == "*" then
+            local len = rule.matched_len or 0
+            if len > longest_match_len and route.validate(ctx, rule.validation) then
+                longest_match_len = len
+                best_match = rule
+            end
+        end
+    end
+    return best_match
+end
 
 function route.run(ctx)
     local request = ctx.request
-    local request_method = request.method
-    ---@type log
-    local log = ctx.logger
-    local pathinfo = request.path_info
-    local matched = get_matched_rules(ctx.name, request_method, pathinfo)
-    if not matched then
-        matched = route.find_matched_route(ctx.name, request_method, pathinfo)
-        matched_rule_caches[ctx.name .. request_method .. pathinfo] = matched
+    local request_method = string_lower(request.method or ngx.var.request_method or "get")
+    local pathinfo = request.path_info or ngx.var.uri or "/"
+
+    local bkey = cache_key(ctx.name, request_method, pathinfo)
+    local cached_best = best_match_caches[bkey]
+    if cached_best ~= nil then
+        if cached_best == false then
+            return false, pathinfo
+        end
+        return true, cached_best
     end
-    local best_match
-    local longest_match_len = 0
-    for i = #matched, 1, -1 do
-        local rule = matched[i]
-        if rule.matcher == '=' and route.validate(ctx, rule.validation) then
-            best_match = rule
-            break
-        end
-        if rule.matcher == '~' then
-            local path_params = lw_util.combine(rule.args, rule.vals)
-            if route.validate(setmetatable(path_params, { __index = ctx }), rule.validation) then
-                best_match = rule
-                if type(best_match.responser) == 'string' then
-                    best_match.responser = string.gsub(best_match.responser, "%$(%d+)", function(var)
-                        return path_params['$' .. var]
-                    end)
-                end
-                break
-            end
-        end
-        if rule.matcher == '*' and rule.matched_len > longest_match_len and route.validate(ctx, rule.validation) then
-            best_match = rule
-        end
+
+    local matched = route.find_matched_route(ctx.name, request_method, pathinfo)
+    local best_match = route.select_best_match(ctx, matched)
+
+    if match_cache_size >= MATCH_CACHE_MAX then
+        clear_match_caches()
     end
+    best_match_caches[bkey] = best_match or false
+    match_cache_size = match_cache_size + 1
+
     if best_match then
         return true, best_match
     end
     return false, pathinfo
 end
+
 
 return setmetatable(route, {
     __newindex = function(_, route_rule, responser)

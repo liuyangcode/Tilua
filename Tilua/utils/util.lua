@@ -1,7 +1,17 @@
-local tablex = require "pl.tablex"
-local pretty = require('pl.pretty')
-local tablex_size = tablex.size
-local foreach = tablex.foreach
+-- Prefer pure helpers; soft-load Penlight only when available
+local helpers = require("Tilua.core.helpers")
+local ok_tablex, tablex = pcall(require, "pl.tablex")
+if not ok_tablex then tablex = nil end
+local ok_pretty, pretty = pcall(require, "pl.pretty")
+if not ok_pretty then pretty = nil end
+local tablex_size = tablex and tablex.size or function(t)
+    local n = 0
+    for _ in pairs(t or {}) do n = n + 1 end
+    return n
+end
+local foreach = (tablex and tablex.foreach) or function(t, fn, ...)
+    for k, v in pairs(t or {}) do fn(v, k, ...) end
+end
 local ngx = ngx
 local now, update_time = ngx.now, ngx.update_time
 local md5 = ngx.md5
@@ -9,8 +19,12 @@ local string = string
 local table = table
 local gsub = string.gsub
 local json = require("cjson.safe")
-local split = require("pl.utils").split
-local assert_arg = require("pl.utils").assert_arg
+local split = helpers.split
+local function assert_arg(n, val, typ)
+    if type(val) ~= typ then
+        error("argument " .. n .. " expected a " .. typ .. ", got " .. type(val), 2)
+    end
+end
 local ffi = require "ffi"
 
 local re_find = ngx.re.find
@@ -46,7 +60,8 @@ local lrandom = require "random"
 
 ---@class util
 local util = {
-    split = split
+    split = split,
+    bind1 = helpers.bind1,
 }
 
 util.is_windows = _G.package.config:sub(1, 1) == '\\'
@@ -66,10 +81,8 @@ util.is_windows = _G.package.config:sub(1, 1) == '\\'
 --
 -- print(hello("world"))     --> "Hello world"
 -- print(hello("sunshine"))  --> "Hello sunshine"
-function util.bind1 (fn, p)
-    return function(...)
-        return fn(p, ...)
-    end
+function util.bind1(fn, p)
+    return helpers.bind1(fn, p)
 end
 --- bind the second argument of the function to a value.
 -- @param fn a function of at least two values (may be an operator string)
@@ -156,7 +169,7 @@ end
 ---is_array
 ---@param t any
 function util.is_array(t)
-    return type(t) == "table"
+    return helpers.is_array(t)
 end
 
 local function pairsByKeys(t)
@@ -187,12 +200,17 @@ function util.extend(dest, src)
     assert_arg(1, dest, 'table')
     assert_arg(1, src, 'table')
     for k, v in pairs(src) do
-        if util.is_array(v) and util.is_array(dest[k]) then
-            tablex.update(dest[k], v)
+        if type(v) == 'table' and type(dest[k]) == 'table' and util.is_array(v) and util.is_array(dest[k]) then
+            if tablex and tablex.update then
+                tablex.update(dest[k], v)
+            else
+                helpers.extend(dest[k], v)
+            end
         else
             dest[k] = v
         end
     end
+    return dest
 end
 
 function util.prequire(module)
@@ -217,7 +235,13 @@ end
 function util.dump(...)
     local params = { ... }
     for i = 1, #params do
-        ngx.say(pretty.write(params[i]) .. '<br/>')
+        local s
+        if pretty and pretty.write then
+            s = pretty.write(params[i])
+        else
+            s = util.json_encode(params[i]) or tostring(params[i])
+        end
+        ngx.say(s .. '<br/>')
     end
 end
 util.CreateUUID = function
@@ -399,7 +423,10 @@ end
 ---@param array table
 ---@param val any
 function util.in_array(array, val)
-    return tablex.find(array, val) ~= nil
+    if tablex and tablex.find then
+        return tablex.find(array, val) ~= nil
+    end
+    return helpers.find(array, val) ~= nil
 end
 
 function util.get_now_ms()
@@ -456,14 +483,7 @@ end
 ---判断值是否为空
 ---@param val any
 function util.empty(val)
-    if util.is_array(val) then
-        return tablex_size(val) == 0
-    elseif util.is_string(val) then
-        return val == ''
-    elseif type(val) == 'nil' then
-        return true
-    end
-    return false
+    return helpers.empty(val)
 end
 --"mysql://username:passwd@32.254.48.88:10/DbName?param1=val1&param2=val2#utf8"
 function util.parse_url(url)

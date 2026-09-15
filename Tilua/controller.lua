@@ -32,5 +32,23 @@ function controller:_call()
     return 404
 end
 
+--- Business service: self:service("User") or self:service().User
+function controller:service(name)
+    local svc = self.ctx.service
+    if not name then
+        return svc
+    end
+    return svc[name]
+end
+
+--- Model shortcut
+function controller:model(name)
+    if not name then
+        return self.ctx.model
+    end
+    return self.ctx.model[name]
+end
+
 return controller
+
 

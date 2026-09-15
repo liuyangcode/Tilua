@@ -30,6 +30,100 @@ All notable changes to Tilua are documented in this file.
 
 - Initial MVC kit based on OpenResty (pre-refactor)
 
+## [0.6.0] - 2026-09-15
+
+### Database layer restructure
+```
+Tilua/database/
+  manager.lua      – pool by config hash
+  connection.lua   – connect / keepalive
+  transaction.lua  – nested-safe tx helper
+  query.lua        – SQL builders + bind
+  driver/mysql.lua – MySQL implementation
+```
+- `Tilua.db` and `Tilua.db.driver*` remain as compatibility shims
+
+## [0.5.0] - 2026-09-15
+
+### Service layer
+- `Tilua.service.base` – business logic base (model/db/cache/transaction)
+- `Tilua.service` manager – lazy load `app.service.Name`
+- `App:get_service` / `Controller:service` / `Controller:model`
+- docs/SERVICE.md
+
+## [0.4.0] - 2026-09-15
+
+### Extension architecture
+- `Tilua.core.plugin` – plugin registry & hook bus
+- `Tilua.core.channel` – HTTP / WebSocket / CLI entry multiplex
+- Stubs: `Tilua.openapi`, `Tilua.cli`, `Tilua.websocket`
+- App:use / App:channel / App:run_cli; lifecycle boots plugins from config.plugins
+- docs/EXTENSIONS.md
+
+## [0.3.0] - 2026-09-15
+
+### Soft delete
+- `soft_delete = true` or `"deleted_at"` column on model
+- Auto scope on select/find; `with_trashed` / `only_trashed` / `restore` / `force_delete`
+
+### Relations
+- `hasOne` / `hasMany` / `belongsTo` / `relation(name)`
+- `with(name, rows)` batch eager load
+- Configure via `self.relations = { posts = { type="hasMany", model="Post", foreign_key="user_id" } }`
+
+## [0.2.9] - 2026-09-15
+
+### ORM query UX + hydration
+- `Tilua.model.result` Row objects: get/set/to_table/save
+- model: `first`, `get`, `find_by`, `value`, `pluck`, `exists`, `get_list`, `chunk`
+- Optional `config.orm_hydrate = true` for automatic hydration on get_list
+- Fixed stringx.strip after Penlight removal
+
+## [0.2.8] - 2026-09-15
+
+### ORM continued
+- Process-local schema field cache (worker memory + optional Redis)
+- MySQL getFields memoized per worker
+- `query_bind` / `execute_bind` placeholder `?` binding via quote_sql_str
+- escapeString prefers ngx.quote_sql_str
+- initConnect / insert_id handling improvements
+- Expanded tablex compatibility shim in model
+
+## [0.2.7] - 2026-09-15
+
+### ORM
+- Restored model + db driver sources into tree
+- Removed hard Penlight deps from model/driver/mysql (helpers)
+- Field membership hash set for `_facade` filtering
+- MySQL: configurable timeout/pool_size/keepalive; safer connect
+- `parseKey` adds identifier backticks
+
+## [0.2.6] - 2026-09-15
+
+### Router performance
+- Method-indexed route tables: exact map (O(1)), sorted prefixes, regex lists
+- `_method_set` replaces linear method search
+- `ngx.re.match(..., "jo")` instead of gmatch for single capture
+- Best-match cache + candidate cache with size cap (2048)
+- Prefix match anchored at path start; priority exact > regex > longest prefix
+- `rebuild_index` on init / add / clear
+
+## [0.2.5] - 2026-09-15
+
+### Dispatcher + JSON
+- Auto `response:json` for table returns when `enable_json_errors` or request wants JSON
+- Status+message / status+table forms; passthrough if handler returns response object
+- Structured errors respect JSON preference
+
+### CSRF
+- Auto-check unsafe methods; session + double-submit cookie (SameSite configurable)
+- Accepts body field / header / cookie; rotates token after success
+- View helpers `__CSRF__` and `__CSRF_META__`
+
+### util.lua
+- Soft-load Penlight; split/bind1/empty/is_array via helpers
+- dump/extend work without Penlight
+
 ## [0.2.4] - 2026-09-15
 
 ### Request / Response

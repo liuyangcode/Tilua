@@ -79,6 +79,11 @@ function M.init_by_lua(app)
         app.view_engine.template.caching(not app.debug)
     end
 
+    -- Extension plugins (OpenAPI / CLI / WebSocket / custom)
+    local Plugin = require("Tilua.core.plugin")
+    Plugin.load_from_config(app)
+    Plugin.boot(app)
+
     cfg.log = cfg.log or {}
     cfg.log.path = path_join(app.path, cfg.log.path or "log")
 
@@ -103,6 +108,8 @@ end
 --- init_worker_by_lua
 function M.init_worker_by_lua(app)
     ngx.log(ngx.DEBUG, "Tilua.init_worker_by_lua ", app.name or "?")
+    local Plugin = require("Tilua.core.plugin")
+    Plugin.emit("on_worker_init", app)
     if type(app.on_init_worker) == "function" then
         app:on_init_worker()
     end

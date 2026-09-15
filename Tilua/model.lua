@@ -5,8 +5,7 @@
 ---
 ---
 local lw_utils = require('Tilua.utils.util')
-local helpers = require("Tilua.core.helpers")
-local bind1 = helpers.bind1
+local bind1 = require("Tilua.core.helpers").bind1
 local rawget, type, setmetatable = rawget, type, setmetatable
 local model_class = require('Tilua.model.model')
 

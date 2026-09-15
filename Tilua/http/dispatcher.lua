@@ -1,3 +1,6 @@
+--- Tilua.http.dispatcher (v0.2.5)
+--- Aligns handler return values with response:json / structured errors.
+
 local ngx = ngx
 local class = require("Tilua.utils.class")
 local lw_util = require("Tilua.utils.util")
@@ -11,20 +14,27 @@ local reverse = helpers.reverse
 local bind1 = helpers.bind1
 local reduce = helpers.reduce
 
-
 ---@class dispatch
 local dispatch = class.define()
 
----_construct
----@param app app
 function dispatch:_construct(app)
-    ---@type app
     self.ctx = app
 end
 
----make_chain_call
----@param midware table
----@param handler function
+local function wants_json(ctx)
+    if ctx.config and ctx.config.enable_json_errors then
+        return true
+    end
+    local req = ctx.request
+    if req and type(req.wants_json) == "function" then
+        local ok, v = pcall(req.wants_json, req)
+        if ok and v then
+            return true
+        end
+    end
+    return false
+end
+
 function dispatch:make_chain_call(midware, handler)
     local next_fn = function()
         return self:prepare_response(handler())
@@ -42,32 +52,81 @@ end
 function dispatch:prepare_response(...)
     local res1 = select(1, ...)
     local res2 = select(2, ...)
+    local res3 = select(3, ...)
     local res4 = select(4, ...)
     local response = self.ctx.response
     local tresponse = type(res1)
     local tcontext = type(res2)
+    local as_json = wants_json(self.ctx)
+
+    -- already the response object
+    if tresponse == "table" and res1.send and res1.set_body then
+        return res1
+    end
 
     -- Structured TiluaError
     if errors.is_error(res1) then
-        local as_json = self.ctx.config and self.ctx.config.enable_json_errors
         return errors.apply(response, res1, as_json)
     end
 
+    -- jump(url, success, message, wait)
     if res4 or tcontext == "boolean" then
         response:jump(...)
-    elseif tresponse == "number" then
-        response.status = res1
-    elseif not response.body then
-        if tresponse == "table" then
-            if #res1 == 2 and type(res1[1]) == "string" and type(res1[2]) == "table" then
-                response:render(res1[1], res1[2])
-            elseif not res1.new then
-                response.body = res1
+        return response
+    end
+
+    -- bare status code
+    if tresponse == "number" then
+        if response.set_status then
+            response:set_status(res1)
+        else
+            response.status = res1
+        end
+        -- optional message as body
+        if type(res2) == "string" then
+            if as_json then
+                response:json({ error = { status = res1, message = res2 } }, res1)
+            else
+                response:set_body(res2)
             end
-        elseif tresponse == "string" then
-            response:render(res1, res2 or {})
+        elseif type(res2) == "table" and as_json then
+            response:json(res2, res1)
+        end
+        return response
+    end
+
+    if response.body then
+        return response
+    end
+
+    if tresponse == "table" then
+        -- { "view", context } render form
+        if #res1 == 2 and type(res1[1]) == "string" and type(res1[2]) == "table" then
+            response:render(res1[1], res1[2])
+        elseif res1.new then
+            -- class-like table, ignore
+        elseif as_json or (self.ctx.request and self.ctx.request.is_json and self.ctx.request:is_json()) then
+            local status = (type(res2) == "number" and res2) or (response.status > 0 and response.status) or 200
+            response:json(res1, status)
+        else
+            -- non-API: set as body (may auto-json if response supports table)
+            response.body = res1
+        end
+    elseif tresponse == "string" then
+        -- view name + context, or plain text when second is not table
+        if tcontext == "table" or res2 == nil then
+            if res2 == nil and as_json then
+                response:text(res1)
+            elseif tcontext == "table" then
+                response:render(res1, res2)
+            else
+                response:render(res1, {})
+            end
+        else
+            response:text(res1)
         end
     end
+
     return response
 end
 
@@ -81,7 +140,6 @@ local function get_bind_args(router)
         end
     end
     local path_params = split(router.extra_path or "", "/", true)
-    -- drop empty segments from leading/trailing slash
     for _, p in ipairs(path_params) do
         if p ~= "" then
             table.insert(bind_args, p)
@@ -91,7 +149,9 @@ local function get_bind_args(router)
 end
 
 local function shallow_copy_list(t)
-    if not t then return {} end
+    if not t then
+        return {}
+    end
     local r = {}
     for i, v in ipairs(t) do
         r[i] = v
@@ -118,9 +178,6 @@ function dispatch:create_responser(router)
     end)
 end
 
----run
----@param matched boolean
----@param router table
 function dispatch:run(matched, router)
     local responser
     if matched then
@@ -133,11 +190,12 @@ function dispatch:run(matched, router)
     return self:prepare_response(responser())
 end
 
----find_handler
----@param router table
+function dispatch:to_handler(fn)
+    self.handler = fn
+end
+
 function dispatch:find_handler(router)
     local responser = router.responser
-    -- responser string like "controller.Index@index"
     if string_find(responser, "@", 1, true) then
         local resp = split(responser, "@", true)
         local controller = resp[1]
@@ -153,11 +211,12 @@ function dispatch:find_handler(router)
             end
         end
     else
-        -- MVC path style /Index/index/...
         local parts = split(strip(router.path .. (router.extra_path or ""), "/"), "/", true)
         local cleaned = {}
         for _, p in ipairs(parts) do
-            if p ~= "" then cleaned[#cleaned + 1] = p end
+            if p ~= "" then
+                cleaned[#cleaned + 1] = p
+            end
         end
         local controller = cleaned[1] or "index"
         local action = cleaned[2] or "index"
