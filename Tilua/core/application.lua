@@ -44,7 +44,8 @@ function Application:register_services()
     if self.config.db then
         self.container:singleton("db", function()
             local DatabaseManager = require("Tilua.database.manager")
-            return DatabaseManager(self.config.db)
+            local logger = self.container:has("logger") and self.container:get("logger") or nil
+            return DatabaseManager(self.config.db, self.container, logger)
         end)
     end
     if self.config.cache then
