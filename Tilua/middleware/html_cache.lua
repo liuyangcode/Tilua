@@ -1,30 +1,36 @@
 
 local path = require("Tilua.utils.path")
-local parse_rule = require("Tilua.route").parse_rule
-local parse_path_to_regex = require("Tilua.route").parse_path_to_regex
+local parse_rule = require("Tilua.http.router").parse_rule
+local parse_path_to_regex = require("Tilua.http.router").parse_path_to_regex
 local string_lower = string.lower
 local combine = require("Tilua.utils.util").combine
+local helpers = require("Tilua.core.helpers")
 local string_sub = string.sub
 local re_match = ngx.re.match
 local re_gsub = ngx.re.gsub
-local tablex = require('pl.tablex')
 
-local base = require("Tilua.midware.base")
+local base = require("Tilua.middleware.base")
 ---@class html_cache
-local html_cache = base.define()
+local html_cache = (type(base.define) == "function" and base.define()) or base
 local rules = {}
 local caches = {}
 
 function html_cache:_construct(ctx, config)
+    local defaults = {
+        type = "memory",
+        enable = false,
+        lifetime = 3600,
+        rules = {},
+    }
+    local merged = helpers.extend({}, defaults)
+    if config then
+        helpers.extend(merged, config)
+    end
     local instance = {
         ctx = ctx,
-        config = tablex.update({
-            type = 'memory',
-            enable = false,
-            lifetime = 3600,
-            rules = {}
-        }, config or {})
+        config = merged,
     }
+
     if not rules[instance.ctx.name] then
         rules[instance.ctx.name] = {}
         for rule, re_path in pairs(instance.config.rules) do
@@ -52,14 +58,14 @@ function html_cache:match_rule()
     local method = string_lower(self.ctx.request.method)
     local pathinfo = self.ctx.request.path_info
     for _, rule in ipairs(cur_rules) do
-        if tablex.find(rule.method, method) or tablex.find(rule.method, '*') then
+        if helpers.find(rule.method, method) or helpers.find(rule.method, '*') then
             local mat = re_match(pathinfo, rule.path.regex_path, 'jo')
             local trule = type(rule.path.rule)
             if mat then
                 local params = combine(rule.path.params, mat)
                 if trule == 'string' then
                     local newpath, _, _ = re_gsub(rule.path.rule, '(\\$[a-z0-9A-Z]+)', function(m)
-                        local index = tablex.find(rule.path.params, m[1]) or tablex.find(rule.path.params, string_sub(m[1], 2))
+                        local index = helpers.find(rule.path.params, m[1]) or helpers.find(rule.path.params, string_sub(m[1], 2))
                         return mat[index] or ''
                     end, 'jox')
                     return newpath, rule

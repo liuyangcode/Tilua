@@ -4,26 +4,32 @@ local config = {
     html_cache_time = 60,
     html_cache_rules = {},
     html_cache_file_ext = '.html',
-    midware_alias = {
-        mvc = 'Tilua.midware.mvc_router',
-        session = 'Tilua.midware.session',
-        json = 'Tilua.midware.json_response',
-        body_parser = 'Tilua.midware.body_parser',
-        html_cache = 'Tilua.midware.html_cache',
-        csrf = 'Tilua.midware.csrf_token'
+    -- Preferred new keys (middleware_*) + legacy keys (midware_*) for compatibility
+    middleware_alias = {
+        mvc         = 'Tilua.middleware.mvc_router',
+        session     = 'Tilua.middleware.session',
+        json        = 'Tilua.middleware.json_response',
+        body_parser = 'Tilua.middleware.body_parser',
+        html_cache  = 'Tilua.middleware.html_cache',
+        csrf        = 'Tilua.middleware.csrf_token',
     },
-    midware_group = {
-        api = {
-            'session',
-            'json'
-        },
-        web = {
-            'body_parser',
-            'session',
-            'json',
-            'html_cache'
-        }
+    midware_alias = {  -- legacy alias
+        mvc         = 'Tilua.middleware.mvc_router',
+        session     = 'Tilua.middleware.session',
+        json        = 'Tilua.middleware.json_response',
+        body_parser = 'Tilua.middleware.body_parser',
+        html_cache  = 'Tilua.middleware.html_cache',
+        csrf        = 'Tilua.middleware.csrf_token',
     },
+    middleware_group = {
+        api = { 'session', 'json' },
+        web = { 'body_parser', 'session', 'json', 'html_cache' },
+    },
+    midware_group = {  -- legacy
+        api = { 'session', 'json' },
+        web = { 'body_parser', 'session', 'json', 'html_cache' },
+    },
+
     bodyparser = {
 
     },
@@ -31,8 +37,15 @@ local config = {
         type = 'file',
         path = 'log',
         max_size = 2 * 1024 * 1024,
+        -- Prefer INFO or WARN in production
         level = 'DEBUG'
     },
+    -- Production-oriented defaults (override in app config)
+    request_timeout = 60,          -- seconds hint for upstream / app logic
+    body_read_timeout = 10,
+    enable_json_errors = false,    -- set true for API apps
+    health_path = '/health',
+
     multipart = {
         field_name_size = 100,
         field_size = '100kb',
@@ -71,7 +84,8 @@ local config = {
     },
     default_charset = 'utf-8', --默认输出编码
     default_content_type = 'text/html', --默认输出编码
-    dispatch = 'Tilua.dispatch',
+    dispatch = 'Tilua.http.dispatcher',  -- new canonical path (shim still works)
+
     route = {
     },
     SHDICIT_NAME = 'app_test_cache',

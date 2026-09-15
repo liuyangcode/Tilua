@@ -4,9 +4,11 @@
 --- DateTime: 2020/5/30 6:34 下午
 ---
 local lw_util = require('Tilua.utils.util')
-local bind1 = require("pl.utils").bind1
-local deepcopy = require("pl.tablex").deepcopy
+local helpers = require("Tilua.core.helpers")
+local bind1 = helpers.bind1
+local deepcopy = helpers.deepcopy
 local rawget, type, setmetatable = rawget, type, setmetatable
+
 ---@class cache_manager
 local manager = {}
 

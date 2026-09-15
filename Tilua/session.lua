@@ -1,296 +1,416 @@
+--- Tilua.session
+--- Optimized session core (v0.2.2)
+--- Consistent colon-style API, safer GC, fixed encode/decode bugs,
+--- optional lazy write, stronger id validation.
+
 local ngx = ngx
-local md5 = ngx.md5
+local ngx_time = ngx.time
 local ngx_cookie_time = ngx.cookie_time
 local format = string.format
-local ngx_time = ngx.time
-local random_string = require("Tilua.utils.util").random_string
----@class session
-local session = {}
+local type = type
+local helpers = require("Tilua.core.helpers")
 
----检查session id 是否有效
----@param key string
----@return boolean
-function session.valid_key(self, key)
+local session = {}
+session.__index = session
+
+-- session_status: -1 not ready, 0 closed, 1 active
+local STATUS_DISABLED = -1
+local STATUS_CLOSED   = 0
+local STATUS_ACTIVE   = 1
+
+local function default_random_id()
+    local ok, util = pcall(require, "Tilua.utils.util")
+    if ok and util.random_string then
+        return util.random_string()
+    end
+    -- fallback: md5 of time + random
+    return ngx.md5(tostring(ngx.now()) .. tostring(math.random(1, 1e9)))
+end
+
+--- Validate session id shape (non-empty, reasonable charset/length)
+function session:valid_key(key)
+    if type(key) ~= "string" or key == "" then
+        return false
+    end
+    if #key < 8 or #key > 128 then
+        return false
+    end
+    -- allow hex / base64url-ish ids
+    if not key:match("^[%w%-%_%=]+$") then
+        return false
+    end
     return true
 end
 
----垃圾回收
----@param immediate boolean 是否立即清理
-function session.gc(self, immediate)
-    local num = -1
-    if self.save_handler then
-        if immediate then
-            self.save_handler:gc(self.config.gc_maxlifetime, num)
-            return num
-        end
-        math.randomseed(tostring(ngx.now()):reverse():sub(1, 7))
-        local nrand = self.config.gc_divisor * math.random()
-        if self.config.gc_probability > 0 and nrand < self.config.gc_probability then
-            self.log:debug('start garbage collet')
-            self.save_handler:gc(self.config.gc_maxlifetime, num)
+function session:create_id()
+    if self.save_handler and self.save_handler.create_id then
+        local id = self.save_handler:create_id()
+        if id and self:valid_key(id) then
+            return id
         end
     end
+    return default_random_id()
 end
----初始化记录
-function session.track_init(self)
-    self.session_vars = '{}'
-    self._session = {}
-end
----set
----@param name any
----@param value any
----@return boolean
-function session.set(self, name, value)
-    if type(name) == 'string' then
-        self._session[name] = value
-    elseif type(name) == 'table' then
-        for key, val in pairs(name) do
-            self._session[key] = val
+
+--- Probabilistic GC; avoid reseeding RNG every request
+function session:gc(immediate)
+    if not self.save_handler or not self.save_handler.gc then
+        return
+    end
+    if immediate then
+        self.save_handler:gc(self.config.gc_maxlifetime, -1)
+        return
+    end
+    local prob = self.config.gc_probability or 0
+    local divisor = self.config.gc_divisor or 100
+    if prob <= 0 or divisor <= 0 then
+        return
+    end
+    -- use ngx.worker.pid + time bits as entropy without math.randomseed
+    local n = (ngx.now() * 1000 + ngx.worker.pid()) % divisor
+    if n < prob then
+        if self.log then
+            self.log:debug("session gc triggered")
         end
-    else
-        return self
+        self.save_handler:gc(self.config.gc_maxlifetime, -1)
+    end
+end
+
+function session:track_init()
+    self.session_vars = ""
+    self._session = {}
+    self._dirty = false
+end
+
+function session:set(name, value)
+    if type(name) == "string" then
+        self._session[name] = value
+        self._dirty = true
+    elseif type(name) == "table" then
+        for k, v in pairs(name) do
+            self._session[k] = v
+        end
+        self._dirty = true
     end
     return self
 end
 
-function session.unset(self, name)
-    if type(name) == 'string' then
+function session:unset(name)
+    if type(name) == "string" then
         self._session[name] = nil
-    elseif type(name) == 'table' then
-        for _, val in ipairs(name) do
-            self._session[val] = nil
+        self._dirty = true
+    elseif type(name) == "table" then
+        for _, key in ipairs(name) do
+            self._session[key] = nil
         end
-    else
-        return self
+        self._dirty = true
     end
     return self
 end
----get
----@param name string
----@return any
-function session.get(self, name)
+
+function session:get(name)
     return self._session[name]
 end
 
-function session.encode(self, data)
-    if self.session_vars then
-        assert(self, self.save_handler.serializer, 'Unknown session.serialize_handler. Failed to encode session object')
-        return self.save_handler.serializer.encode(data)
-    end
-end
----销毁session
-function session.destroy(self)
-    if self.session_status ~= 1 then
-        return false
-    end
-    if self.id and not self.save_handler:destroy(self.config.name, self.id) then
-        return false
-    end
-    return true
+function session:all()
+    return self._session
 end
 
----decode
----@param self table
----@param val cache
-function session.decode(self, val)
-    assert(self.save_handler.serializer, 'Unknown session.serialize_handler. Failed to decode session object')
-    local result = self.save_handler.serializer.decode(val)
-    if result == false then
-        session.destroy()
-        session.track_init()
-        return false
+function session:encode(data)
+    local ser = self.serialize_handler
+    assert(ser and ser.encode, "session serializer.encode missing")
+    return ser.encode(data)
+end
+
+function session:decode(val)
+    local ser = self.serialize_handler
+    assert(ser and ser.decode, "session serializer.decode missing")
+    local ok, result = pcall(ser.decode, val)
+    if not ok or result == false or result == nil then
+        self:destroy()
+        self:track_init()
+        return {}
     end
     return result
 end
----session启动
----@param request request
-function session.start(self, request)
-    self.log:debug('session start with session name ',self.config.name)
-    if self.session_status == 1 then
-        return false
-    elseif self.session_status == -1 then
-        if not self.save_handler then
-            self.log:record(self.log.ERR, 'Cannot find save handler - session startup failed')
-        end
-        if not self.serialize_handler then
-            self.log:record(self.log.ERR, "Cannot find serialization handler - session startup failed")
-        end
-        self.session_status = 0
-    end
-    if self.session_status == 0 then
-        self.send_cookie = self.config.use_cookies or self.config.use_only_cookies
-    end
-    if self.config.use_cookies then
-        self.id = request.cookie[self.config.name]
-        if self.id then
-            self.send_cookie = 0
-        end
-    elseif not self.config.use_only_cookies then
-        self.id = request.body[self.config.name] or request.header[self.config.name]
-        if self.id then
-            self.send_cookie = 0
-        end
-    end
-    local referer = request.header.referer
-    if self.id and referer and not string.find(referer, self.config.referer_check, 1, true) then
-        self.id = nil
-    end
-    if not session.valid_key(self, self.id) then
-        self.id = nil
-    end
-    if not session.init(self) then
-        self.session_status = 0
-        if self.id then
-            self.id = nil
-        end
+
+function session:destroy()
+    if self.session_status ~= STATUS_ACTIVE then
         return false
     end
+    if self.id and self.save_handler and self.save_handler.destroy then
+        self.save_handler:destroy(self.config.name, self.id)
+    end
+    self:track_init()
+    self.id = nil
+    self.send_cookie = self.config.use_cookies and 1 or 0
     return true
 end
 
-function session.reset_id(self)
-    if not self.id then
-        assert(false, "Cannot set session ID - session ID is not initialized")
+function session:abort()
+    if self.session_status == STATUS_ACTIVE then
+        if self.save_handler and self.save_handler.close then
+            self.save_handler:close()
+        end
+        self.session_status = STATUS_CLOSED
+        return true
     end
-    if self.config.use_cookies and self.send_cookie then
-        session.send_cookie(self)
+    return false
+end
+
+function session:reset_id()
+    if not self.id then
+        return false
+    end
+    if self.config.use_cookies and self.send_cookie and self.send_cookie ~= 0 then
+        self:send_cookie_header()
         self.send_cookie = 0
     end
     return true
 end
 
-function session.init(self)
-    self.session_status = 1
-    if self.save_handler:open() == false then
-        session.abort(self)
+function session:init()
+    self.session_status = STATUS_ACTIVE
+
+    if self.save_handler.open and self.save_handler:open() == false then
+        self:abort()
         return false
     end
+
     if not self.id then
-        self.id = session.create_id(self)
+        self.id = self:create_id()
         if not self.id then
-            session.abort(self)
+            self:abort()
             return false
         end
         if self.config.use_cookies then
             self.send_cookie = 1
         end
-    elseif self.config.use_strict_mode and
-            self.save_handler.validate_id and
-            self.save_handler:validate_id(self.id) == false then
-        self.id = self.save_handler:create_id()
-        if not self.id then
-            self.id = session.create_id(self)
-        end
+    elseif self.config.use_strict_mode
+        and self.save_handler.validate_id
+        and self.save_handler:validate_id(self.id) == false then
+        self.id = self:create_id()
         if self.config.use_cookies then
             self.send_cookie = 1
         end
     end
-    if session.reset_id(self) == false then
-        session.abort(self)
+
+    if not self:reset_id() then
+        self:abort()
         return false
     end
-    session.track_init(self)
-    local val = self.save_handler:read(self.config.name, self.id, self.config.gc_maxlifetime)
-    if val == false then
-        session.abort(self)
-        return false
+
+    self:track_init()
+
+    local val = ""
+    if self.save_handler.read then
+        local ok, data = pcall(self.save_handler.read, self.save_handler, self.config.name, self.id, self.config.gc_maxlifetime)
+        if not ok then
+            if self.log then
+                self.log:error("session read failed: ", tostring(data))
+            end
+            self:abort()
+            return false
+        end
+        val = data or ""
     end
-    session.gc(self, false)
-    self.session_vars = {}
-    if #val > 0 then
-        if self.config.lazy_write > 0 then
+
+    self:gc(false)
+
+    if type(val) == "string" and #val > 0 then
+        if self.config.lazy_write and self.config.lazy_write > 0 then
             self.session_vars = val
         end
-        self._session = session.decode(self, val)
+        self._session = self:decode(val)
+        self._dirty = false
     end
     return true
 end
----session关闭
-function session.close(self)
-    self.flush(self, 1)
+
+function session:start(request)
+    if self.log then
+        self.log:debug("session start name=", self.config.name)
+    end
+
+    if self.session_status == STATUS_ACTIVE then
+        return true
+    end
+
+    if not self.save_handler then
+        if self.log then
+            self.log:error("session save_handler missing")
+        end
+        return false
+    end
+
+    if not self.serialize_handler then
+        -- default JSON serializer
+        local cjson = require("cjson.safe")
+        self.serialize_handler = {
+            encode = function(d) return cjson.encode(d) or "{}" end,
+            decode = function(d) return cjson.decode(d) end,
+        }
+    end
+
+    self.session_status = STATUS_CLOSED
+    self.send_cookie = (self.config.use_cookies or self.config.use_only_cookies) and 1 or 0
+
+    -- resolve id from cookie / body / header
+    self.id = nil
+    if self.config.use_cookies and request and request.cookie then
+        self.id = request.cookie[self.config.name]
+        if self.id then
+            self.send_cookie = 0
+        end
+    elseif not self.config.use_only_cookies and request then
+        local body = request.body or request._body
+        local header = request.header
+        if type(body) == "table" then
+            self.id = body[self.config.name]
+        end
+        if not self.id and type(header) == "table" then
+            self.id = header[self.config.name]
+        end
+        if self.id then
+            self.send_cookie = 0
+        end
+    end
+
+    -- optional referer check
+    local check = self.config.referer_check
+    if self.id and check and check ~= "" and request and request.header then
+        local referer = request.header.referer or request.header.Referer
+        if referer and not string.find(referer, check, 1, true) then
+            self.id = nil
+        end
+    end
+
+    if self.id and not self:valid_key(self.id) then
+        self.id = nil
+    end
+
+    if not self:init() then
+        self.session_status = STATUS_CLOSED
+        self.id = nil
+        return false
+    end
+    return true
 end
 
-function session.abort(self)
-    if self.session_status == 1 then
+function session:save_current_state(write)
+    if not write then
+        if self.save_handler and self.save_handler.close then
+            self.save_handler:close()
+        end
+        return true
+    end
+
+    if type(self._session) ~= "table" then
+        return false
+    end
+
+    local val = self:encode(self._session)
+    if not val or val == "" then
+        val = "{}"
+    end
+
+    local ok, ret, err
+    -- skip write if lazy and unchanged
+    if self.config.lazy_write and self.config.lazy_write > 0
+        and not self._dirty
+        and self.session_vars
+        and val == self.session_vars
+        and self.save_handler.update_timestamp then
+        ok, ret = pcall(self.save_handler.update_timestamp, self.save_handler, self.config.name, self.id, val, self.config.gc_maxlifetime)
+    else
+        ok, ret = pcall(self.save_handler.write, self.save_handler, self.config.name, self.id, val, self.config.gc_maxlifetime)
+    end
+
+    if not ok then
+        if self.log then
+            self.log:error("session write failed: ", tostring(ret))
+        end
+        return false
+    end
+
+    self.session_vars = val
+    self._dirty = false
+
+    if self.save_handler and self.save_handler.close then
         self.save_handler:close()
-        self.session_status = 0
+    end
+    return ret ~= false
+end
+
+function session:flush(write)
+    if self.session_status == STATUS_ACTIVE then
+        self:save_current_state(write and true or false)
+        self.session_status = STATUS_CLOSED
         return true
     end
     return false
 end
 
----flush
----@param self table
----@param write string
-function session.flush(self, write)
-    if self.session_status == 1 then
-        session.save_current_state(self, write)
-        self.session_status = 0
-        return true
-    end
-    return false
+function session:close()
+    return self:flush(true)
 end
 
-function session.save_current_state(self, write)
-    local ret = false
-    if write then
-        if type(self._session) == 'table' then
-            local val = session.encode(self, self._session)
-            if val ~= '{}' then
-                if self.config.lazy_write and self.session_vars and self.save_handler.update_timestamp
-                        and #val == #self.session_vars and val == self.session_vars then
-                    ret = self.save_handler:update_timestamp(self.config.name, self.id, val, self.config.gc_maxlifetime)
-                else
-                    ret = self.save_handler:write(self.config.name, self.id, val, self.config.gc_maxlifetime)
-                end
-            else
-                ret = self.save_handler:write(self.config.name, self.id, '{}', self.config.gc_maxlifetime)
-            end
-        end
-        if not ret then
-            assert(false, "Failed to write session data using user defined save handler.")
-        end
-    end
-    if self.save_handler then
-        self.save_handler:close()
-    end
-end
-
-function session.cookie_to_send(self)
+function session:cookie_to_send()
     return self._cookies
 end
 
----send_cookie
----@param self table
-function session.send_cookie(self)
-    local cookie_format = '%s=%s;path=%s;expires=%s;domain=%s;%s'
-    self._cookies = format(cookie_format, self.config.name, self.id, self.config.cookie_path,
-            self.config.cookie_expires > 0 and ngx_cookie_time(ngx_time() + 60 * self.config.cookie_expires) or 0, self.config.cookie_domain, self.config.cookie_http_only and 'httponly;' or '')
+function session:send_cookie_header()
+    if not self.id then
+        return false
+    end
+    local cookie = require("Tilua.http.cookie")
+    local expires_min = tonumber(self.config.cookie_expires) or 0
+    local max_age = nil
+    if expires_min > 0 then
+        max_age = expires_min * 60 -- historical config unit: minutes
+    end
+    self._cookies = cookie.build({
+        name = self.config.name,
+        value = self.id,
+        path = self.config.cookie_path or "/",
+        domain = self.config.cookie_domain,
+        max_age = max_age,
+        httponly = self.config.cookie_http_only ~= false,
+        secure = self.config.cookie_secure,
+        samesite = self.config.cookie_same_site or self.config.cookie_samesite or "Lax",
+        raw = true,
+    })
     return true
 end
 
-local  function new(self,cfg, ctx)
+
+-- keep old name used by middleware
+session.send_cookie = session.send_cookie_header
+
+local function new(_, cfg, ctx)
+    cfg = cfg or {}
+    local save_handler = cfg.save_handler
+    local serialize_handler = nil
+    if type(save_handler) == "table" then
+        serialize_handler = save_handler.serializer
+    end
+
     local sess = {
-        log = ctx.logger,
+        log = ctx and ctx.logger or nil,
         id = nil,
-        session_status = 0,
-        session_vars = '',
+        session_status = STATUS_CLOSED,
+        session_vars = "",
         send_cookie = 1,
         _session = {},
-        _cookies = {},
-        save_handler = cfg.save_handler,
-        serialize_handler = cfg.save_handler.serializer,
-        config = cfg or nil
+        _cookies = nil,
+        _dirty = false,
+        save_handler = save_handler,
+        serialize_handler = serialize_handler or cfg.serialize_handler,
+        config = cfg,
     }
-    return setmetatable(sess, {
-        __index = session
-    })
+    return setmetatable(sess, session)
 end
 
-function session.create_id(self)
-    return random_string()
-end
-setmetatable(session,{
-    __call = new
-})
+setmetatable(session, { __call = new })
+
 return session

@@ -5,9 +5,11 @@
 ---
 local require = require
 local lw_utils = require('Tilua.utils.util')
-local bind1 = require("pl.utils").bind1
-local deepcopy = require("pl.tablex").deepcopy
+local helpers = require("Tilua.core.helpers")
+local bind1 = helpers.bind1
+local deepcopy = helpers.deepcopy
 local rawget, type, setmetatable, string_lower, string_sub = rawget, type, setmetatable, string.lower, string.sub
+
 ---@class db_manager
 local manager = {}
 

@@ -12,9 +12,29 @@ local path_exists = path.isdir
 
 local M = {}
 
+local function ensure_dir(p)
+    if path_exists(p) then
+        return true
+    end
+    -- try Penlight if present, else shell mkdir
+    local ok_pl, pl_dir = pcall(require, "pl.dir")
+    if ok_pl and pl_dir.makepath then
+        local _, err = pl_dir.makepath(p)
+        if err then
+            error("cannot create directory " .. p .. ": " .. tostring(err))
+        end
+        return true
+    end
+    local cmd = "mkdir -p " .. p:gsub("'", "'\\''")
+    local ret = os.execute(cmd)
+    if ret ~= 0 and ret ~= true then
+        error("cannot create directory " .. p)
+    end
+    return true
+end
+
 local function init_view_engine(root)
     local template = require("resty.template")
-    local makepath = require("pl.dir").makepath
 
     local view_path       = path_join(root, "view", "")
     local cache_path      = path_join(root, "cache", "")
@@ -22,13 +42,9 @@ local function init_view_engine(root)
     local html_cache_path = path_join(cache_path, "html", "")
 
     for _, p in ipairs({ cache_path, view_cache_path, html_cache_path }) do
-        if not path_exists(p) then
-            local _, err = makepath(p)
-            if err then
-                error("cannot create directory " .. p .. ": " .. tostring(err))
-            end
-        end
+        ensure_dir(p)
     end
+
 
     local view_engine = template.new({ root = root })
     return {

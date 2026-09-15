@@ -7,15 +7,32 @@ local string, table, require = string, table, require
 local string_sub = string.sub
 local string_find = string.find
 local re_match = ngx.re.match
-local stringx = require('pl.stringx')
-local tablex = require('pl.tablex')
-local strip = stringx.strip
-local split = require('pl.utils').split
-local unpack = require('pl.utils').unpack
-local pretty = require("pl.pretty")
+
+-- Prefer pure helpers (Phase 3); soft-fallback to Penlight when present
+local helpers = require("Tilua.core.helpers")
+local strip = helpers.strip
+local split = helpers.split
+local unpack = table.unpack or unpack
+local tablex = {
+    find = helpers.find,
+    sub = helpers.sub,
+    insertvalues = helpers.insertvalues,
+    deepcopy = helpers.deepcopy,
+    move = function(dst, src, ...)
+        -- append group middlewares to the front of per-route list
+        if type(src) == "table" then
+            for i = #src, 1, -1 do
+                table.insert(dst, 1, src[i])
+            end
+        end
+        return dst
+    end,
+}
+local stringx = { strip = strip, split = function(s, sep) return split(s, sep or ",", true) end }
 local string_lower, type, pairs, select, table_insert, ipairs, table_unpack, setmetatable = string.lower, type, pairs, select, table.insert, ipairs, table.unpack, setmetatable
 local lw_util = require('Tilua.utils.util')
 local midware_manager = require("Tilua.middleware")
+
 
 ---@class route
 local route = {
@@ -383,44 +400,58 @@ function route.validate(ctx, validations)
     return true
 end
 
+--- Return rule list by reference (read-only iteration). Callers that mutate
+--- must shallow-copy individual rules first.
 function route.get_route_caches(app)
-    return tablex.deepcopy(route.rule_caches[app])
+    return route.rule_caches[app] or {}
+end
+
+local function shallow_rule(rule)
+    local r = {}
+    for k, v in pairs(rule) do
+        r[k] = v
+    end
+    return r
 end
 
 function route.find_matched_route(app, method, path)
     local route_caches = route.get_route_caches(app)
     method = string_lower(method)
-    local mathced_route = {}
+    local matched_route = {}
     for _, rule in ipairs(route_caches) do
         if tablex.find(rule.method, '*') or tablex.find(rule.method, method) then
             if rule.matcher == '~' then
-                local iterator, _ = ngx.re.gmatch(path, rule.regex, "i")
-                local m, err = iterator()
-                if m then
-                    m[0] = nil
-                    rule.vals = m
-                    rule.extra_path = strip(ngx.re.sub(path, rule.regex,''),'/')
-                    table_insert(mathced_route, rule)
+                local iterator = ngx.re.gmatch(path, rule.regex, "i")
+                if iterator then
+                    local m = iterator()
+                    if m then
+                        m[0] = nil
+                        local copy = shallow_rule(rule)
+                        copy.vals = m
+                        copy.extra_path = strip(ngx.re.sub(path, rule.regex, ''), '/')
+                        table_insert(matched_route, copy)
+                    end
                 end
             elseif rule.matcher == '=' and rule.path == path then
-                table_insert(mathced_route, rule)
+                table_insert(matched_route, rule)
             elseif rule.matcher == '*' then
                 local start_pos, end_pos = string_find(path, rule.path, 1, true)
                 if start_pos then
-                    rule.matched_len = end_pos
-                    rule.extra_path = string_sub(path, end_pos + 1)
-                    table_insert(mathced_route, rule)
+                    local copy = shallow_rule(rule)
+                    copy.matched_len = end_pos
+                    copy.extra_path = string_sub(path, end_pos + 1)
+                    table_insert(matched_route, copy)
                 end
             end
         end
     end
-    return mathced_route
+    return matched_route
 end
-
 
 local function get_matched_rules(app, method, pathinfo)
-    return tablex.deepcopy(matched_rule_caches[app .. method .. pathinfo])
+    return matched_rule_caches[app .. method .. pathinfo]
 end
+
 
 function route.run(ctx)
     local request = ctx.request

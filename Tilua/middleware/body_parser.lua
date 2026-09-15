@@ -8,17 +8,25 @@ local ngx = ngx
 local req = ngx.req
 local read_body = req.read_body
 local util = require("Tilua.utils.util")
-local pl_utils = require("pl.utils")
-local strip = require("pl.stringx").strip
-local split = require("pl.stringx").split
-local string_startsWith = require("pl.stringx").startswith
-local tablex = require("pl.tablex")
-
-local map = tablex.map
+local helpers = require("Tilua.core.helpers")
+local strip = helpers.strip
+local split = helpers.split
+local string_startsWith = function(s, prefix)
+    return type(s) == "string" and s:sub(1, #prefix) == prefix
+end
+local map = helpers.map
 local path = require "Tilua.utils.path"
 local io_open = io.open
-local makepath = require "pl.dir".makepath
 local path_exists = path.exists
+local function makepath(p)
+    if path_exists(p) then return true end
+    local ok_pl, pl_dir = pcall(require, "pl.dir")
+    if ok_pl and pl_dir.makepath then
+        return pl_dir.makepath(p)
+    end
+    return os.execute("mkdir -p " .. p:gsub("'", "'\\''"))
+end
+
 
 ---@class body_parser
 local body_parser = {}
@@ -31,7 +39,7 @@ local function parse_disposition_headers(headers)
     map(function(v)
         if string_startsWith(v, "Content-Disposition") then
             -- file
-            local ct, field, file_fields = pl_utils.unpack(split(v, ";"))
+            local ct, field, file_fields = table.unpack(split(v, ";"))
             ct = split(ct, ":")
             if ct[2] == " form-data" then
                 if field then
@@ -44,7 +52,7 @@ local function parse_disposition_headers(headers)
                 end
             end
         elseif string_startsWith(v, "Content-Type") then
-            local ct, charset = pl_utils.unpack(split(v, ";"))
+            local ct, charset = table.unpack(split(v, ";"))
             ct = split(ct, ":")
             type = strip(ct[2])
             if charset and string_startsWith(charset, 'charset') then
@@ -128,7 +136,7 @@ local function read_post_file(part, read)
     else
         if part.origin_filename and part.origin_filename ~= "" then
             local ext = path.extension(part.origin_filename or "")
-            if not tablex.find(_config.whitelist, ext) and not tablex.find(_config.file_extensions, ext) then
+            if not helpers.find(_config.whitelist, ext) and not helpers.find(_config.file_extensions, ext) then
                 part.error = "Invalid filename: " .. part.origin_filename
                 discard_body_part()
             else
@@ -237,7 +245,11 @@ function body_parser:handle(next, ...)
         read_body()
         local body_file = req.get_body_file()
         if body_file then
-            local content = pl_utils.readfile(body_file)
+            local content
+            do
+                local f = io_open(body_file, "rb")
+                if f then content = f:read("*a"); f:close() end
+            end
             if content then
                 request.body = parse_args(content)
             end

@@ -5,21 +5,10 @@
 local ngx = ngx
 local lw_util = require("Tilua.utils.util")
 local import  = lw_util.import
+local helpers = require("Tilua.core.helpers")
+local split = helpers.split
+local map = helpers.map
 
--- Prefer pure Lua helpers when available; fall back to Penlight only if needed
-local function split(str, sep)
-    if lw_util.split then
-        return lw_util.split(str, sep)
-    end
-    return require("pl.utils").split(str, sep)
-end
-
-local function map(fn, t)
-    if lw_util.map then
-        return lw_util.map(fn, t)
-    end
-    return require("pl.tablex").map(fn, t)
-end
 
 local manager = {
     midwares = {},
