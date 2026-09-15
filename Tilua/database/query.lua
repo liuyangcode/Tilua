@@ -250,27 +250,29 @@ function Query:build_select(options)
         ["%COMMENT%"] = options.comment and options.comment ~= "" and ("/*" .. options.comment .. "*/") or "",
         ["%FORCE%"] = "",
     }
-    local sql = SELECT_SQL
-    for exp, val in pairs(express) do
-        sql = sql:gsub(exp:gsub("%%", "%%%%"), val:gsub("%%", "%%%%"))
-        -- plain replace
-    end
-    -- safer plain replace
-    sql = SELECT_SQL
-    for exp, val in pairs(express) do
-        local i = 1
-        local out = {}
+    local function replace_all(s, old, newv)
+        local i, out = 1, {}
         while true do
-            local a, b = string.find(sql, exp, i, true)
+            local a, b = string.find(s, old, i, true)
             if not a then
-                out[#out + 1] = string.sub(sql, i)
+                out[#out + 1] = string.sub(s, i)
                 break
             end
-            out[#out + 1] = string.sub(sql, i, a - 1)
-            out[#out + 1] = val
+            out[#out + 1] = string.sub(s, i, a - 1)
+            out[#out + 1] = newv
             i = b + 1
         end
-        sql = table.concat(out)
+        return table.concat(out)
+    end
+    -- replace longer tokens first to avoid partial clashes (none currently)
+    local order = {
+        "%DISTINCT%", "%FIELD%", "%TABLE%", "%FORCE%", "%JOIN%",
+        "%WHERE%", "%GROUP%", "%HAVING%", "%ORDER%", "%LIMIT%",
+        "%UNION%", "%LOCK%", "%COMMENT%",
+    }
+    local sql = SELECT_SQL
+    for _, exp in ipairs(order) do
+        sql = replace_all(sql, exp, express[exp] or "")
     end
     return sql
 end
@@ -316,6 +318,82 @@ function Query:bind(sql, params)
         end
         return self:value(v)
     end)
+end
+
+
+--- Fluent query builder for services / raw usage
+---   Query.builder(db):table("users"):where({id=1}):first()
+function Query.builder(db)
+    local b = {
+        _db = db,
+        _q = (db and db.query) or Query.new({}),
+        _opts = { where = {}, field = "*", table = nil },
+    }
+    function b:table(name)
+        self._opts.table = name
+        return self
+    end
+    function b:select(fields)
+        self._opts.field = fields or "*"
+        return self
+    end
+    function b:where(w)
+        if type(w) == "table" then
+            for k, v in pairs(w) do
+                self._opts.where[k] = v
+            end
+        elseif type(w) == "string" then
+            self._opts.where = w
+        end
+        return self
+    end
+    function b:order(o)
+        self._opts.order = o
+        return self
+    end
+    function b:limit(n)
+        self._opts.limit = n
+        return self
+    end
+    function b:page(p, size)
+        self._opts.page = { p, size }
+        return self
+    end
+    function b:lock(v)
+        self._opts.lock = v and true or false
+        return self
+    end
+    function b:sql()
+        return self._q:build_select(self._opts)
+    end
+    function b:get()
+        if not self._db then
+            return nil, "no db"
+        end
+        return self._db:select(self._opts)
+    end
+    function b:first()
+        self._opts.limit = 1
+        local rows = self:get()
+        if type(rows) == "table" then
+            return rows[1]
+        end
+        return rows
+    end
+    function b:count()
+        local opts = {}
+        for k, v in pairs(self._opts) do opts[k] = v end
+        opts.field = "COUNT(*) AS `aggregate`"
+        opts.order = nil
+        opts.limit = nil
+        opts.page = nil
+        local rows = self._db:select(opts)
+        if type(rows) == "table" and rows[1] then
+            return tonumber(rows[1].aggregate or rows[1]["COUNT(*)"])
+        end
+        return 0
+    end
+    return b
 end
 
 return Query

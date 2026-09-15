@@ -86,9 +86,28 @@ local function http_handle(app)
         return resp
     end
 
-    local matched, router = app.route.run(app)
+    local Exception = require("Tilua.core.exception")
+    -- ensure request_id early
+    Exception.request_id(app)
+    local ok, matched, router = xpcall(function()
+        return app.route.run(app)
+    end, Exception.handler("router"))
+    if not ok then
+        local ex = Exception.is(matched) and matched or Exception.wrap(matched, "router")
+        Exception.log(app, ex)
+        Plugin.emit("on_error", app, ex)
+        return Exception.render(app.response, ex, app)
+    end
     Plugin.emit("on_dispatch", app, matched, router)
-    local result = app.dispatcher:run(matched, router)
+    local ok2, result = xpcall(function()
+        return app.dispatcher:run(matched, router)
+    end, Exception.handler("controller"))
+    if not ok2 then
+        local ex = Exception.is(result) and result or Exception.wrap(result, "controller")
+        Exception.log(app, ex)
+        Plugin.emit("on_error", app, ex)
+        return Exception.render(app.response, ex, app)
+    end
     Plugin.emit("on_response", app)
     return result
 end

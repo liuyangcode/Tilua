@@ -441,11 +441,7 @@ end
 function model:_parseOptions(options)
     options = options or {}
     local fields
-    if is_array(options) then
-        options = tablex.update(self.options, options)
-    else
-        options = tablex.update(self.options, options)
-    end
+    options = tablex.update(self.options, options or {})
     -- soft-delete scope
     local soft = require("Tilua.model.soft_delete")
     if soft.is_enabled(self) then
@@ -1260,6 +1256,28 @@ end
 function model:with(name, rows)
     rows = rows or self:select()
     return require("Tilua.model.relation").eager(self, name, rows)
+end
+
+
+
+--- Fluent query via database.Query (shares current options table/where)
+function model:to_query()
+    local Query = require("Tilua.database.query")
+    local b = Query.builder(self.db)
+    b:table(self:getTableName())
+    if self.options.where then b:where(self.options.where) end
+    if self.options.field then b:select(self.options.field) end
+    if self.options.order then b:order(self.options.order) end
+    if self.options.limit then b:limit(self.options.limit) end
+    if self.options.page then b:page(self.options.page[1], self.options.page[2]) end
+    if self.options.lock then b:lock(true) end
+    return b
+end
+
+--- Force next select/find on master (rw_separate)
+function model:master(flag)
+    self.options.master = (flag ~= false)
+    return self
 end
 
 

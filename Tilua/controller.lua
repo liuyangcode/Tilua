@@ -49,6 +49,11 @@ function controller:model(name)
     return self.ctx.model[name]
 end
 
+function controller:fail(message, status, details)
+    local Exception = require("Tilua.core.exception")
+    error(Exception.controller(message, status or 500, details), 0)
+end
+
 return controller
 
 

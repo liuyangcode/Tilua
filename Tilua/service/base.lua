@@ -96,4 +96,30 @@ function Service:validate(data, rules)
     return true, data
 end
 
+--- Raise / return service exception
+function Service:fail(message, status, details)
+    local Exception = require("Tilua.core.exception")
+    error(Exception.service(message, status or 422, details), 0)
+end
+
+function Service:fail_not_found(message)
+    self:fail(message or "Not Found", 404)
+end
+
+--- Fluent SQL builder bound to default/first model connection
+function Service:query(table_name)
+    local Query = require("Tilua.database.query")
+    local m = nil
+    if next(self._models) then
+        local _, model = next(self._models)
+        m = model
+    end
+    local db = (m and m.db) or (self.ctx.db and self.ctx.db())
+    local b = Query.builder(db)
+    if table_name then
+        b:table(table_name)
+    end
+    return b
+end
+
 return Service

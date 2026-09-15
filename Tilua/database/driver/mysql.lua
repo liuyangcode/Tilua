@@ -39,13 +39,17 @@ function Mysql.new(config, ctx, logger)
 end
 
 function Mysql:initConnect(master)
-    local sock, err = self.connection:connect_mysql(1)
+    if master == nil then
+        master = true
+    end
+    local sock, err = self.connection:connect_mysql(nil, master)
     if not sock then
         self.error = err
         return nil
     end
     self._linkID = sock
     self.linkID = self.connection.link_id
+    self._read_master = master and true or false
     return sock
 end
 
@@ -119,7 +123,9 @@ function Mysql:execute_sql(sql)
             self.logger:error(msg)
         end
         self.error = msg
-        return nil, msg
+        local Exception = require("Tilua.core.exception")
+        local ex = Exception.database(msg, 500, { errcode = errcode, sqlstate = sqlstate })
+        return nil, ex
     end
     if type(res) == "table" and res.insert_id then
         self.lastInsID = res.insert_id
@@ -166,7 +172,16 @@ end
 function Mysql:select(options)
     self.model = options.model
     local sql = self.query:build_select(options)
-    return self:query(sql, options.fetch_sql, options.master)
+    -- explicit master wins; else slave when rw_separate enabled
+    local master = options.master
+    if master == nil then
+        local rw = self.config.rw_separate == true or self.config.rw_separate == 1
+        master = not rw  -- single node / no rw → master; rw → prefer slave for SELECT
+        if options.lock then
+            master = true
+        end
+    end
+    return self:query(sql, options.fetch_sql, master)
 end
 
 function Mysql:insert(data, options, replace)
@@ -176,6 +191,58 @@ function Mysql:insert(data, options, replace)
     if options.comment then
         sql = sql .. " /*" .. options.comment .. "*/"
     end
+    return self:execute(sql, options.fetch_sql)
+end
+
+function Mysql:selectInsert(fields, tableName, options)
+    options = options or {}
+    self.model = options.model
+    local q = self.query
+    if type(fields) == "string" then
+        local helpers = require("Tilua.core.helpers")
+        fields = helpers.split(fields, ",", true)
+    end
+    local cols = {}
+    for _, f in ipairs(fields or {}) do
+        cols[#cols + 1] = q:key(f)
+    end
+    local sql = "INSERT INTO " .. q:table_name(tableName) .. " (" .. table.concat(cols, ",") .. ") " ..
+        q:build_select(options)
+    return self:execute(sql, options.fetch_sql)
+end
+
+function Mysql:insertAll(dataSet, options, replace)
+    options = options or {}
+    self.model = options.model
+    if type(dataSet) ~= "table" or type(dataSet[1]) ~= "table" then
+        return false
+    end
+    local q = self.query
+    local fields = {}
+    for k in pairs(dataSet[1]) do
+        fields[#fields + 1] = k
+    end
+    local cols = {}
+    for _, f in ipairs(fields) do
+        cols[#cols + 1] = q:key(f)
+    end
+    local value_sqls = {}
+    for _, data in ipairs(dataSet) do
+        local vals = {}
+        for _, f in ipairs(fields) do
+            local val = data[f]
+            if type(val) == "table" and val[1] == "exp" then
+                vals[#vals + 1] = tostring(val[2])
+            elseif val == nil then
+                vals[#vals + 1] = "NULL"
+            else
+                vals[#vals + 1] = q:value(val)
+            end
+        end
+        value_sqls[#value_sqls + 1] = "SELECT " .. table.concat(vals, ",")
+    end
+    local sql = (replace and "REPLACE" or "INSERT") .. " INTO " .. q:table_name(options.table) ..
+        " (" .. table.concat(cols, ",") .. ") " .. table.concat(value_sqls, " UNION ALL")
     return self:execute(sql, options.fetch_sql)
 end
 

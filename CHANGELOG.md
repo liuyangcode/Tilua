@@ -30,6 +30,31 @@ All notable changes to Tilua are documented in this file.
 
 - Initial MVC kit based on OpenResty (pre-refactor)
 
+## [0.7.0] - 2026-09-15
+
+### Unified exceptions
+- `Tilua.core.exception` – router/controller/service/database/middleware types
+- API body: `{ code, message, request_id }`; production sanitizes secrets/SQL/paths
+- Dispatcher + HTTP channel `xpcall`; `errors.apply` aligned
+- `Service:fail`; docs/EXCEPTION.md
+
+## [0.6.2] - 2026-09-15
+
+### RW separation + model Query bridge
+- Connection resolves master/slave endpoints from CSV host lists
+- Separate keepalive pools per endpoint; SELECT prefers slave when rw_separate
+- FOR UPDATE / writes still use master
+- Model: to_query(), master(); Mysql selectInsert
+
+## [0.6.1] - 2026-09-15
+
+### Database polish
+- Fixed `Query:build_select` token replacement order
+- Fluent `Query.builder(db):table():where():get()/first()/count()`
+- MySQL `insertAll` batch insert
+- `Service:query(table)` fluent helper
+- Model `_parseOptions` merge cleanup
+
 ## [0.6.0] - 2026-09-15
 
 ### Database layer restructure

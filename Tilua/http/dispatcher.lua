@@ -36,6 +36,7 @@ local function wants_json(ctx)
 end
 
 function dispatch:make_chain_call(midware, handler)
+    local Exception = require("Tilua.core.exception")
     local next_fn = function()
         return self:prepare_response(handler())
     end
@@ -44,7 +45,14 @@ function dispatch:make_chain_call(midware, handler)
         local mid = self.ctx.midware.instance(next_midware)
         local func = bind1(mid.handle, mid)
         return function(...)
-            return func(res, ...)
+            local ok, out = xpcall(function(...)
+                return func(res, ...)
+            end, Exception.handler("middleware"), ...)
+            if ok then
+                return out
+            end
+            -- propagate Exception object
+            return out
         end
     end, list, next_fn)
 end
@@ -179,6 +187,7 @@ function dispatch:create_responser(router)
 end
 
 function dispatch:run(matched, router)
+    local Exception = require("Tilua.core.exception")
     local responser
     if matched then
         responser = self:create_responser(router)
@@ -187,7 +196,21 @@ function dispatch:run(matched, router)
             return errors.not_found()
         end
     end
-    return self:prepare_response(responser())
+    local ok, result = xpcall(function()
+        return self:prepare_response(responser())
+    end, Exception.handler("controller"))
+    if ok then
+        -- prepare_response may return TiluaError without throwing
+        if errors.is_error(result) or Exception.is(result) then
+            local as_json = wants_json(self.ctx)
+            return errors.apply(self.ctx.response, result, as_json ~= false)
+        end
+        return result
+    end
+    -- thrown exception
+    local ex = Exception.is(result) and result or Exception.wrap(result, "controller")
+    Exception.log(self.ctx, ex)
+    return Exception.render(self.ctx.response, ex, self.ctx)
 end
 
 function dispatch:to_handler(fn)

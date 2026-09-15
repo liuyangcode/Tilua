@@ -82,45 +82,61 @@ end
 ---@param err TiluaError|number|string
 ---@param as_json boolean|nil
 function M.apply(response, err, as_json)
+    local Exception = require("Tilua.core.exception")
     if type(err) == "number" then
         err = M.new(err)
     elseif type(err) == "string" then
         err = M.new(500, err)
-    elseif not M.is_error(err) then
+    elseif not M.is_error(err) and not Exception.is(err) then
         err = M.internal(tostring(err))
     end
 
-    response.status = err.status
-
-    if as_json then
-        response.headers = response.headers or {}
-        response.headers["Content-Type"] = "application/json; charset=utf-8"
-        local body = {
-            error = {
-                status  = err.status,
-                message = err.message,
-                code    = err.code,
-            }
-        }
-        if err.details ~= nil then
-            body.error.details = err.details
+    -- Prefer unified exception renderer for JSON / API
+    if as_json ~= false then
+        local ctx = response and response.ctx
+        local ex = Exception.is(err) and err or Exception.wrap(err, "http")
+        if not ex.status then
+            ex.status = err.status or 500
         end
-        local ok, encoded = pcall(require("cjson.safe").encode, body)
-        response.body = ok and encoded or ('{"error":{"status":' .. err.status .. ',"message":"' .. err.message .. '"}}')
-    else
-        response.body = err.message
+        Exception.log(ctx, ex)
+        return Exception.render(response, ex, ctx)
     end
 
+    response.status = err.status or 500
+    response.body = err.message or "Error"
     return response
 end
 
 --- Safe pcall wrapper that converts failures into TiluaError
 function M.protect(fn, ...)
-    local ok, a, b, c, d = pcall(fn, ...)
+    local Exception = require("Tilua.core.exception")
+    local ok, a, b, c, d = xpcall(function(...)
+        return fn(...)
+    end, Exception.handler("app"), ...)
     if ok then
         return a, b, c, d
     end
-    return M.internal(tostring(a))
+    return a
+end
+
+function M.database(msg, details)
+    return require("Tilua.core.exception").database(msg, 500, details)
+end
+
+function M.service(msg, status, details)
+    return require("Tilua.core.exception").service(msg, status or 422, details)
+end
+
+function M.controller(msg, status, details)
+    return require("Tilua.core.exception").controller(msg, status or 500, details)
+end
+
+function M.router(msg, status, details)
+    return require("Tilua.core.exception").router(msg, status or 404, details)
+end
+
+function M.middleware(msg, status, details)
+    return require("Tilua.core.exception").middleware(msg, status or 500, details)
 end
 
 return M
