@@ -1,6 +1,7 @@
+local class = require("Tilua.utils.class")
 local Controller = require("Tilua.controller.controller")
 
-local ApiController = Controller:extend()
+local ApiController = class.define(Controller)
 
 function ApiController:success(data, message)
     return {
