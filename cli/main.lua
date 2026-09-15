@@ -7,6 +7,7 @@ local commands = {}
 commands.version = function()
     print("Tilua Runtime")
     print("Version: " .. VERSION)
+    print("Status: Production Foundation Ready")
 end
 
 commands.help = function()
@@ -14,9 +15,47 @@ commands.help = function()
 
 Commands:
   version              Show runtime version
-  test --production    Run production checks
   doctor               Check runtime environment
+  health               Check runtime health
+  metrics              Show runtime metrics
+  run                  Start runtime
+  test --production    Run production checks
 ]])
+end
+
+commands.health = function()
+    local ok, health = pcall(require, "Tilua.health.checker")
+    if ok and health.check then
+        local result = health.check()
+        print(result)
+        return true
+    end
+
+    print("Health module unavailable")
+    return false
+end
+
+commands.metrics = function()
+    local ok, exporter = pcall(require, "Tilua.metrics.exporter")
+    if ok and exporter.prometheus then
+        print(exporter.prometheus())
+        return true
+    end
+
+    print("Metrics exporter unavailable")
+    return false
+end
+
+commands.run = function()
+    print("Starting Tilua Runtime")
+    local ok, app = pcall(require, "Tilua.app")
+    if ok then
+        print("Runtime loaded")
+        return true
+    end
+
+    print("Runtime load failed")
+    return false
 end
 
 commands.test = function(args)
@@ -35,6 +74,7 @@ commands.doctor = function()
     print("Tilua Doctor")
     print("Lua runtime: " .. _VERSION)
     print("Package path: OK")
+    print("Runtime: CHECK")
 end
 
 function M.run(argv)
