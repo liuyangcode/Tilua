@@ -13,7 +13,7 @@ function DatabaseManager:driver(name)
     local cfg = self.config[name] or self.config
     local driver_name = cfg.driver or name
     if driver_name == "mysql" then
-        return require("Tilua.database.driver.mysql")
+        return require("Tilua.db.driver.mysql")
     end
     return require("Tilua.db.driver." .. driver_name)
 end
