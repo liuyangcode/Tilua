@@ -11,9 +11,7 @@ function Exception.new(message, code, status, cause)
 end
 
 function Exception.from(err, status)
-    if type(err) == "table" and getmetatable(err) == Exception then
-        return err
-    end
+    if Exception.is(err) then return err end
     return Exception.new(tostring(err), "internal_error", status or 500, err)
 end
 
@@ -25,24 +23,20 @@ function Exception.is(value)
     return type(value) == "table" and getmetatable(value) == Exception
 end
 
-function ExceptionBoundary(app)
-    return function(ctx)
-        local ok, result = xpcall(function()
-            return app:dispatch(ctx)
-        end, debug.traceback)
-        if ok then
-            return result
-        end
+function Exception.boundary(app, ctx, fn)
+    local ok, result = xpcall(fn, debug.traceback)
+    if ok then return result end
 
-        local exception = Exception.from(result)
-        if app.logger and app.logger.error then
-            app.logger:error("request failed: ", tostring(result))
-        end
-        if ctx and ctx.response and ctx.text then
-            return ctx:text("Internal Server Error", exception.status)
-        end
-        return nil, exception
+    local exception = Exception.from(result)
+    local logger = app and app:get("logger")
+    if logger and logger.error then
+        logger:error("request failed: ", tostring(result))
     end
+
+    if ctx and ctx.text then
+        return ctx:text("Internal Server Error", exception.status)
+    end
+    return nil, exception
 end
 
 return Exception
