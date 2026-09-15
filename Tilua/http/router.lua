@@ -275,6 +275,18 @@ local route = {
     indexes = {},      -- [app] = { trie, regex }
 }
 
+--- Mutable runtime state that must NOT be written as `route.X = ...`.
+---
+--- The module metatable defines `__newindex` to implement the
+--- `route["GET /x"] = handler` shorthand, and that hook fires for EVERY
+--- assignment to a key the table does not already own — including internal
+--- bookkeeping.  So `route.cur_app = name` and `route._group_midwares = mw`
+--- were silently converted into route registrations instead of being stored,
+--- which broke `set_app_name` and `route.group` middleware inheritance.
+---
+--- Group state lives here because this table already exists.
+route._group = { midwares = nil }
+
 -----------------------------------------------------------------------
 -- method helpers
 -----------------------------------------------------------------------
@@ -365,7 +377,8 @@ local function get_index(app)
 end
 
 function route.set_app_name(name)
-    route.cur_app = name
+    -- rawset: a plain assignment would be swallowed by __newindex
+    rawset(route, "cur_app", name)
     route.rules[name] = {}
     route.rule_caches[name] = {}
     route.indexes[name] = nil
@@ -517,8 +530,13 @@ end
 --- Kept for compatibility: `html_cache` uses this to build cache keys from
 --- declared rules.  The trie does not depend on it.
 function route.parse_path_to_regex(url)
-    local parsed_paths_to_regex = route._parsed_paths or {}
-    route._parsed_paths = parsed_paths_to_regex
+    -- `_parsed_paths` may not exist yet; creating it via a plain assignment
+    -- would be intercepted by __newindex, so use rawset.
+    local parsed_paths_to_regex = rawget(route, "_parsed_paths")
+    if parsed_paths_to_regex == nil then
+        parsed_paths_to_regex = {}
+        rawset(route, "_parsed_paths", parsed_paths_to_regex)
+    end
 
     if parsed_paths_to_regex[url] then
         return unpack(parsed_paths_to_regex[url])
@@ -739,8 +757,9 @@ end
 
 --- Group routes under shared middleware.
 ---   route.group(function() route.get("/a", h) end, { "auth" })
+--- The group middleware is PREPENDED to each route declared inside `func`.
 function route.group(func, ...)
-    local previous = route._group_midwares
+    local previous = route._group.midwares
     local args = { ... }
     local mid
     if type(args[1]) == "table" then
@@ -748,9 +767,9 @@ function route.group(func, ...)
     else
         mid = args
     end
-    route._group_midwares = mid
+    route._group.midwares = mid
     local ok, err = pcall(func)
-    route._group_midwares = previous
+    route._group.midwares = previous
     if not ok then
         error(err, 0)
     end
@@ -791,6 +810,14 @@ local function add_route(verbs, path, handler, ...)
         midware = {}
     end
 
+    -- Normalise entries to { name, config }: a bare name string is accepted
+    -- anywhere a middleware may be listed, matching the phase-list behaviour.
+    for i, m in ipairs(midware) do
+        if type(m) == 'string' then
+            midware[i] = { m }
+        end
+    end
+
     -- An extra `{ phases = { access = {...} } }` argument declares middleware
     -- for a non-content OpenResty phase (e.g. auth in the access phase).
     for i = 1, #midargs do
@@ -803,8 +830,15 @@ local function add_route(verbs, path, handler, ...)
         end
     end
 
-    if route._group_midwares then
-        tablex.move(midware, route._group_midwares)
+    if route._group.midwares then
+        tablex.move(midware, route._group.midwares)
+    end
+
+    -- Group middleware may also be listed as bare names.
+    for i, m in ipairs(midware) do
+        if type(m) == 'string' then
+            midware[i] = { m }
+        end
     end
 
     route.rules[route.cur_app][key] = {
@@ -816,7 +850,7 @@ local function add_route(verbs, path, handler, ...)
 end
 
 function route.add_route(cur_app, verbs, path, handler, ...)
-    route.cur_app = cur_app
+    rawset(route, "cur_app", cur_app)
     add_route(verbs, path, handler, ...)
 end
 

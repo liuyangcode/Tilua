@@ -31,16 +31,18 @@ route.get("/boom", function()
     error("intentional route failure")
 end)
 
---- Parameter validation via the rule DSL: the third field is
---- `<param>:<op>,<value>`, so only numeric ids match this route at all.
-route.get("/num/{id} id:reg,^[0-9]+$", function(ctx, id)
+--- Parameter validation uses the DECLARATIVE rule form, because the third
+--- whitespace-separated field of a rule is the `<param>:<op>,<value>` spec:
+---   route["get /path/{p} p:reg,^[0-9]+$"] = handler
+--- (The `route.get(path, handler, expr)` form treats a 3rd string as
+--- middleware, so validation must be part of the rule key.)
+route["get /num/{id} id:reg,^[0-9]+$"] = function(ctx, id)
     return response("numeric id=" .. tostring(id))
-end)
+end
 
---- Equality constraint: only /kind/ok matches.
-route.get("/kind/{k} k:eq,ok", function(ctx, k)
+route["get /kind/{k} k:eq,ok"] = function(ctx, k)
     return response("kind=" .. tostring(k))
-end)
+end
 
 --- Access-phase middleware is declared per-route, so it gates only /admin.
 --- The 4th argument is the route's phase config; the 3rd is its content-phase

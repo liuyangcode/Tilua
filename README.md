@@ -117,6 +117,19 @@ Tilua/
 └── config/default.lua
 ```
 
+## Documentation
+
+| Doc | Contents |
+|-----|----------|
+| [docs/ROUTER.md](docs/ROUTER.md) | Router guide: trie matching, parameters, wildcards, validation, middleware phases |
+| [docs/CONTAINER.md](docs/CONTAINER.md) | Application IoC container: service bindings and scopes |
+| [docs/LIFECYCLE.md](docs/LIFECYCLE.md) | OpenResty lifecycle: phases, request scope, measured semantics |
+| [docs/SERVICE.md](docs/SERVICE.md) | Service layer |
+| [docs/EXCEPTION.md](docs/EXCEPTION.md) | Unified exceptions |
+| [docs/EXTENSIONS.md](docs/EXTENSIONS.md) | Plugins / channels |
+| [docs/ANALYSIS.md](docs/ANALYSIS.md) | Full technical review of the codebase |
+
+
 ## Configuration
 
 Configuration is layered:
