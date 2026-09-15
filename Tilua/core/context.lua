@@ -33,9 +33,7 @@ end
 
 function Context:param(name, default)
     local value = self.params[name]
-    if value == nil then
-        return default
-    end
+    if value == nil then return default end
     return value
 end
 
@@ -46,9 +44,7 @@ end
 
 function Context:get(name, default)
     local value = self.state[name]
-    if value == nil then
-        return default
-    end
+    if value == nil then return default end
     return value
 end
 
@@ -57,16 +53,32 @@ function Context:has(name)
 end
 
 function Context:service(name, ...)
-    if self.services[name] ~= nil then
-        return self.services[name]
-    end
+    if self.services[name] ~= nil then return self.services[name] end
     local service = self.app:make(name, ...)
     self.services[name] = service
     return service
 end
 
-function Context:db()
-    return self:service("db")
+-- Returns a request-scoped database connection, while the manager itself
+-- remains application/worker scoped in the container.
+function Context:db(name)
+    local key = name and ("db.connection." .. name) or "db.connection"
+    if self.services[key] then return self.services[key] end
+
+    local manager = self.app:make("db")
+    local connection = manager:connection(self, name)
+    self.services[key] = connection
+    return connection
+end
+
+function Context:transaction(name)
+    local key = name and ("db.transaction." .. name) or "db.transaction"
+    if self.services[key] then return self.services[key] end
+
+    local manager = self.app:make("db")
+    local transaction = manager:transaction(self, name)
+    self.services[key] = transaction
+    return transaction
 end
 
 function Context:cache()
@@ -126,6 +138,9 @@ function Context:is_finished()
 end
 
 function Context:destroy()
+    for _, service in pairs(self.services or {}) do
+        if service.close then pcall(service.close, service) end
+    end
     self.app = nil
     self.request = nil
     self.response = nil
