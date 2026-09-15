@@ -1,34 +1,61 @@
 --- Tilua.core.lifecycle
---- OpenResty phase helpers extracted from the original monolithic app.lua
---- Keeps the same public API so existing applications continue to work.
+--- OpenResty phase handlers.
+---
+--- Phase map (see docs/LIFECYCLE.md for the measurements behind it):
+---
+---   init_by_lua        (master)  config + route rules, validated up front
+---   init_worker_by_lua (worker)  view engine, middleware config, plugins
+---   rewrite_by_lua               request scope + rewrite-phase middleware
+---   access_by_lua                access-phase middleware (may short-circuit)
+---   content_by_lua               content middleware + dispatch + response output
+---   log_by_lua                   release the request scope
+---
+--- `set_by_lua` is deliberately not used: that phase exists to set nginx
+--- variables, has a restricted API, and must return a string/number.  It was
+--- previously (mis)used as the request entry point.
 
-local path       = require("Tilua.utils.path")
-local lw_utils   = require("Tilua.utils.util")
-local import     = lw_utils.import
-local combine    = lw_utils.extend
-local bind1      = lw_utils.bind1
-local path_join  = path.join
+local path        = require("Tilua.utils.path")
+local lw_utils    = require("Tilua.utils.util")
+local import      = lw_utils.import
+local bind1       = lw_utils.bind1
+local RequestCtx  = require("Tilua.core.request")
+
+local path_join   = path.join
 local path_exists = path.isdir
+local string_lower = string.lower
 
 local M = {}
 
+local MIDDLEWARE_PHASES = { "rewrite", "access", "content" }
+
+-----------------------------------------------------------------------
+-- view engine bootstrap
+-----------------------------------------------------------------------
+
+--- Create a directory if missing.
+---
+--- `os.execute` reports success differently across Lua versions (0 on
+--- 5.1/LuaJIT raw status, true/1 on 5.2+), so its return value is NOT a
+--- reliable success signal — the previous `ret ~= 0 and ret ~= true` test
+--- wrongly treated a successful mkdir as failure.  Verify by re-checking the
+--- filesystem instead, and surface the shell error when that really fails.
 local function ensure_dir(p)
     if path_exists(p) then
         return true
     end
-    -- try Penlight if present, else shell mkdir
+
     local ok_pl, pl_dir = pcall(require, "pl.dir")
     if ok_pl and pl_dir.makepath then
-        local _, err = pl_dir.makepath(p)
-        if err then
-            error("cannot create directory " .. p .. ": " .. tostring(err))
+        pcall(pl_dir.makepath, p)
+        if path_exists(p) then
+            return true
         end
-        return true
     end
-    local cmd = "mkdir -p " .. p:gsub("'", "'\\''")
-    local ret = os.execute(cmd)
-    if ret ~= 0 and ret ~= true then
-        error("cannot create directory " .. p)
+
+    local output = os.execute("mkdir -p " .. p:gsub("'", "'\\''") .. " 2>&1")
+    if not path_exists(p) then
+        error(string.format("cannot create directory %s (mkdir said: %s)",
+            p, tostring(output)))
     end
     return true
 end
@@ -45,7 +72,6 @@ local function init_view_engine(root)
         ensure_dir(p)
     end
 
-
     local view_engine = template.new({ root = root })
     return {
         template            = view_engine,
@@ -58,129 +84,353 @@ local function init_view_engine(root)
     }
 end
 
---- init_by_lua (master / config load)
+M.init_view_engine = init_view_engine
+
+-----------------------------------------------------------------------
+-- phase middleware helpers
+-----------------------------------------------------------------------
+
+local function middleware_manager(app)
+    local ok, mw = pcall(function()
+        return app:make("middleware")
+    end)
+    if not ok or mw == nil then
+        return nil
+    end
+    return mw
+end
+
+--- Is any middleware declared for this phase?
+local function phase_has_middleware(app, phase)
+    local mw = middleware_manager(app)
+    if not mw or type(mw.phase_list) ~= "function" then
+        return false
+    end
+    local ok, list = pcall(mw.phase_list, phase)
+    return ok and type(list) == "table" and #list > 0
+end
+
+--- Middleware for a phase.
+---
+--- The global `middleware_phases` config applies to every request.  Route-scoped
+--- declarations (`route.get(path, h, mid, { phases = { access = {...} } })`)
+--- only apply when that route matched, so `only` is passed when the caller has
+--- already resolved the route — otherwise a guard declared on `/admin` would
+--- gate the entire application.
+local function phase_middleware(app, phase, only)
+    local out, seen = {}, {}
+
+    local function add_all(list)
+        for _, entry in ipairs(list or {}) do
+            if type(entry) == "string" then
+                entry = { entry }
+            end
+            local key = tostring(entry[1])
+            if not seen[key] then
+                seen[key] = true
+                out[#out + 1] = entry
+            end
+        end
+    end
+
+    local mw = middleware_manager(app)
+    if mw and type(mw.phase_list) == "function" then
+        local ok, list = pcall(mw.phase_list, phase)
+        if ok and type(list) == "table" then
+            add_all(list)
+        end
+    end
+
+    if phase == "rewrite" or phase == "access" then
+        local ok, router = pcall(function()
+            return app:make("router")
+        end)
+        if ok and router and type(router.phase_middleware) == "function" then
+            local ok2, route_list = pcall(router.phase_middleware, app.name, phase, only)
+            if ok2 and type(route_list) == "table" then
+                add_all(route_list)
+            end
+        end
+    end
+
+    return out
+end
+
+--- Match the current request once and remember the result for later phases.
+--- Returns the rule, or false when the path matched nothing.  `nil` is never
+--- returned, because `phase_middleware` uses nil to mean "no route filter" and
+--- would then apply every route's phase middleware.
+local function match_route(app, ctx)
+    local req = ctx:make("request")
+    local method = string_lower(
+        req.method or (ngx.var and ngx.var.request_method) or "get")
+    local path = req.path_info or (ngx.var and ngx.var.uri) or "/"
+
+    -- NOTE: `router.match` returns (rule, captures); pcall captures only its
+    -- first result, so the call must be wrapped to keep both or the rule would
+    -- always read as nil.
+    local ok, rule = pcall(function()
+        local matched = app:make("router").match(app.name, method, path)
+        return matched
+    end)
+
+    if ok and rule then
+        rawset(ctx, "_matched_route", rule)
+        return rule
+    end
+    rawset(ctx, "_matched_route", false)
+    return false
+end
+
+-----------------------------------------------------------------------
+-- response output
+-----------------------------------------------------------------------
+
+local function wants_json(ctx)
+    if ctx.config and ctx.config.enable_json_errors then
+        return true
+    end
+    local req = ctx:make("request")
+    if req and type(req.wants_json) == "function" then
+        local ok, v = pcall(req.wants_json, req)
+        return ok and v or false
+    end
+    return false
+end
+
+--- Emit a response object to the client.
+--- OpenResty does NOT send the return value of content_by_lua, so this is the
+--- only thing that actually writes a body.
+--- @return boolean emitted
+function M.emit(response)
+    if response == nil then
+        return false
+    end
+    if type(response.send) == "function" then
+        response:send()
+        return true
+    end
+    -- Not a Tilua response object (e.g. a stub channel returned a string).
+    if type(response) == "string" and ngx and ngx.print then
+        ngx.print(response)
+        return true
+    end
+    return false
+end
+
+--- Build a response for a terminal error and emit it.
+local function emit_error(app, ctx, err, layer)
+    local Exception = require("Tilua.core.exception")
+    local ex = Exception.is(err) and err or Exception.wrap(err, layer or "app")
+    Exception.log(ctx, ex)
+    local resp = ctx:make("response")
+    Exception.render(resp, ex, ctx)
+    M.emit(resp)
+    return resp
+end
+
+-----------------------------------------------------------------------
+-- init_by_lua (master process)
+-----------------------------------------------------------------------
+
+--- Worker/app boot detection.  `pid` is set at the end of init_worker_by_lua,
+--- so it is the reliable marker that worker state is ready.
+function M.is_inited_by_lua(app)
+    return (app.pid or 0) > 0
+end
+
+--- Master-phase setup: configuration and route rules only.
+--- Anything needing the filesystem or per-worker state belongs in the worker
+--- phase; keeping this narrow means a bad config fails `nginx -t` / reload
+--- instead of the first request.
 function M.init_by_lua(app)
-    if app:is_inited_by_lua() then
+    if app._master_booted then
         return true
     end
 
-    local cfg = app:load_config()
-    app:load_route()
-
-    -- reload middleware manager with current config
-    local mw = import("Tilua.middleware")
-    if mw and mw.load then
-        mw.load(cfg)
-    end
-
-
-    app.view_engine = init_view_engine(app.path)
-    if app.view_engine.template and app.view_engine.template.caching then
-        app.view_engine.template.caching(not app.debug)
-    end
-
-    -- Extension plugins (OpenAPI / CLI / WebSocket / custom)
-    local Plugin = require("Tilua.core.plugin")
-    Plugin.load_from_config(app)
-    Plugin.boot(app)
-
-    cfg.log = cfg.log or {}
-    cfg.log.path = path_join(app.path, cfg.log.path or "log")
-
-    local log_mod = import("Tilua.log")
-    if log_mod and log_mod.init then
-        -- store the logger class for later lazy init
-        app._logger_class = log_mod.init(cfg.log)
-    end
+    app:ensure_config()
+    app:register_routes()
 
     if type(app.on_init_by_lua) == "function" then
         app:on_init_by_lua()
+    end
+
+    app._master_booted = true
+    return true
+end
+
+-----------------------------------------------------------------------
+-- init_worker_by_lua
+-----------------------------------------------------------------------
+
+function M.init_worker_by_lua(app)
+    app:boot_worker()
+
+    if type(app.on_init_worker) == "function" then
+        app:on_init_worker()
+    end
+
+    -- Defer warming work so it never blocks the worker's first request.
+    if type(app.warming_up) == "function" then
+        local ok, err = pcall(function()
+            ngx.timer.at(0, function(premature)
+                if premature then
+                    return
+                end
+                local ok2, werr = pcall(app.warming_up, app)
+                if not ok2 and app.logger and app.logger.error then
+                    pcall(function()
+                        app.logger:error("warming_up failed: ", tostring(werr))
+                    end)
+                end
+            end)
+        end)
+        if not ok and app.logger and app.logger.error then
+            pcall(function()
+                app.logger:error("warming_up timer failed: ", tostring(err))
+            end)
+        end
     end
 
     app.pid = ngx.worker.pid()
     return true
 end
 
-function M.is_inited_by_lua(app)
-    return (app.pid or 0) > 0
-end
-
---- init_worker_by_lua
-function M.init_worker_by_lua(app)
-    ngx.log(ngx.DEBUG, "Tilua.init_worker_by_lua ", app.name or "?")
-    local Plugin = require("Tilua.core.plugin")
-    Plugin.emit("on_worker_init", app)
-    if type(app.on_init_worker) == "function" then
-        app:on_init_worker()
-    end
-    if type(app.warming_up) == "function" then
-        ngx.timer.at(0, bind1(app.warming_up, app()))
-    end
-end
-
---- set_by_lua – create per-request context
-function M.set_by_lua(app)
-    if not app:is_inited_by_lua() then
-        app:init_by_lua()
-    end
-
-    ngx.update_time()
-    if lw_utils.elapse_time_start then
-        lw_utils.elapse_time_start("app_execution_time")
-    end
-
-    local ctx = app()   -- instantiate
-    if type(ctx.on_app_init) == "function" then
-        ctx:on_app_init()
-    end
-
-    ngx.ctx.ctx = ctx
-    return ctx
-end
-
-function M.is_setted_by_lua()
-    return ngx.ctx.ctx
-end
+-----------------------------------------------------------------------
+-- rewrite_by_lua : create the request scope
+-----------------------------------------------------------------------
 
 function M.rewrite_by_lua(app)
-    local ctx = ngx.ctx.ctx
-    if not ctx then
-        ctx = app:set_by_lua()
+    if not app._master_booted then
+        M.init_by_lua(app)
     end
+    if not app._worker_booted then
+        M.init_worker_by_lua(app)
+    end
+
+    local ctx = RequestCtx.context(app, { scope = "rewrite" })
     if type(ctx.on_rewrite) == "function" then
-        ctx:on_rewrite()
+        pcall(ctx.on_rewrite, ctx)
+    end
+
+    -- Route once here so the access phase can apply route-scoped middleware.
+    local matched = match_route(app, ctx)
+
+    -- Rewrite-phase middleware runs here; returning a response short-circuits.
+    local list = phase_middleware(app, "rewrite", matched)
+    if #list == 0 then
+        return
+    end
+
+    local ok, resp = pcall(function()
+        return app:make("dispatcher"):run_phase(list, nil, nil)
+    end)
+    if not ok then
+        emit_error(app, ctx, resp, "middleware")
+        return
+    end
+    if resp ~= nil then
+        M.emit(resp)
     end
 end
+
+-----------------------------------------------------------------------
+-- access_by_lua : admission control
+-----------------------------------------------------------------------
 
 function M.access_by_lua(app)
-    local ctx = ngx.ctx.ctx
-    if not ctx then
-        ctx = app:set_by_lua()
-    end
+    local ctx = RequestCtx.context(app, { scope = "access" })
     if type(ctx.on_access) == "function" then
-        ctx:on_access()
+        pcall(ctx.on_access, ctx)
+    end
+
+    -- Reuse the route matched during rewrite; `false` means "definitely no
+    -- match", which must be preserved (plain `or` would re-match and lose it).
+    local matched = rawget(ctx, "_matched_route")
+    if matched == nil then
+        matched = match_route(app, ctx)
+    end
+
+    local list = phase_middleware(app, "access", matched)
+    if #list == 0 then
+        return
+    end
+
+    local ok, resp = pcall(function()
+        return app:make("dispatcher"):run_phase(list, nil, nil)
+    end)
+    if not ok then
+        emit_error(app, ctx, resp, "middleware")
+        return
+    end
+    if resp ~= nil then
+        -- Admission denied: emit and leave the phase immediately so the
+        -- content phase never runs.
+        M.emit(resp)
     end
 end
+
+-----------------------------------------------------------------------
+-- content_by_lua : dispatch and emit
+-----------------------------------------------------------------------
 
 function M.content_by_lua(app)
-    local ctx = ngx.ctx.ctx
-    if not ctx then
-        ctx = app:set_by_lua()
+    local ctx = RequestCtx.context(app, { scope = "content" })
+
+    local dispatcher = app:make("dispatcher")
+
+    -- `route.run` resolves the match AND applies per-parameter validation, which
+    -- the dispatcher relies on.  Route-scoped phase middleware used the raw
+    -- match from rewrite; this is the validated form.
+    local matched, router = app:make("router").run(ctx)
+
+    local ok, result = xpcall(function()
+        return dispatcher:run(matched, router)
+    end, require("Tilua.core.exception").handler("controller"))
+
+    if not ok then
+        emit_error(app, ctx, result, "controller")
+        return
     end
-    return ctx:run()
+
+    if type(ctx.on_content) == "function" then
+        pcall(ctx.on_content, ctx)
+    end
+
+    M.emit(result)
 end
 
+-----------------------------------------------------------------------
+-- log_by_lua : release the request scope
+-----------------------------------------------------------------------
+
 function M.log_by_lua(app)
-    local ctx = ngx.ctx.ctx
+    local slot = RequestCtx.slot()
+    if not slot then
+        return
+    end
+
+    local ctx = slot.ctx
     if ctx and type(ctx.on_log) == "function" then
-        ctx:on_log()
+        pcall(ctx.on_log, ctx)
     end
-    -- run registered on_app_handled callbacks (close db, cache …)
-    if ctx and ctx.on_app_handled_callbacks then
-        for _, cb in ipairs(ctx.on_app_handled_callbacks) do
-            pcall(cb)
-        end
+
+    -- Subrequests get their own slot and release their own scope; the parent
+    -- request is untouched because its slot lives in a different ngx.ctx.
+    if ngx and ngx.worker and ngx.worker.exiting and ngx.worker.exiting() then
+        return
     end
+
+    RequestCtx.finish(app)
 end
+
+-----------------------------------------------------------------------
+-- exposed for tests / compatibility
+-----------------------------------------------------------------------
+
+M.middleware_phases = MIDDLEWARE_PHASES
+M.phase_has_middleware = phase_has_middleware
+M.phase_middleware = phase_middleware
+M.emit_error = emit_error
 
 return M

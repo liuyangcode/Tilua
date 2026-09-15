@@ -2,6 +2,124 @@
 
 All notable changes to Tilua are documented in this file.
 
+## [0.9.0] - Trie router + lifecycle fixes
+
+### Added
+- `Tilua.http.router` rewritten as a **segment trie**:
+  - `{name}` single-segment parameters, `*` / `{name*}` wildcards
+  - per-segment precedence **static > `{name}` > `*`**, independent of
+    registration order
+  - `~ <pattern>` regex routes kept in a flat fallback list (arbitrary regex
+    cannot live in a trie)
+  - trailing-slash and duplicate-slash normalisation
+- Route-scoped OpenResty phase middleware:
+  `route.get(path, handler, mid, { phases = { access = { "auth" } } })`
+- `tests/test_trie_router.lua` (56 assertions)
+- `tests/e2e/` – real-nginx end-to-end suite with dependency stubs
+- `docs/LIFECYCLE.md` – measured OpenResty phase semantics + redesign
+
+### Fixed
+- **Cross-request response leak.** `dispatch:_construct` cached `self.ctx`, and
+  the dispatcher is a container **singleton** first built on the Application
+  *class* during worker boot — so every request resolved its scoped services
+  (`response`, `request`, `view`, …) on the class container, sharing them
+  between requests (request N saw request N-1's body). The dispatcher now reads
+  the live request context instead of caching a receiver.
+- `dispatcher.create_responser` stored the handler on the worker singleton
+  (`self.handler`), leaking the previous request's handler. Now local.
+- `response._construct(ctx)` accepted only a context, so the documented
+  `return response("text")` produced an **empty 200** (the string became `ctx`).
+  It now accepts a context or a body value.
+- A bare string return was treated as a **view name** instead of text; now it is
+  plain text, and `return "view", {}` explicitly renders a view.
+- `get_bind_args` indexed captures positionally and skipped any name containing a
+  digit, so `/user/{name}` passed `nil`.
+- `request:get_header(name)` could never work: the class system's `__index`
+  wrapper calls `get_*` with only the receiver, so `name` received the request
+  table. Headers are now read live from `ngx.req.get_headers()`, and the API
+  caveat is documented.
+- Header snapshots taken in `rewrite_by_lua` could miss custom headers entirely
+  (measured: client sent `X-Admin-Token`, `ngx.var.http_x_admin_token` was set,
+  the snapshot held only `connection` and `host`).
+- Phase middleware names were not resolved against the application namespace, so
+  `access = { "admin_guard" }` resolved to nothing and the whole phase was
+  silently skipped. Resolution is now
+  `alias → fully-qualified → <App>.middleware.<name> → as-is`.
+- `middleware.phase_list` returned bare strings while `instance()` expects
+  `{ name, config }`; entries are now normalised.
+- `pcall` discarded `route.match`'s second return value, so route-scoped phase
+  middleware never saw a matched rule.
+- `router.parse_rule` defaulted the matcher to `*` (prefix) for every rule, so
+  `/nope` matched `/` and `{name}` routes never compiled to a regex. Unprefixed
+  paths are now exact.
+- `route.add_route` silently dropped `route["GET /x"] = handler` registrations
+  (the `__newindex` handler passed two arguments to a three-argument function).
+- `ensure_dir` misread `os.execute`'s return value and treated a successful
+  `mkdir` as failure, crashing worker boot.
+- `app.lua` required the routes module before `set_app_name`, so rules declared
+  at require time were registered under the wrong key.
+
+### Changed
+- Trie-based matching is O(path segments) instead of scanning candidate lists.
+- `find_matched_route` / `select_best_match` / `parse_rule` /
+  `parse_path_to_regex` are retained as thin wrappers.
+- `tests/test_router.lua` and `tests/test_router_index.lua` removed: the former
+  asserted a boolean from `find_matched_route` (long dead) and the latter
+  asserted the pre-trie index internals.
+
+### Known limitation
+- The scope that existed before an **internal redirect** (`ngx.exec`) is not
+  released eagerly: OpenResty replaces `ngx.ctx` wholesale, leaving the old
+  context unreachable. It is reclaimed by GC when the request ends.
+
+## [0.8.0] - Application IoC Container
+
+### Added
+- `Tilua.core.container` – Laravel-inspired IoC container
+  (`bind` / `singleton` / `scoped` / `instance` / `value` / `alias` / `extend` /
+  `make` / `bound` / `has` / `call` / `forget` / `flush` / `defer` /
+  `scoped_instances` / `define`)
+- `Container.define()` – derive a class, with further subclassing supported
+- Parent-chain resolution: a container consults its `_parent` for bindings and
+  singletons, so a request context shares the worker's singletons
+- `tests/test_container.lua`, `tests/test_app_container.lua`,
+  `tests/test_lifecycle_container.lua` (168 assertions)
+- `tests/support/lua_stub.lua` – shared no-OpenResty harness (ngx / lfs /
+  cjson / resty.jit-uuid / resty.template), auto-detects OpenResty's lualib
+- `tests/fixtures/TestApp/` – fixture application for integration tests
+- `docs/CONTAINER.md` – container guide, including the class-vs-instance rules
+
+### Changed
+- `Tilua.app` now derives from `Tilua.core.container`; the application object is
+  the container
+- Every service is a container binding:
+  - worker singletons: `config` `logger` `middleware` `router` `dispatcher`
+    `view_engine` `plugin` `channel`
+  - request scoped: `request` `response` `view` `cache` `db` `model` `service`
+- All legacy `App:get_*` accessors are kept as thin wrappers over `make()`, so
+  there is only one resolution path
+- `Tilua.core.lifecycle` boots through `App:boot()`; `log_by_lua` releases the
+  request scope via `App:flush_scope()`, replacing `on_app_handled_callbacks`
+  (the old `App:on_app_handled` API still works)
+- `Tilua.core.channel` / `Tilua.http.dispatcher` resolve services via `make()`
+  instead of `app.route` / `app.dispatcher` / `app.config` properties
+
+### Fixed
+- `Tilua.log` never wrote anything: it looked for a non-existent `Tilua.log.file`
+  backend, so every log line was buffered in memory and dropped. It now uses
+  `Tilua.logging.writer`, has a real severity threshold, and gains the missing
+  `warn` / `notice` methods plus `flush` / `close`
+- `Tilua/middleware/init.lua:22` had a syntax error (`[[…\]]]`) that prevented
+  the whole middleware package from loading
+- `Tilua.app` could not resolve `view_engine`; `lifecycle.init_view_engine` is
+  now exported
+
+### Compatibility
+- Existing applications keep working: `get_*` accessors, `unpack`,
+  `on_app_handled`, `run` / `run_cli` and the channel API are unchanged
+- `App:channel(ch)` was renamed to `App:use_channel(ch)` and `App:plugin(name)`
+  to `App:get_plugin(name)`, because `channel` and `plugin` are now bindings
+
 ## [0.2.0] - 2026-09-15
 
 ### Added

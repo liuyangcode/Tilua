@@ -1,25 +1,61 @@
+--- Tilua.http.router
+--- Trie-based HTTP router.
+---
+--- Matching model
+---   * Static segments are matched through a segment trie: O(number of path
+---     segments), independent of how many routes are registered.
+---   * `{name}` captures exactly one segment.
+---   * `*` matches all remaining segments (anonymous); `{name*}` names it.
+---   * `~ <pattern>` regex routes are kept in a flat fallback list.  Arbitrary
+---     regular expressions cannot live in a trie, and a trie killed the class of
+---     bugs where a pattern silently matched far more than intended.
+---
+--- Precedence, per segment: static > `{name}` > `*`.
+--- Static wins outright, which is what makes `/user/new` beat `/user/{id}`
+--- without any registration-order dependence.
+---
+--- Wildcards are terminal by design.  A `*`/`{name*}` node is only considered
+--- once the whole path is consumed, so `/files/*` cannot shadow `/files/a/b`
+--- and `/files/c` in a surprising way — the specific route still wins.
+---
+--- This replaces a matcher that defaulted to `*` (prefix) for every rule, which
+--- meant `/nope` matched the `/` rule and `{name}` routes never compiled to a
+--- regex at all.
+
 local ngx = ngx
+if not ngx then
+    -- Pure-Lua harnesses (tests/support/lua_stub.lua) provide ngx already; this
+    -- branch only guards direct requires.
+    ngx = { re = {} }
+end
 
-local re_sub = ngx.re.sub
-local re_gsub = ngx.re.gsub
-
-local string, table, require = string, table, require
+local string, table = string, table
 local string_sub = string.sub
 local string_find = string.find
-local re_match = ngx.re.match
+local string_lower = string.lower
+local string_gsub = string.gsub
+local table_insert = table.insert
+local table_concat = table.concat
+local unpack = table.unpack or unpack
 
--- Prefer pure helpers (Phase 3); soft-fallback to Penlight when present
 local helpers = require("Tilua.core.helpers")
 local strip = helpers.strip
 local split = helpers.split
-local unpack = table.unpack or unpack
+local lw_util = require("Tilua.utils.util")
+local midware_manager = require("Tilua.middleware")
+
+local stringx = {
+    strip = strip,
+    split = function(s, sep) return split(s, sep or ",", true) end,
+}
+
+--- tablex-compatible shim (append group middleware to the front of a list)
 local tablex = {
     find = helpers.find,
     sub = helpers.sub,
     insertvalues = helpers.insertvalues,
     deepcopy = helpers.deepcopy,
-    move = function(dst, src, ...)
-        -- append group middlewares to the front of per-route list
+    move = function(dst, src)
         if type(src) == "table" then
             for i = #src, 1, -1 do
                 table.insert(dst, 1, src[i])
@@ -28,34 +64,225 @@ local tablex = {
         return dst
     end,
 }
-local stringx = { strip = strip, split = function(s, sep) return split(s, sep or ",", true) end }
-local string_lower, type, pairs, select, table_insert, ipairs, table_unpack, setmetatable = string.lower, type, pairs, select, table.insert, ipairs, table.unpack, setmetatable
-local lw_util = require('Tilua.utils.util')
-local midware_manager = require("Tilua.middleware")
 
+-----------------------------------------------------------------------
+-- path utilities
+-----------------------------------------------------------------------
 
----@class route
+--- Split a path into non-empty segments.
+--- "/user/ada/" -> { "user", "ada" }
+local function path_segments(path)
+    local out = {}
+    if type(path) ~= "string" or path == "" then
+        return out
+    end
+    for seg in string.gmatch(path, "[^/]+") do
+        out[#out + 1] = seg
+    end
+    return out
+end
+
+--- Normalise a path for matching: collapse duplicate slashes and drop the
+--- trailing slash, so "/user/ada/" and "/user/ada" are the same route.
+local function normalize_path(path)
+    path = tostring(path or "/")
+    if path == "" then
+        path = "/"
+    end
+    path = string_gsub(path, "/+", "/")
+    if #path > 1 and string_sub(path, -1) == "/" then
+        path = string_sub(path, 1, -2)
+    end
+    return path
+end
+
+--- Classify one route-path segment.
+--- @return string kind  "static" | "param" | "wildcard"
+--- @return string value  literal text, or the parameter name
+local function classify_segment(seg)
+    local first = string_sub(seg, 1, 1)
+
+    if first == "{" and string_sub(seg, -1) == "}" then
+        local inner = string_sub(seg, 2, -2)
+        local name, star = inner:match("^([%w_]*)(%*?)$")
+        if star == "*" then
+            return "wildcard", (name ~= "" and name or "splat")
+        end
+        return "param", (name ~= "" and name or "param")
+    end
+
+    if seg == "*" then
+        return "wildcard", "splat"
+    end
+
+    return "static", seg
+end
+
+--- Compile a route path into trie segments.
+--- @return table segments  { { kind=..., value=... }, ... }
+--- @return table args      ordered parameter names (plus "splat" for a wildcard)
+local function compile_path(path)
+    local segments, args = {}, {}
+    for _, seg in ipairs(path_segments(path)) do
+        local kind, value = classify_segment(seg)
+        segments[#segments + 1] = { kind = kind, value = value }
+        if kind == "param" or kind == "wildcard" then
+            args[#args + 1] = value
+        end
+    end
+    return segments, args
+end
+
+-----------------------------------------------------------------------
+-- trie
+-----------------------------------------------------------------------
+
+local function new_node()
+    return {
+        static   = nil,   -- [literal] = node
+        param    = nil,   -- { name, node }
+        wildcard = nil,   -- { name, node }  (node holds its rules)
+        rules    = nil,   -- array of terminal rules (one per method)
+    }
+end
+
+local function new_trie()
+    return { root = new_node() }
+end
+
+--- Insert a rule at the given compiled segments.
+--- If a dynamic position already exists with a different name, the existing
+--- name wins so that `/user/{id}` and `/user/{name}` cannot silently capture
+--- under two names.
+local function trie_insert(trie, segments, args, rule)
+    local node = trie.root
+
+    for _, seg in ipairs(segments) do
+        if seg.kind == "static" then
+            node.static = node.static or {}
+            if not node.static[seg.value] then
+                node.static[seg.value] = new_node()
+            end
+            node = node.static[seg.value]
+
+        elseif seg.kind == "param" then
+            if not node.param then
+                node.param = { name = seg.value, node = new_node() }
+            end
+            node = node.param.node
+
+        else -- wildcard: terminal
+            if not node.wildcard then
+                node.wildcard = { name = seg.value, node = new_node() }
+            end
+            node = node.wildcard.node
+            node.rules = node.rules or {}
+            node.rules[#node.rules + 1] = rule
+            return rule
+        end
+    end
+
+    node.rules = node.rules or {}
+    node.rules[#node.rules + 1] = rule
+    return rule
+end
+
+--- Pick the rule at `node` that accepts `method`.
+--- Several methods commonly share one path, so a node holds a list.
+local function pick_rule(node, method, accepts)
+    local rules = node and node.rules
+    if not rules then
+        return nil
+    end
+    for _, r in ipairs(rules) do
+        if accepts(r, method) then
+            return r
+        end
+    end
+    return nil
+end
+
+--- Match `segs` (array of path segments) against the trie.
+--- @param method string already lowercased
+--- @param accepts function(rule, method) -> boolean
+--- @return table|nil rule, table captures
+local function trie_match(trie, segs, method, accepts)
+    local captures = {}
+
+    local function walk(node, i)
+        -- Whole path consumed: accept a terminal rule, else a wildcard that
+        -- matches the empty remainder.
+        if i > #segs then
+            local hit = pick_rule(node, method, accepts)
+            if hit then
+                return hit, captures
+            end
+            local wc = node.wildcard
+            if wc then
+                local wh = pick_rule(wc.node, method, accepts)
+                if wh then
+                    captures[wc.name] = ""
+                    return wh, captures
+                end
+            end
+            return nil
+        end
+
+        local seg = segs[i]
+
+        -- 1. static (highest precedence)
+        local child = node.static and node.static[seg]
+        if child then
+            local rule, caps = walk(child, i + 1)
+            if rule then
+                return rule, caps
+            end
+        end
+
+        -- 2. `{name}` single-segment parameter
+        if node.param then
+            captures[node.param.name] = seg
+            local rule, caps = walk(node.param.node, i + 1)
+            if rule then
+                return rule, caps
+            end
+            captures[node.param.name] = nil
+        end
+
+        -- 3. `*` / `{name*}` swallows the remainder
+        if node.wildcard then
+            local wh = pick_rule(node.wildcard.node, method, accepts)
+            if wh then
+                captures[node.wildcard.name] = table_concat(segs, "/", i)
+                return wh, captures
+            end
+        end
+
+        return nil
+    end
+
+    return walk(trie.root, 1)
+end
+
+-----------------------------------------------------------------------
+-- per-app index
+-----------------------------------------------------------------------
+
 local route = {
     cur_app = "",
-    rules = {},
-    rule_caches = {},
-    -- Fast lookup indexes per app (rebuilt when rules change)
-    indexes = {},
+    rules = {},        -- [app] = { ["get /path"] = { handler, path, midware } }
+    rule_caches = {},  -- [app] = array of compiled rule objects
+    indexes = {},      -- [app] = { trie, regex }
 }
--- path-level candidate cache + best-match cache
-local matched_rule_caches = {}
-local best_match_caches = {}
-local MATCH_CACHE_MAX = 2048
-local match_cache_size = 0
-local group_midwares = nil
-local verbstack = {}
-local parsed_paths_to_regex = {}
 
-local function method_set(methods)
+-----------------------------------------------------------------------
+-- method helpers
+-----------------------------------------------------------------------
+
+function route.method_set(methods)
     local s = {}
     if type(methods) ~= "table" then
-        s[string_lower(tostring(methods or "*"))] = true
-        return s
+        methods = { methods or "*" }
     end
     for _, m in ipairs(methods) do
         s[string_lower(tostring(m))] = true
@@ -63,75 +290,78 @@ local function method_set(methods)
     return s
 end
 
+--- Does a rule accept this (already lowercased) method?
 local function accepts_method(rule, method)
     local ms = rule._method_set
     if not ms then
-        return true
+        ms = route.method_set(rule.method)
+        rule._method_set = ms
     end
-    return ms["*"] or ms[method]
+    return ms["*"] == true or ms[method] == true
 end
 
-local function clear_match_caches()
-    matched_rule_caches = {}
-    best_match_caches = {}
-    match_cache_size = 0
-end
-
---- Build O(1)/O(k) indexes: exact map, sorted prefixes, regex lists per method
-function route.rebuild_index(app)
+--- Build (or rebuild) the index for an app from `rule_caches`.
+local function build_index(app)
     local list = route.rule_caches[app] or {}
-    local idx = {
-        exact = {},   -- [method][path] = rule
-        prefix = {},  -- [method] = { {path, rule, len}, ... } sorted desc by len
-        regex = {},   -- [method] = { rule, ... }
-    }
-
-    local function bucket(method)
-        if not idx.exact[method] then
-            idx.exact[method] = {}
-            idx.prefix[method] = {}
-            idx.regex[method] = {}
-        end
-    end
+    local trie = new_trie()
+    local regex = {}
 
     for _, rule in ipairs(list) do
-        rule._method_set = method_set(rule.method)
-        local methods = rule.method
-        if type(methods) ~= "table" then
-            methods = { methods or "*" }
-        end
-        for _, m in ipairs(methods) do
-            m = string_lower(tostring(m))
-            bucket(m)
-            if rule.matcher == "=" then
-                idx.exact[m][rule.path] = rule
-            elseif rule.matcher == "*" then
-                local len = #(rule.path or "")
-                table_insert(idx.prefix[m], { path = rule.path, rule = rule, len = len })
-            elseif rule.matcher == "~" then
-                table_insert(idx.regex[m], rule)
+        local matcher = rule.matcher
+
+        if matcher == "~" then
+            -- Parameterised paths keep the "~" matcher (for the validation DSL)
+            -- but are still trie-matched; only true regex patterns fall back.
+            local segs, args = compile_path(rule.path)
+            local parameterised = false
+            for _, s in ipairs(segs) do
+                if s.kind ~= "static" then
+                    parameterised = true
+                    break
+                end
             end
+
+            if parameterised then
+                rule.args = args
+                trie_insert(trie, segs, args, rule)
+            else
+                -- A `~` rule with no parameter segments is a genuine regex
+                -- pattern and cannot live in a trie.  Compile it before adding
+                -- it to the fallback list: `route.match` calls
+                -- `ngx.re.match(path, rule.regex)` and would otherwise pass nil.
+                if rule.regex == nil then
+                    local _, regex = route.parse_path_to_regex(rule.path)
+                    rule.regex = regex
+                end
+                if rule.args == nil then
+                    rule.args = args
+                end
+                regex[#regex + 1] = rule
+            end
+
+        elseif matcher == "*" then
+            -- Prefix route, e.g. "* /api". Compiled as a trailing wildcard so
+            -- it still participates in the trie with correct precedence.
+            local segs, args = compile_path(rule.path)
+            segs[#segs + 1] = { kind = "wildcard", value = "splat" }
+            args[#args + 1] = "splat"
+            rule.args = args
+            rule.prefix = normalize_path(rule.path)
+            trie_insert(trie, segs, args, rule)
+
+        else -- "=" exact (also `{name}` paths)
+            local segs, args = compile_path(rule.path)
+            rule.args = args
+            trie_insert(trie, segs, args, rule)
         end
     end
 
-    -- longest prefix first
-    for _, arr in pairs(idx.prefix) do
-        table.sort(arr, function(a, b)
-            return a.len > b.len
-        end)
-    end
-
-    route.indexes[app] = idx
-    clear_match_caches()
-    return idx
+    route.indexes[app] = { trie = trie, regex = regex }
+    return route.indexes[app]
 end
 
 local function get_index(app)
-    local idx = route.indexes[app]
-    if not idx then
-        idx = route.rebuild_index(app)
-    end
-    return idx
+    return route.indexes[app] or build_index(app)
 end
 
 function route.set_app_name(name)
@@ -141,37 +371,35 @@ function route.set_app_name(name)
     route.indexes[name] = nil
 end
 
+--- Compile `route.rules[app]` (the declarative `{ ["get /path"] = handler }`
+--- shape) into rule objects.
 function route.init_rule_caches(config_rules)
-    lw_util.extend(route.rules[route.cur_app], config_rules)
-    for location, result in pairs(route.rules[route.cur_app]) do
+    local app = route.cur_app
+    lw_util.extend(route.rules[app], config_rules or {})
+
+    for location, result in pairs(route.rules[app]) do
         local method, matcher, url, validation = route.parse_rule(location)
-        local router = route.to_router(result, url)
-        router.matcher = matcher
-        router.method = method
-        router._method_set = method_set(method)
-
-        if matcher == "~" then
-            local _, regex, args = route.parse_path_to_regex(url)
-            router.regex = regex
-            router.args = args
-        end
-
-        router.validation = validation
-        table_insert(route.rule_caches[route.cur_app], router)
+        local rule = route.to_router(result, url)
+        rule.matcher = matcher
+        rule.method = method
+        rule._method_set = route.method_set(method)
+        rule.validation = validation
+        table_insert(route.rule_caches[app], rule)
     end
-    route.rebuild_index(route.cur_app)
+
+    build_index(app)
+    return route.indexes[app]
 end
 
-function route.add_route_rule(cur_app, router)
-    if router and not router._method_set then
-        router._method_set = method_set(router.method)
+function route.add_route_rule(cur_app, rule)
+    if rule and not rule._method_set then
+        rule._method_set = route.method_set(rule.method)
     end
-    table_insert(route.rule_caches[cur_app], router)
-    route.rebuild_index(cur_app)
+    table_insert(route.rule_caches[cur_app], rule)
+    build_index(cur_app)
 end
 
---- remove rule caches defined by gateway
----@param cur_app string app name
+--- Remove rules flagged as `api` (gateway-provided) and rebuild.
 function route.clear_route_rule(cur_app)
     local rules = route.rule_caches[cur_app]
     if not rules then
@@ -184,287 +412,184 @@ function route.clear_route_rule(cur_app)
         end
     end
     route.rule_caches[cur_app] = kept
-    route.rebuild_index(cur_app)
+    build_index(cur_app)
 end
 
-
-local function add_route(verbs, path, handler, ...)
-    if handler then
-        local midware
-        local fmidware = select(1, ...)
-        local tfmidware = type(fmidware)
-        if tfmidware == 'table' then
-            midware = fmidware
-        elseif tfmidware == 'string' then
-            midware = { ... }
-        else
-            midware = {}
-        end
-        if group_midwares then
-            tablex.move(midware, group_midwares, #midware + 1, 1)
-        end
-        if #midware > 0 then
-            route.rules[route.cur_app][verbs .. ' ' .. path] = {
-                responser = handler,
-                path = path,
-                midware = midware
-            }
-        else
-            route.rules[route.cur_app][verbs .. ' ' .. path] = handler
-        end
-    else
-        local responser = path
-        local route_rule = verbs
-        if lw_util.is_string(responser) then
-            add_route('', route_rule, responser)
-        elseif lw_util.callable(responser) then
-            add_route('', route_rule, responser)
-        elseif lw_util.is_array(responser) then
-            if responser.res or responser.responser then
-                local mid = responser.mid or responser.midware or nil
-                add_route('', verbs, responser.responser or responser.res, mid)
-            else
-                lw_util.foreach(responser, function(hanlder, verb)
-                    if verb == '*' then
-                        add_route('', route_rule, hanlder)
-                    else
-                        verb = split(verb, ',')
-                        lw_util.foreach(verb, function(v)
-                            add_route(v, route_rule, hanlder)
-                        end)
-                    end
-                end)
-            end
-        end
-    end
+function route.get_route_caches(app)
+    return route.rule_caches[app] or {}
 end
 
-function route.add_route(cur_app, verbs, path, handler, ...)
-    route.cur_app = cur_app
-    add_route(verbs, path, handler, ...)
+function route.rebuild_index(app)
+    return build_index(app or route.cur_app)
 end
 
----分组添加中间件
-function route.group(func, ...)
-    local mid = select(1, ...)
-    if type(mid) == 'table' then
-        group_midwares = mid
-    else
-        group_midwares = { ... }
-    end
-    func(route)
-    group_midwares = nil
-end
+-----------------------------------------------------------------------
+-- rule DSL parsing
+-----------------------------------------------------------------------
 
-for _, ver in ipairs({
-    'get', 'post', 'delete', 'put'
-}) do
-    route[ver] = function(...)
-        if not select(1, ...) then
-            table_insert(verbstack, ver)
-            return route
-        end
-        table_insert(verbstack, ver)
-        for _, v in ipairs(verbstack) do
-            add_route(v, ...)
-        end
-        verbstack = {}
-        return route
-    end
-end
-
----rest
----@param path string
----@param handler any
-function route.rest(path, handler, ...)
-    local rest = {
-        { 'get', '/?$', 'index', '~' },
-        { 'get', '/new/?$', 'new', '~' },
-        { 'get', '/{id}/?$ id:neq,new', 'show', '~' },
-        { 'get', '/{id}/edit$', 'edit', '~' },
-        { 'post', '/?$', 'create', '~' },
-        { 'put', '/{id}/?$', 'update', '~' },
-        { 'delete', '/{id}/?$', 'destroy', '~' }
-    }
-    for _, v in ipairs(rest) do
-        if lw_util.is_string(handler) then
-            route[v[1]](v[4] .. path .. v[2], handler .. '@' .. v[3], ...)
-        else
-            route[v[1]](v[4] .. path .. v[2], handler[v[3]], ...)
-        end
-    end
-end
----to_router
----@param router any
----@param path string 路径用于索引function
-function route.to_router(router, path)
-    local standard_handler = {
-        midware = {
-        },
-        responser = nil
-    }
-    if lw_util.is_string(router) then
-        standard_handler.responser, standard_handler.midware = route.parse_handler_midware(router)
-    elseif lw_util.is_array(router) then
-        -- 标准路由响应者
-        standard_handler.responser = router.responser or router.res
-        router.midware = router.midware or {}
-        if lw_util.is_string(router.midware) then
-            router.midware = midware_manager.parse(router.midware or router.mid)
-        elseif lw_util.is_array(router.midware) then
-            router.midware = midware_manager.parse(router.midware or router.mid)
-        end
-        standard_handler.midware = router.midware
-    elseif lw_util.callable(router) then
-        standard_handler.responser = router
-    end
-    standard_handler.path = path
-    return standard_handler
-end
-
----解析路由规则
----例如get =/welcome/{id} id=1&a=1
----@param location string
 function route.parse_rule(location)
     location = strip(location, ' ')
-    location = ngx.re.gsub(location, "%s+", ' ', 'jo')
-    local method, route_url, validation = unpack(split(location, '%s+'))
-    if not route_url then
-        route_url = method
-        method = '*'
-    end
-    local matchers = string_sub(route_url, 1, 1)
-    local matchers_map = {
-        ['='] = '=',
-        ['~'] = '~',
-        ['*'] = '*'
-    }
-    if not matchers_map[matchers] then
-        matchers = '*'
+    if ngx.re and ngx.re.gsub then
+        location = ngx.re.gsub(location, "%s+", ' ', 'jo')
     else
-        route_url = string.sub(route_url, 2)
+        location = string_gsub(location, "%s+", ' ')
     end
-    --正则匹配支持参数验证
+
+    local parts = split(location, '%s+')
+    local a1, a2, a3 = parts[1], parts[2], parts[3]
+
+    local method, route_url, validation
+    local bare_matcher = nil
+
+    -- Two accepted shapes:
+    --   "<method> <path> [validation]"       e.g. "get /x", "get ~/x/(%d+)"
+    --   "<matcher> [path] [validation]"      e.g. "* /api", "~ /re", "/x"
+    -- The second form starts with a bare matcher symbol.
+    if a1 == '*' or a1 == '~' or a1 == '=' then
+        bare_matcher = a1
+        method = '*'
+        route_url = a2 or "/"
+        validation = a3
+    else
+        method = a1
+        route_url = a2
+        validation = a3
+        if not route_url then
+            route_url = method
+            method = '*'
+        end
+    end
+
+    -- Optional matcher prefix: "=" exact, "*" prefix, "~" regex.
+    -- Also: any `{name}`/`{name*}` segment makes the rule parameterised, which
+    -- uses the "~" matcher so the per-parameter validation DSL
+    -- (`id:reg,[0-9]+`) keeps working — the trie still matches structurally.
+    local matchers_map = { ['='] = '=', ['~'] = '~', ['*'] = '*' }
+    local first = string_sub(route_url, 1, 1)
+    local matchers
+
+    if matchers_map[first] then
+        matchers = matchers_map[first]
+        route_url = string_sub(route_url, 2)
+    else
+        matchers = bare_matcher or '='
+    end
+
+    if matchers == '~' or matchers == '=' then
+        -- A declared parameter makes this a parameterised route.
+        local _, param_args = compile_path(route_url)
+        if #param_args > 0 then
+            matchers = '~'
+        end
+    end
+
     if matchers == '~' then
         validation = route.parse_validation(validation)
     end
     method = stringx.split(method, ',')
     return method, matchers, route_url, validation
 end
----路径变量验证
+
 ---@param validation string like uid:reg,[0-9]+
 function route.parse_validation(validation)
     if not validation then
-        return {}
+        return nil
     end
-    local validation_parsed = {}
+    local validation_parsed = lw_util.parse_expression(validation, ';', ':', ',')
     local validations = {}
-    validation_parsed = lw_util.parse_expression(validation, ';', ':', ',')
     for k, v in pairs(validation_parsed) do
-        local tv = type(v)
-        if tv == 'table' then
-            local matchers = string.lower(v[1])
+        if type(v) == "table" then
+            local matchers = string_lower(v[1])
             if matchers == 'reg' or matchers == 'eq' or matchers == 'neq' then
-                validations[k] = {
-                    matchers,
-                    v[2]
-                }
+                validations[k] = { matchers, v[2] }
             elseif matchers == 'in' or matchers == 'notin' then
-                validations[k] = {
-                    matchers,
-                    tablex.sub(v, 2, #v)
-                }
+                validations[k] = { matchers, v[2] }
             else
-                validations[k] = {
-                    'in',
-                    v
-                }
+                validations[k] = { 'eq', v[1] }
             end
-        elseif tv ~= 'nil' then
-            validations[k] = {
-                'eq',
-                v
-            }
+        else
+            validations[k] = { 'eq', v }
         end
     end
     return validations
 end
 
+--- Kept for compatibility: `html_cache` uses this to build cache keys from
+--- declared rules.  The trie does not depend on it.
 function route.parse_path_to_regex(url)
+    local parsed_paths_to_regex = route._parsed_paths or {}
+    route._parsed_paths = parsed_paths_to_regex
+
     if parsed_paths_to_regex[url] then
         return unpack(parsed_paths_to_regex[url])
     end
-    local params = {}
-    local anonymous_arg_cnt = 0
-    local re_url = string.gsub(url, '\\/', '__SLASH__')
-    re_url = split(re_url, '/', true)
-    for i, v in ipairs(re_url) do
-        if re_match(v, '[(][^)]+[)]') then
-            repeat
-                anonymous_arg_cnt = anonymous_arg_cnt + 1
-                table_insert(params, '$' .. anonymous_arg_cnt)
-                v = re_sub(v, '[(][^)]+[)]', '')
-            until not re_match(v, '[(][^)]+[)]')
-            re_url[i] = string.gsub(re_url[i], '__SLASH__', '\\/')
-        elseif re_match(v, '{[^}]+?}') then
-            re_url[i] = re_gsub(v, '({[^}]+?})', function(m)
-                table_insert(params, string_sub(m[1], 2, -2))
-                return '([^\\/]+)'
-            end, 'jox')
+
+    local re_url, params = {}, {}
+    for _, seg in ipairs(path_segments(url)) do
+        local kind, value = classify_segment(seg)
+        if kind == "static" then
+            re_url[#re_url + 1] = ngx.re and ngx.re.escape
+                and ngx.re.escape(value) or value:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
+        elseif kind == "param" then
+            re_url[#re_url + 1] = "([^/]+)"
+            params[#params + 1] = value
+        else
+            re_url[#re_url + 1] = "(.*)"
+            params[#params + 1] = value
         end
     end
-    parsed_paths_to_regex[url] = { url, table.concat(re_url, '/'), params }
-    return url, table.concat(re_url, '/'), params
+
+    local result = { url, "^/" .. table_concat(re_url, '/') .. "$", params }
+    parsed_paths_to_regex[url] = result
+    return unpack(result)
 end
 
+--- "auth mvc:index" -> "mvc:index", { "auth" }
 function route.parse_handler_midware(responser)
-    responser = strip(responser, ' ')
-    responser = ngx.re.gsub(responser, "%s+", ' ', 'jo')
-    local midware
-    midware, responser = unpack(split(responser, '%s+'))
-    if not responser then
-        -- 没有中间件
+    if type(responser) ~= "string" then
+        return responser, {}
+    end
+    local midware, rest = unpack(split(responser, '%s+'))
+    if not rest then
         return midware, {}
     end
-    midware = midware_manager.parse(midware)
-    return responser, midware
+    return rest, midware_manager.parse(midware)
 end
 
----解析路径变量
----@param params table
----@param values table
+--- Kept for compatibility.
 function route.parse_path_params(params, values, extra_path)
-    values = values or {}
-    extra_path = strip(extra_path, '/')
-    tablex.insertvalues(values, split(extra_path, '/'))
-    local path_params = {}
-    for i, v in ipairs(values) do
-        path_params['$' .. i] = v
+    local out = {}
+    for i, name in ipairs(params or {}) do
+        out[name] = values and values[i]
     end
-    for i = 1, #params do
-        path_params[params[i]] = values[i]
+    if extra_path and extra_path ~= "" then
+        out.splat = extra_path
     end
-    path_params.args = tablex.sub(values, 1, #values) --用于传递给responser
-    path_params.params = params
-    return path_params
+    return out
 end
 
----get_routes
----@param cur_app string
----@param flag string
----@param method string
-function route.get_routes(cur_app, flag, method)
-    local rule_caches = nil
-    method = string_lower(method)
-    rule_caches = route.rule_caches[cur_app][method] or route.get_init_route_rule()
-    for _, v in ipairs(route.rule_caches[cur_app]['*'] and route.rule_caches[cur_app]['*'][flag] or {}) do
-        table_insert(rule_caches[flag], v)
+function route.to_router(handler, path)
+    if type(handler) == "table" then
+        local rule = {}
+        for k, v in pairs(handler) do
+            rule[k] = v
+        end
+        rule.path = rule.path or path
+        if rule.midware and type(rule.midware) == "string" then
+            rule.midware = midware_manager.parse(rule.midware)
+        end
+        rule.responser = rule.responser or rule.handler
+        return rule
     end
-    return tablex.deepcopy(rule_caches[flag])
+
+    local responser, midware = route.parse_handler_midware(handler)
+    return { path = path, responser = responser, midware = midware }
 end
 
----验证路由是否匹配
----@param ctx table
+-----------------------------------------------------------------------
+-- validation
+-----------------------------------------------------------------------
+
 ---@param validations table
 function route.validate(ctx, validations)
     if not validations then
@@ -473,7 +598,6 @@ function route.validate(ctx, validations)
     if type(validations) == 'function' then
         return validations(ctx)
     end
-
     for k, validation in pairs(validations) do
         local value = lw_util.index_value(ctx, k)
         local tvalidation = type(validation)
@@ -482,188 +606,352 @@ function route.validate(ctx, validations)
                 return false
             end
         else
-            local exp, values = table_unpack(validation)
-            exp = string_lower(exp)
-            if (exp == 'in' and not tablex.find(values, value)) or (exp == 'notin' and tablex.find(values, value)) then
-                return false
-            elseif (exp == 'eq' and value ~= values) or (exp == 'neq' and value == values) then
-                return false
-            elseif exp == 'reg' and not re_match(value, values) then
-                return false
+            local exp, expected = table_unpack_safe(validation)
+            local matchers = string_lower(tostring(exp))
+            if matchers == 'reg' then
+                if not ngx.re or not ngx.re.find then
+                    return true
+                end
+                if not ngx.re.find(value, expected, 'jo') then
+                    return false
+                end
+            elseif matchers == 'eq' then
+                if value ~= expected then return false end
+            elseif matchers == 'neq' then
+                if value == expected then return false end
+            elseif matchers == 'in' then
+                if not helpers.find(
+                    type(expected) == "table" and expected or split(expected, ",", true),
+                    value) then
+                    return false
+                end
+            elseif matchers == 'notin' then
+                if helpers.find(
+                    type(expected) == "table" and expected or split(expected, ",", true),
+                    value) then
+                    return false
+                end
             end
         end
     end
     return true
 end
 
-function route.get_route_caches(app)
-    return route.rule_caches[app] or {}
+function table_unpack_safe(t)
+    return t[1], t[2]
 end
 
-local function shallow_rule(rule)
-    local r = {}
-    for k, v in pairs(rule) do
-        r[k] = v
-    end
-    return r
-end
+-----------------------------------------------------------------------
+-- matching
+-----------------------------------------------------------------------
 
-local function cache_key(app, method, path)
-    return app .. "\0" .. method .. "\0" .. path
-end
-
-local function store_match_cache(key, value)
-    if match_cache_size >= MATCH_CACHE_MAX then
-        clear_match_caches()
-    end
-    matched_rule_caches[key] = value
-    match_cache_size = match_cache_size + 1
-end
-
---- Collect candidate matches using indexes (exact → regex → prefix)
-function route.find_matched_route(app, method, path)
+--- Find the best rule for a method + path.
+--- @return table|nil rule  the matched rule
+--- @return table captures  path parameters + splat
+function route.match(app, method, path)
     method = string_lower(method or "get")
-    local key = cache_key(app, method, path)
-    local cached = matched_rule_caches[key]
-    if cached then
-        return cached
-    end
-
+    path = normalize_path(path)
     local idx = get_index(app)
-    local matched_route = {}
+    local segs = path_segments(path)
 
-    local function try_exact(m)
-        local map = idx.exact[m]
-        if map then
-            local rule = map[path]
-            if rule then
-                matched_route[#matched_route + 1] = rule
-            end
-        end
+    -- 1. trie (static > param > wildcard, per segment)
+    local rule, captures = trie_match(idx.trie, segs, method, accepts_method)
+    if rule then
+        return rule, captures or {}
     end
 
-    local function try_regex(m)
-        local list = idx.regex[m]
-        if not list then
-            return
-        end
-        for i = 1, #list do
-            local rule = list[i]
-            -- "jo" = JIT + once; faster than gmatch for single match
-            local mres = ngx.re.match(path, rule.regex, "jo")
+    -- 2. regex fallback
+    for _, r in ipairs(idx.regex or {}) do
+        if accepts_method(r, method) then
+            local mres = ngx.re.match(path, r.regex, "jo")
             if mres then
                 mres[0] = nil
-                local copy = shallow_rule(rule)
-                copy.vals = mres
-                local rest = ngx.re.sub(path, rule.regex, "", "jo")
-                copy.extra_path = strip(rest or "", "/")
-                matched_route[#matched_route + 1] = copy
+                local caps = {}
+                for i, name in ipairs(r.args or {}) do
+                    caps[name] = mres[i]
+                end
+                return r, caps
             end
         end
     end
 
-    local function try_prefix(m)
-        local list = idx.prefix[m]
-        if not list then
-            return
-        end
-        for i = 1, #list do
-            local item = list[i]
-            local p = item.path
-            -- plain find from start only
-            if path == p or (string_find(path, p, 1, true) == 1) then
-                local copy = shallow_rule(item.rule)
-                copy.matched_len = #p
-                copy.extra_path = string_sub(path, #p + 1)
-                matched_route[#matched_route + 1] = copy
-            end
-        end
-    end
-
-    -- specific method then wildcard method rules
-    try_exact(method)
-    try_exact("*")
-    try_regex(method)
-    try_regex("*")
-    try_prefix(method)
-    try_prefix("*")
-
-    store_match_cache(key, matched_route)
-    return matched_route
+    return nil
 end
 
---- Select best match with priority: exact > regex > longest prefix
-function route.select_best_match(ctx, matched)
-    local best_match
-    local longest_match_len = 0
+--- Compatibility wrapper: the pre-trie two-stage API.
+--- Returns the matched rule (or nil); the second return value is kept for the
+--- old call shape but is no longer a candidate array.
+function route.find_matched_route(app, method, path)
+    return route.match(app, method, path)
+end
 
-    -- prefer exact
-    for i = 1, #matched do
-        local rule = matched[i]
-        if rule.matcher == "=" and route.validate(ctx, rule.validation) then
+--- Compatibility wrapper.  With a trie there is no candidate list to reduce;
+--- precedence is structural.  When handed a candidate array (old call shape)
+--- the first accepted entry is returned.
+function route.select_best_match(ctx, matched)
+    if type(matched) == "table" and matched.path then
+        -- already a rule
+        return route.validate(ctx, matched.validation) and matched or nil
+    end
+    if type(matched) ~= "table" then
+        return nil
+    end
+    for _, rule in ipairs(matched) do
+        if route.validate(ctx, rule.validation) then
             return rule
         end
     end
-
-    for i = 1, #matched do
-        local rule = matched[i]
-        if rule.matcher == "~" then
-            local path_params = lw_util.combine(rule.args or {}, rule.vals or {})
-            if route.validate(setmetatable(path_params, { __index = ctx }), rule.validation) then
-                if type(rule.responser) == "string" then
-                    local copy = shallow_rule(rule)
-                    copy.responser = string.gsub(rule.responser, "%$(%d+)", function(var)
-                        return path_params["$" .. var] or ""
-                    end)
-                    return copy
-                end
-                return rule
-            end
-        end
-    end
-
-    for i = 1, #matched do
-        local rule = matched[i]
-        if rule.matcher == "*" then
-            local len = rule.matched_len or 0
-            if len > longest_match_len and route.validate(ctx, rule.validation) then
-                longest_match_len = len
-                best_match = rule
-            end
-        end
-    end
-    return best_match
+    return nil
 end
 
+--- Resolve the request against the router.
+--- @return boolean matched, table|string rule_or_path
 function route.run(ctx)
-    local request = ctx.request
-    local request_method = string_lower(request.method or ngx.var.request_method or "get")
-    local pathinfo = request.path_info or ngx.var.uri or "/"
+    local request = ctx:make("request")
+    local method = string_lower(request.method or (ngx.var and ngx.var.request_method) or "get")
+    local path = request.path_info or (ngx.var and ngx.var.uri) or "/"
 
-    local bkey = cache_key(ctx.name, request_method, pathinfo)
-    local cached_best = best_match_caches[bkey]
-    if cached_best ~= nil then
-        if cached_best == false then
-            return false, pathinfo
-        end
-        return true, cached_best
+    local rule, captures = route.match(ctx.name, method, path)
+    if not rule then
+        return false, normalize_path(path)
     end
 
-    local matched = route.find_matched_route(ctx.name, request_method, pathinfo)
-    local best_match = route.select_best_match(ctx, matched)
-
-    if match_cache_size >= MATCH_CACHE_MAX then
-        clear_match_caches()
+    -- Path parameters are visible to validation and to the dispatcher.
+    local context = setmetatable(captures or {}, { __index = ctx })
+    if not route.validate(context, rule.validation) then
+        return false, normalize_path(path)
     end
-    best_match_caches[bkey] = best_match or false
-    match_cache_size = match_cache_size + 1
 
-    if best_match then
-        return true, best_match
+    -- Hand the captures to the dispatcher via a shallow copy so per-request
+    -- state never mutates the shared rule object.
+    local out = {}
+    for k, v in pairs(rule) do
+        out[k] = v
     end
-    return false, pathinfo
+    out.vals = captures or {}
+    out.extra_path = (captures and captures.splat) or ""
+    return true, out
 end
 
+-----------------------------------------------------------------------
+-- registration
+-----------------------------------------------------------------------
+
+--- Group routes under shared middleware.
+---   route.group(function() route.get("/a", h) end, { "auth" })
+function route.group(func, ...)
+    local previous = route._group_midwares
+    local args = { ... }
+    local mid
+    if type(args[1]) == "table" then
+        mid = args[1]
+    else
+        mid = args
+    end
+    route._group_midwares = mid
+    local ok, err = pcall(func)
+    route._group_midwares = previous
+    if not ok then
+        error(err, 0)
+    end
+end
+
+--- Register a route.
+--- Two call shapes:
+---   add_route("GET", "/x", handler, [midware])   -- from route.get() etc.
+---   add_route("GET /x", handler)                 -- from route[key] = handler
+local function add_route(verbs, path, handler, ...)
+    local midargs = { ... }
+
+    -- route["GET /x"] = handler  ->  add_route("GET /x", handler)
+    if handler == nil and type(path) == "function" then
+        handler = path
+        path = nil
+    end
+
+    if not handler then
+        return
+    end
+
+    local key
+    if path == nil or path == "" then
+        key = tostring(verbs)
+    else
+        key = tostring(verbs) .. ' ' .. tostring(path)
+    end
+
+    local midware
+    local phases
+    local first = midargs[1]
+    if type(first) == 'table' then
+        midware = first
+    elseif type(first) == 'string' then
+        midware = midargs
+    else
+        midware = {}
+    end
+
+    -- An extra `{ phases = { access = {...} } }` argument declares middleware
+    -- for a non-content OpenResty phase (e.g. auth in the access phase).
+    for i = 1, #midargs do
+        local a = midargs[i]
+        if type(a) == 'table' and a.phases ~= nil then
+            phases = a.phases
+            if midware == a then
+                midware = {}
+            end
+        end
+    end
+
+    if route._group_midwares then
+        tablex.move(midware, route._group_midwares)
+    end
+
+    route.rules[route.cur_app][key] = {
+        responser = handler,
+        path      = path,
+        midware   = #midware > 0 and midware or nil,
+        phases    = phases,
+    }
+end
+
+function route.add_route(cur_app, verbs, path, handler, ...)
+    route.cur_app = cur_app
+    add_route(verbs, path, handler, ...)
+end
+
+function route.get(verbs, path, handler, ...)
+    if handler == nil then
+        -- route.get(path, handler)
+        handler, path = path, verbs
+        verbs = "GET"
+    end
+    add_route(verbs, path, handler, ...)
+end
+
+function route.post(verbs, path, handler, ...)
+    if handler == nil then
+        handler, path = path, verbs
+        verbs = "POST"
+    end
+    add_route(verbs, path, handler, ...)
+end
+
+function route.put(verbs, path, handler, ...)
+    if handler == nil then
+        handler, path = path, verbs
+        verbs = "PUT"
+    end
+    add_route(verbs, path, handler, ...)
+end
+
+function route.delete(verbs, path, handler, ...)
+    if handler == nil then
+        handler, path = path, verbs
+        verbs = "DELETE"
+    end
+    add_route(verbs, path, handler, ...)
+end
+
+function route.patch(verbs, path, handler, ...)
+    if handler == nil then
+        handler, path = path, verbs
+        verbs = "PATCH"
+    end
+    add_route(verbs, path, handler, ...)
+end
+
+function route.head(verbs, path, handler, ...)
+    if handler == nil then
+        handler, path = path, verbs
+        verbs = "HEAD"
+    end
+    add_route(verbs, path, handler, ...)
+end
+
+function route.options(verbs, path, handler, ...)
+    if handler == nil then
+        handler, path = path, verbs
+        verbs = "OPTIONS"
+    end
+    add_route(verbs, path, handler, ...)
+end
+
+--- RESTful resource shorthand.
+function route.rest(path, handler, ...)
+    local name = handler
+    local base = normalize_path(path)
+    local map = {
+        { "GET",    "" },
+        { "POST",   "" },
+        { "GET",    "/new" },
+        { "GET",    "/{id}" },
+        { "PUT",    "/{id}" },
+        { "DELETE", "/{id}" },
+        { "GET",    "/{id}/edit" },
+    }
+    for _, m in ipairs(map) do
+        local full = base .. m[2]
+        if full == "" then
+            full = "/"
+        end
+        add_route(m[1], full, type(handler) == "string" and (name .. "." .. m[1] .. m[2]) or handler, ...)
+    end
+end
+
+function route.get_routes(cur_app, _flag, _method)
+    return route.rule_caches[cur_app] or {}
+end
+
+--- Middleware declared for a phase.
+---
+--- Route-scoped `phases` let a route opt into the access phase (auth before the
+--- content phase) without gating every route.  Because the access phase runs
+--- *before* routing in the normal OpenResty flow, callers that already know the
+--- matched rule should pass `only` so that only that route's middleware runs —
+--- otherwise `admin_guard` declared on `/admin` would gate the whole app.
+---
+--- @param app string app name
+--- @param phase string "rewrite" | "access"
+--- @param only table|false|nil a matched rule, `false` for "no route matched",
+---        or nil for "no route filter" (collect from every route)
+--- @return table list of entries in registration order
+function route.phase_middleware(app, phase, only)
+    local seen, out = {}, {}
+
+    local function collect(rule)
+        local phases = rule.phases
+        if type(phases) ~= "table" then
+            return
+        end
+        for _, entry in ipairs(phases[phase] or {}) do
+            if type(entry) == "string" then
+                entry = { entry }
+            end
+            local key = tostring(entry[1])
+            if not seen[key] then
+                seen[key] = true
+                out[#out + 1] = entry
+            end
+        end
+    end
+
+    if only == false then
+        -- A route filter was applied and nothing matched: no route-scoped
+        -- middleware may run for this request.
+        return out
+    end
+
+    if only ~= nil then
+        collect(only)
+        return out
+    end
+
+    for _, rule in ipairs(route.rule_caches[app or route.cur_app] or {}) do
+        collect(rule)
+    end
+    return out
+end
 
 return setmetatable(route, {
     __newindex = function(_, route_rule, responser)
@@ -672,9 +960,9 @@ return setmetatable(route, {
     __call = function(_, ...)
         local rule = select(1, ...)
         if lw_util.is_array(rule) then
-            lw_util.foreach(rule, function(responser, route_rule)
-                add_route(route_rule, responser)
+            lw_util.foreach(rule, function(responser, route_key)
+                add_route(route_key, responser)
             end)
         end
-    end
+    end,
 })

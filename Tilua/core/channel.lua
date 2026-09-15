@@ -67,15 +67,20 @@ local function http_match(app)
 end
 
 local function http_handle(app)
+    -- Services resolve through the container.  `app.config` / `app.dispatcher`
+    -- only work on instances, and `route` is bound as `router`, so make() is
+    -- used consistently for both the class and per-request contexts.
     local Plugin = require("Tilua.core.plugin")
     Plugin.emit("on_request", app)
 
-    local path = app.config and app.config.health_path or "/health"
-    local uri = (app.request and app.request.path_info) or (ngx and ngx.var.uri) or ""
+    local cfg = app:make("config")
+    local path = cfg.health_path or "/health"
+    local request = app:make("request")
+    local uri = request.path_info or (ngx and ngx.var.uri) or ""
     if uri == path or uri == path .. "/" then
         local body = '{"status":"ok","app":"' .. (app.name or "tilua") ..
             '","channel":"http","pid":' .. tostring(ngx.worker.pid()) .. "}"
-        local resp = app.response
+        local resp = app:make("response")
         if resp then
             resp.status = 200
             resp.headers = resp.headers or {}
@@ -90,23 +95,23 @@ local function http_handle(app)
     -- ensure request_id early
     Exception.request_id(app)
     local ok, matched, router = xpcall(function()
-        return app.route.run(app)
+        return app:make("router").run(app)
     end, Exception.handler("router"))
     if not ok then
         local ex = Exception.is(matched) and matched or Exception.wrap(matched, "router")
         Exception.log(app, ex)
         Plugin.emit("on_error", app, ex)
-        return Exception.render(app.response, ex, app)
+        return Exception.render(app:make("response"), ex, app)
     end
     Plugin.emit("on_dispatch", app, matched, router)
     local ok2, result = xpcall(function()
-        return app.dispatcher:run(matched, router)
+        return app:make("dispatcher").run(matched, router)
     end, Exception.handler("controller"))
     if not ok2 then
         local ex = Exception.is(result) and result or Exception.wrap(result, "controller")
         Exception.log(app, ex)
         Plugin.emit("on_error", app, ex)
-        return Exception.render(app.response, ex, app)
+        return Exception.render(app:make("response"), ex, app)
     end
     Plugin.emit("on_response", app)
     return result

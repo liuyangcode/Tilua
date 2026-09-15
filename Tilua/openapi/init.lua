@@ -13,8 +13,8 @@ function OpenAPI.new(app)
 end
 
 function OpenAPI.register(app)
-    -- optional route annotation helper on router
-    local route = app.route
+    -- optional route annotation helper on router (resolve through the container)
+    local route = app:make("router")
     if route and not route.openapi then
         route.openapi = function(meta)
             -- meta: { path, method, summary, tags, requestBody, responses }

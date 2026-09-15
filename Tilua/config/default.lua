@@ -30,6 +30,23 @@ local config = {
         web = { 'body_parser', 'session', 'json', 'html_cache' },
     },
 
+    -- Declarative OpenResty phase assignment for middleware.
+    --   rewrite : runs before access; use for early short-circuits / caching
+    --   access  : admission control (auth, rate limiting); may end the request
+    --   content : default; runs with the route, sees the matched handler
+    -- Anything not listed here is treated as `content`, so existing configs
+    -- keep their behaviour.  See docs/LIFECYCLE.md.
+    middleware_phases = {
+        rewrite = {},
+        access  = {},
+        content = {},
+    },
+    midware_phases = {  -- legacy alias
+        rewrite = {},
+        access  = {},
+        content = {},
+    },
+
     bodyparser = {
 
     },

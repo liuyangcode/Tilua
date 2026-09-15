@@ -426,11 +426,39 @@ end
 -- construct + body property bridge
 -------------------------------------------------
 
-function response:_construct(ctx)
-    self.ctx = ctx
-    self.headers = {}
-    rawset(self, "status", 0)
-    self._body = nil
+--- Constructor.
+---
+--- Accepts either a request context (the internal form: `Response(ctx)`) or a
+--- body value (the documented public form: `Response("hello")`, `Response{})`).
+--- Historically only a context was understood, so `return response("hello")`
+--- from a route silently produced an EMPTY 200 with a string stored as `ctx`.
+function response:_construct(ctx_or_body)
+    local function init(ctx)
+        self.ctx = ctx
+        self.headers = {}
+        rawset(self, "status", 0)
+        self._body = nil
+        return self
+    end
+
+    if ctx_or_body == nil then
+        return init(nil)
+    end
+
+    if type(ctx_or_body) == "string" or type(ctx_or_body) == "number" then
+        return init(nil):set_body(ctx_or_body)
+    end
+
+    if type(ctx_or_body) == "table" then
+        -- A context is a container: it can resolve services.  Anything else is
+        -- a data table intended as a JSON body.
+        if type(ctx_or_body.make) == "function" then
+            return init(ctx_or_body)
+        end
+        return init(nil):set_body(ctx_or_body)
+    end
+
+    return init(nil):set_body(tostring(ctx_or_body))
 end
 
 return response

@@ -19,7 +19,8 @@ end
 function CLI.register(app)
     -- register built-in commands
     CLI.command("routes", function(app)
-        local caches = app.route and app.route.get_route_caches and app.route.get_route_caches(app.name)
+        local router = app:make("router")
+        local caches = router.get_route_caches and router.get_route_caches(app.name)
         if not caches then
             print("no routes")
             return

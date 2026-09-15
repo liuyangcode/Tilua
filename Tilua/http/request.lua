@@ -170,13 +170,29 @@ end
 -- headers
 -------------------------------------------------
 
+--- Headers.
+---
+--- NOTE: capture() may run during rewrite_by_lua, where OpenResty's
+--- `ngx.req.get_headers()` does not yet expose every request header — a
+--- snapshot taken there can miss custom headers entirely (measured: a client
+--- sent `X-Admin-Token` and `ngx.var.http_x_admin_token` was set, while the
+--- captured table held only `connection` and `host`).
+---
+--- So headers are read live on access.
+---
+--- API caveat: the class system's `__index` wrapper calls any `get_*` method as
+--- `method(request)`, discarding arguments.  Therefore `req:get_header("X")`
+--- would receive the request table as `name`.  Use the `header` table directly
+--- (`req.header["x-name"]`), or call `req.get_header("X")` without the colon.
 function request.get_header(name)
     local headers = ngx_req.get_headers()
-    if not name then
+    if not name or type(name) ~= "string" then
         return headers
     end
-    return headers[name]
+    return headers[name] or headers[name:lower()]
 end
+
+request.get_headers = request.get_header
 
 -------------------------------------------------
 -- high-level helpers (instance methods via capture)
