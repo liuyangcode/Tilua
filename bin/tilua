@@ -1,0 +1,5 @@
+#!/usr/bin/env lua
+
+local cli = require("cli.main")
+
+cli.run(arg)
