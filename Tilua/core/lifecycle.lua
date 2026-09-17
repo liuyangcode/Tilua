@@ -61,7 +61,7 @@ local function ensure_dir(p)
 end
 
 local function init_view_engine(root)
-    local template = require("Tilua.template")
+    local template = require("resty.template")
 
     local view_path       = path_join(root, "view", "")
     local cache_path      = path_join(root, "cache", "")

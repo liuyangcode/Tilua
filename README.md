@@ -12,7 +12,7 @@
 - Deep integration with OpenResty lifecycle (`init_by_lua`, `init_worker_by_lua`, etc.)
 - Middleware pipeline (session, body parser, JSON, CSRF, HTML cache…)
 - Built-in support for MySQL / Redis / shared dict cache
-- Built-in template engine (`Tilua.template`) — no external rendering dependency
+- Template rendering via `lua-resty-template`
 - Lightweight custom class system + utilities
 
 ## Requirements
@@ -25,9 +25,9 @@
 
 | Library | Purpose |
 |---------|---------|
+| [lua-resty-template](https://github.com/bungle/lua-resty-template) | Views |
 | [lua-resty-redis](https://github.com/openresty/lua-resty-redis) | Cache / Session |
 | [lua-resty-mysql](https://github.com/openresty/lua-resty-mysql) | Database |
-| LuaFileSystem (`lfs`, bundled with OpenResty) | Required by `Tilua.utils.path` |
 | Penlight (vendored or system) | Utilities (being reduced) |
 
 ## Quick Start

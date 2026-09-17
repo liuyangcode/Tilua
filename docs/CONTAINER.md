@@ -207,9 +207,8 @@ docker run --rm -v "$PWD:/app" -w /app openresty/openresty:1.21.4.1-buster \
 当前共 **168 项断言全部通过**（容器 55 + Application 82 + 生命周期 31）。
 
 `tests/support/lua_stub.lua` 是共享的 no-OpenResty 测试脚手架：提供 `ngx` / `lfs`
-的加载期最小面，以及 `cjson` / `resty.jit-uuid` 的桩，并自动探测
-OpenResty 的 `lualib` 目录（视图渲染改由自带的 `Tilua.template` 实现，不再需要
-`resty.template` 桩）。
+的加载期最小面，以及 `cjson` / `resty.jit-uuid` / `resty.template` 的桩，并自动探测
+OpenResty 的 `lualib` 目录。
 
 ---
 

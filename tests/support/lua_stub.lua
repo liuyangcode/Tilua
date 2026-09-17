@@ -211,8 +211,35 @@ if not package.preload["random"] then
     end
 end
 
--- Tilua.view rendering is now backed by Tilua.template (plain Lua, no
--- external dependency), so no resty.template stub is needed here anymore.
+--- lua-resty-template (views). Minimal stub: renders nothing useful, but
+--- supports the API surface the framework touches at boot.
+if not package.preload["resty.template"] then
+    package.preload["resty.template"] = function()
+        local caching_enabled = false
+        local tpl = {}
+        function tpl.new(opts)
+            return tpl
+        end
+        function tpl.caching(flag)
+            if flag ~= nil then
+                caching_enabled = flag and true or false
+            end
+            return caching_enabled
+        end
+        function tpl.precompile(...) return true end
+        function tpl.compile(...) return function() return "" end end
+        function tpl.process(view, context, cache_key, ...)
+            return "<!-- stub template: " .. tostring(view) .. " -->"
+        end
+        function tpl.render(view, context)
+            return tpl.process(view, context)
+        end
+        function tpl.compile_string(str)
+            return function() return str or "" end
+        end
+        return tpl
+    end
+end
 
 -----------------------------------------------------------------------
 -- run the requested test file in this environment
