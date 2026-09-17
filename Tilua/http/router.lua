@@ -834,7 +834,18 @@ function route.select_best_match(ctx, matched)
 end
 
 --- Resolve the request against the router.
---- @return boolean matched, table|string rule_or_path
+---
+--- @return table|false matched  the matched rule (carrying `vals`), or `false`
+--- @return table|string router  on success: the dispatcher's rule view.  On
+---         failure: the normalised path, kept for the old call shape.
+---
+--- The first value used to be the BOOLEAN `true`, while every caller named it
+--- `matched` and passed it straight to the dispatcher and to `on_dispatch`.  A
+--- boolean is truthy, so routing looked like it worked — but `router.midware`
+--- and `router.responser` were both nil, which silently disabled **route-level
+--- middleware** and made the dispatcher fall through to its nil-handler path.
+--- Returning the rule (copy carrying `vals`) makes the call shape match its name
+--- and keeps `dispatcher:run(matched, router)` working unchanged.
 function route.run(ctx)
     local request = ctx:make("request")
     local method = string_lower(request.method or (ngx.var and ngx.var.request_method) or "get")
@@ -859,7 +870,7 @@ function route.run(ctx)
     end
     out.vals = captures or {}
     out.extra_path = (captures and captures.splat) or ""
-    return true, out
+    return out, out
 end
 
 -----------------------------------------------------------------------
@@ -972,61 +983,124 @@ function route.add_route(cur_app, verbs, path, handler, ...)
     add_route(verbs, path, handler, ...)
 end
 
-function route.get(verbs, path, handler, ...)
-    if handler == nil then
-        -- route.get(path, handler)
-        handler, path = path, verbs
-        verbs = "GET"
+--- Normalise the many accepted call shapes for `route.get` and friends.
+---
+--- Returns `(path, handler, trailing)` where `trailing` is an ARRAY of the
+--- remaining arguments in `add_route` order.  An array (rather than a variadic
+--- list) is used deliberately: the middleware slot may legitimately be `nil`,
+--- and a variadic re-expansion would need an explicit count to survive it.
+--- The method is not returned — the caller already knows its `fallback`.
+---
+--- Accepted shapes:
+---     route.get(path, handler)
+---     route.get(path, handler, middleware)
+---     route.get(path, handler, { phases = {...} })
+---     route.get(path, handler, nil, { phases = {...} })   -- nil placeholder
+---     route.get(verbs, path, handler, ...)                -- internal form
+---
+--- The three-argument middleware shape used to be misparsed: with four arguments
+--- Lua bound `verbs="/p"`, `path=<function>`, `handler={middleware}` — all
+--- non-nil, so the original reorder was skipped and the middleware list was
+--- registered as the HANDLER.  The route then had no handler function, which
+--- silently disabled route-level middleware (the form documented in
+--- docs/ROUTER.md and used by both examples).
+---
+--- `nil` as the middleware placeholder must be PRESERVED, not dropped:
+--- `add_route` reads its extra arguments positionally and its phase-config scan
+--- walks down to index 2, so removing the placeholder would move the
+--- `{ phases = ... }` table into slot 1 and it would be mistaken for middleware.
+--- (An earlier version of this fix re-expanded with the length operator, which
+--- stops at the nil — that dropped the phase table and silently disabled every
+--- access-phase guard.)
+---
+--- A `{ phases = ... }` table is NOT middleware — it is phase configuration.
+local function normalize_route_args(fallback, verbs, path, handler, ...)
+    local n = select("#", ...)
+    local rest = { ... }
+
+    local function is_middleware(v)
+        local t = type(v)
+        if t == "string" then
+            return true
+        end
+        return t == "table" and rawget(v, "phases") == nil
     end
-    add_route(verbs, path, handler, ...)
+
+    -- route.get(path, handler) — exactly two arguments
+    if handler == nil and n == 0 then
+        return verbs, path, {}, 0
+    end
+
+    -- route.get(path, handler, middleware, ...) — no explicit method.
+    -- The first argument is the PATH here, so it goes in the path slot.
+    if type(path) == "function" and is_middleware(handler) then
+        local trailing = { handler }
+        for i = 1, n do
+            trailing[i + 1] = rest[i]
+        end
+        return verbs, path, trailing, n + 1
+    end
+
+    -- route.get(path, handler, nil, { phases = ... }) — explicit nil middleware.
+    -- The nil keeps index 1 of the trailing list so `add_route`'s positional and
+    -- phase-config handling sees the table where it expects it.
+    if type(path) == "function" and handler == nil then
+        local trailing = {}
+        for i = 1, n do
+            trailing[i + 1] = rest[i]
+        end
+        return verbs, path, trailing, n + 1
+    end
+
+    -- route.get(path, handler, { phases = ... }) — phase config, no middleware.
+    -- The table occupies the middleware slot, which is exactly where `add_route`
+    -- looks for the phases key, so it is forwarded as-is.
+    if type(path) == "function" and type(handler) == "table" then
+        local trailing = { handler }
+        for i = 1, n do
+            trailing[i + 1] = rest[i]
+        end
+        return verbs, path, trailing, n + 1
+    end
+
+    -- internal form: (method, path, handler, ...)
+    return path, handler, rest, n
+end
+
+--- Shared implementation for route.get / post / put / delete / patch / head / options.
+local function verb_route(fallback, verbs, path, handler, ...)
+    local p, h, trailing, count = normalize_route_args(fallback, verbs, path, handler, ...)
+    -- An explicit end index: relying on `#trailing` would stop at the nil
+    -- middleware placeholder and silently drop everything after it.
+    add_route(fallback, p, h, table.unpack(trailing, 1, count))
+end
+
+function route.get(verbs, path, handler, ...)
+    return verb_route("GET", verbs, path, handler, ...)
 end
 
 function route.post(verbs, path, handler, ...)
-    if handler == nil then
-        handler, path = path, verbs
-        verbs = "POST"
-    end
-    add_route(verbs, path, handler, ...)
+    return verb_route("POST", verbs, path, handler, ...)
 end
 
 function route.put(verbs, path, handler, ...)
-    if handler == nil then
-        handler, path = path, verbs
-        verbs = "PUT"
-    end
-    add_route(verbs, path, handler, ...)
+    return verb_route("PUT", verbs, path, handler, ...)
 end
 
 function route.delete(verbs, path, handler, ...)
-    if handler == nil then
-        handler, path = path, verbs
-        verbs = "DELETE"
-    end
-    add_route(verbs, path, handler, ...)
+    return verb_route("DELETE", verbs, path, handler, ...)
 end
 
 function route.patch(verbs, path, handler, ...)
-    if handler == nil then
-        handler, path = path, verbs
-        verbs = "PATCH"
-    end
-    add_route(verbs, path, handler, ...)
+    return verb_route("PATCH", verbs, path, handler, ...)
 end
 
 function route.head(verbs, path, handler, ...)
-    if handler == nil then
-        handler, path = path, verbs
-        verbs = "HEAD"
-    end
-    add_route(verbs, path, handler, ...)
+    return verb_route("HEAD", verbs, path, handler, ...)
 end
 
 function route.options(verbs, path, handler, ...)
-    if handler == nil then
-        handler, path = path, verbs
-        verbs = "OPTIONS"
-    end
-    add_route(verbs, path, handler, ...)
+    return verb_route("OPTIONS", verbs, path, handler, ...)
 end
 
 --- RESTful resource shorthand.

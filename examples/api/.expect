@@ -23,4 +23,10 @@ check "/admin/stats"            401
 check "/admin/stats"            403 --header "X-Api-Token: wrong"
 check "/admin/stats"            200 --header "X-Api-Token: secret"
 
+# Populated by the request_trace plugin through framework hooks.
+check "/traces"                 200
+
+# Throws on purpose so the on_error hook fires; see /traces afterwards.
+check "/traces/boom"            500
+
 check "/nope"                   404

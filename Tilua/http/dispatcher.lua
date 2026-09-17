@@ -298,6 +298,28 @@ function dispatch:create_responser(router)
     return self:make_chain_call(midwares, resolved)
 end
 
+--- Tell plugins an error is being rendered.
+---
+--- The dispatcher catches handler errors itself (it must, so a broken route
+--- returns a rendered 500 rather than aborting the worker), which means the
+--- lifecycle's error path never sees them.  Firing `on_error` here is what makes
+--- the hook useful for a handler that throws — without it `on_error` only ever
+--- saw router/middleware failures.
+---
+--- `Plugin.emit(hook, app, ctx, ...)`: `app` is the owning container (the parent
+--- of the request scope) so hooks can `app:make(...)` exactly as they do
+--- everywhere else, and it gives `Plugin.emit` a logger for hook failures.
+local function notify_error(ctx, matched, ex)
+    pcall(function()
+        local app = rawget(ctx, "_parent")
+        if app == nil then
+            return
+        end
+        local plugins = require("Tilua.core.plugin")
+        plugins.emit("on_error", app, ctx, ex, matched)
+    end)
+end
+
 function dispatch:run(matched, router)
     local Exception = require("Tilua.core.exception")
     local ctx = self:ctx()
@@ -315,6 +337,7 @@ function dispatch:run(matched, router)
     if ok then
         -- prepare_response may return TiluaError without throwing
         if errors.is_error(result) or Exception.is(result) then
+            notify_error(ctx, matched, result)
             local as_json = wants_json(ctx)
             return errors.apply(ctx:make("response"), result, as_json ~= false)
         end
@@ -322,6 +345,7 @@ function dispatch:run(matched, router)
     end
     -- thrown exception
     local ex = Exception.is(result) and result or Exception.wrap(result, "controller")
+    notify_error(ctx, matched, ex)
     Exception.log(ctx, ex)
     return Exception.render(ctx:make("response"), ex, ctx)
 end

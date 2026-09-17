@@ -210,20 +210,44 @@ name .. "." .. m[1] .. m[2]     -- "post" → "post.GET/new"、"post.DELETE/{id}
 
 ### 4.1 架构层
 
-1. **插件钩子在相位路径下不触发**（重要）
-   `Plugin.emit("on_request"/"on_dispatch"/"on_response"/"on_error")` 只出现在
-   `Tilua/app.lua:437-439`（`App:run()`）与 `core/channel.lua:74-116`（HTTP channel）。
-   真实 nginx 配置走的是 `lifecycle.content_by_lua`，**从不发这些钩子**——只有
-   `on_route_loaded` 会发。因此插件系统目前在标准部署下基本是哑的。
+1. ~~**插件钩子在相位路径下不触发**（重要）~~
+   **已解决。** `Plugin.emit` 原先只出现在 `Tilua/app.lua`（`App:run()`）与
+   `core/channel.lua`（HTTP channel），真实 nginx 配置走的 `lifecycle.*` 从不发这些钩子，
+   只有 `on_route_loaded` 会发——插件系统在标准部署下是哑的，`on_worker_init`
+   更是**从未被 emit 过**。
+
+   现在钩子全部接在相位路径上：`on_worker_init`（每个 worker 一次，带幂等保护）、
+   `on_request`（`rewrite_by_lua`，早于 rewrite 中间件）、`on_dispatch`
+   （`content_by_lua`，路由校验后）、`on_response`（统一走 `lifecycle.emit_response`，
+   覆盖 content / rewrite 短路 / 中间件拒绝 / 错误渲染四条终止路径）、`on_error`
+   （生命周期错误路径 **以及** dispatcher——后者自行捕获 handler 异常，不接这里
+   就永远看不到 handler 抛错）。
+
+   钩子签名统一为 `(app, ctx, ...)`：`app` 恒为第一参数，因为多个钩子在请求存在之前
+   就要触发，而 `app` 是容器，`app:make(...)` 在任何阶段都可用。契约与逐钩子触发时机
+   见 `docs/EXTENSIONS.md`；可运行示例见 `examples/api/Api/plugin/request_trace.lua`；
+   回归测试见 `tests/test_plugin_hooks.lua`（40 项，覆盖成功 / 404 / handler 抛错 /
+   中间件拒绝 / 钩子自身抛错 / 非相位入口）。
+
+   > 教训：这是一个**文档承诺了、单元测试也覆盖不到**的缺陷——既有的 e2e 只验证
+   > HTTP 状态码，而"钩子是否被调用"没有任何断言。补测试时同时发现测试桩
+   > `ngx.exit` 直接 `os.exit`，会让任何驱动 content 相位的用例**静默截断**
+   > （退出码 200、没有 summary），已改为可捕获的错误。
 
 2. **两条并存的请求路径**
    `core/channel.lua` 的 `http_handle` 自带"健康检查 + 路由 + dispatch + 错误处理"，
    与 `lifecycle.content_by_lua` 功能重复。`App:run()` / `run_cli()` 只在 CLI/WS 或非相位
-   嵌入时有意义。建议明确"相位路径为准"，把 channel 的 HTTP 分支收敛为健康检查/WS 专用。
+   嵌入时有意义。两条路径现在都发同样的钩子，但**只有一条会执行**；建议进一步明确
+   "相位路径为准"，把 channel 的 HTTP 分支收敛为健康检查 / WS 专用。
 
 3. **`App:boot()` 与相位路径的边界**
    CLI 用 `load_config_and_routes() + boot_worker()`；`App:boot()` 是两者合一。语义已清晰，
    但 `docs/LIFECYCLE.md` 曾写作 `load_config()`，已修正。
+
+4. **`on_shutdown` 仍未实现**
+   `Plugin.HOOKS` 声明了它，`docs/EXTENSIONS.md` 也列了，但没有任何地方 emit。
+   其余 7 个钩子均已接线。要么实现（`init_worker_by_lua` 里注册
+   `ngx.timer.every` 检查 `ngx.worker.exiting()`），要么从文档中移除。
 
 ### 4.2 安全 / 健壮性
 
@@ -295,13 +319,14 @@ name .. "." .. m[1] .. m[2]     -- "post" → "post.GET/new"、"post.DELETE/{id}
 | 17 | `init_rule_caches` 重复调用会**复制**所有规则 | 规则数组翻倍；匹配仍正常（先注册者胜），但 `tilua routes` 列出两遍 |
 | 18 | 无路径参数的校验规则直接 500 | 校验串只在 `~` 匹配器下解析，`get /echo mode:in,upper,lower`（匹配器 `=`）把**字符串**留给 `route.validate`，`pairs()` 收到 string 而中止请求 |
 | 19 | `in` / `notin` 静默丢弃第一个以外的所有值 | `util.parse_expression` 对多值返回列表，router 存 `v[2]` → `mode:in,upper,lower` 变成 `{"in","upper"}`，`lower` 被拒；含逗号的正则同样被截断 |
+| 20 | `route.run` 第一返回值是**布尔**而非匹配到的规则 | 每个调用点都把它命名为 `matched` 并直接交给 dispatcher，而 `router.midware` / `router.responser` 都是 nil → **路由级中间件从未执行**（真值性掩盖了问题） |
+| 21 | `route.get(path, handler, middleware)` 把中间件当成 handler 注册 | 3 参数形式（`docs/ROUTER.md` 记载、两个示例都在用）下 Lua 绑定成 `verbs="/p"`, `path=<function>`, `handler={mw}`，三者皆非 nil，旧的重排逻辑被跳过 |
+| 22 | `route.get(p, h, nil, { phases = ... })` 丢失 phase 配置 | `nil` 占位必须按位置保留；两次修复都把它丢了——先是被新表嵌套，后是因为 `#t` 与不带结束下标的 `table.unpack` 都会在 `nil` 处停止 |
 
-另外修复：`path.exists` 对不存在的路径返回 `false` 而非文档承诺的 `nil`。
-
-**教训**：15 / 18 都是"静态阅读能发现、但没人跑过"的问题。本轮新增的
-`tests/test_middleware_registry.lua`（加载默认配置里的每一个中间件并实例化）
-与 `tests/syntax_check.sh`（把 `examples/` 纳入检查）正是为了把这类缺陷变成
-可自动发现的。
+**教训**：15 / 18 / 20 / 21 都是"静态阅读能发现、但没人跑过"的问题，20 和 21 更是
+**被真值性/非 nil 掩盖**的类型——代码看起来完全正常，只是功能静默失效。本轮新增的
+`tests/test_middleware_registry.lua`、`tests/test_plugin_hooks.lua` 与把
+`examples/` 纳入的 `tests/syntax_check.sh`，正是把这类缺陷变成可自动发现的。
 
 
 ---

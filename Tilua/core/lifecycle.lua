@@ -220,15 +220,69 @@ function M.emit(response)
     return false
 end
 
---- Build a response for a terminal error and emit it.
+--- Resolve the plugin bus, tolerating an unconfigured/absent container.
+local function plugin_bus(app)
+    local ok, bus = pcall(function()
+        return app:make("plugin")
+    end)
+    if ok and bus and type(bus.emit) == "function" then
+        return bus
+    end
+    return nil
+end
+
+--- Fire a plugin hook without letting a failure in the bus break the request.
+---
+--- NOTE `bus.emit(...)`, not `bus:emit(...)`.  `Plugin.emit` is defined as
+--- `function Plugin.emit(hook, app, ctx, ...)` — it is NOT a method — and calling
+--- it with a colon passes the bus itself as `hook`, shifting every argument by
+--- one so no hook is ever found and nothing fires (silently, since the pcall
+--- still succeeds).
+local function emit_hook(app, hook, ctx, ...)
+    local bus = plugin_bus(app)
+    if not bus then
+        return
+    end
+    -- `Plugin.emit` already catches and logs errors raised BY a hook.  This pcall
+    -- only guards the bus call itself (a malformed registry entry, say), so that
+    -- it can never break the request.
+    pcall(bus.emit, hook, app, ctx, ...)
+end
+
+--- Build a response for a terminal error, tell plugins, and emit it.
 local function emit_error(app, ctx, err, layer)
     local Exception = require("Tilua.core.exception")
     local ex = Exception.is(err) and err or Exception.wrap(err, layer or "app")
+
+    -- `on_error` fires BEFORE rendering so a plugin (metrics, alerting, error
+    -- tracking) sees the raw exception, and before the response is committed.
+    emit_hook(app, "on_error", ctx, ex)
+
     Exception.log(ctx, ex)
     local resp = ctx:make("response")
     Exception.render(resp, ex, ctx)
-    M.emit(resp)
+    M.emit_response(app, ctx, resp)
     return resp
+end
+
+--- Emit a response and fire `on_response`.
+---
+--- Every terminal emission goes through here so plugins observe exactly one
+--- `on_response` per emitted response, whichever phase produced it.
+---
+--- The hook fires BEFORE `send()`.  `response:send()` ends with
+--- `ngx.exit(status)`, and code after `ngx.exit` is not reliably reached (it
+--- terminates the request); emitting first is what guarantees the hook runs.
+---
+--- `response.status` is still 0 when the handler never set one, so normalise it
+--- to 200 before handing the response to plugins — otherwise every hook sees a
+--- status of 0 for the overwhelmingly common "just return a body" case.
+function M.emit_response(app, ctx, response)
+    if type(response) == "table" and (response.status == nil or response.status == 0) then
+        rawset(response, "status", 200)
+    end
+    emit_hook(app, "on_response", ctx, response)
+    return M.emit(response)
 end
 
 -----------------------------------------------------------------------
@@ -266,6 +320,13 @@ end
 -----------------------------------------------------------------------
 
 function M.init_worker_by_lua(app)
+    -- Guard the whole body, not just boot_worker(): `rewrite_by_lua` calls this
+    -- lazily on the first request when the configured worker phase is missing,
+    -- and `on_worker_init` must still fire exactly once per worker.
+    if app._worker_booted then
+        return true
+    end
+
     app:boot_worker()
 
     if type(app.on_init_worker) == "function" then
@@ -294,6 +355,11 @@ function M.init_worker_by_lua(app)
         end
     end
 
+    -- Worker state is ready, so the container can resolve config and services.
+    -- `on_boot` already fired in the master phase; this is the per-worker
+    -- counterpart (timers, per-worker caches, connection pools).
+    emit_hook(app, "on_worker_init", nil)
+
     app.pid = ngx.worker.pid()
     return true
 end
@@ -315,6 +381,11 @@ function M.rewrite_by_lua(app)
         pcall(ctx.on_rewrite, ctx)
     end
 
+    -- Exactly one `on_request` per request: this is the first phase that has a
+    -- request scope.  It must fire before rewrite middleware, so a plugin can
+    -- observe (or veto) the request even when middleware short-circuits.
+    emit_hook(app, "on_request", ctx)
+
     -- Route once here so the access phase can apply route-scoped middleware.
     local matched = match_route(app, ctx)
 
@@ -332,7 +403,7 @@ function M.rewrite_by_lua(app)
         return
     end
     if resp ~= nil then
-        M.emit(resp)
+        M.emit_response(app, ctx, resp)
     end
 end
 
@@ -368,7 +439,7 @@ function M.access_by_lua(app)
     if resp ~= nil then
         -- Admission denied: emit and leave the phase immediately so the
         -- content phase never runs.
-        M.emit(resp)
+        M.emit_response(app, ctx, resp)
     end
 end
 
@@ -386,6 +457,11 @@ function M.content_by_lua(app)
     -- match from rewrite; this is the validated form.
     local matched, router = app:make("router").run(ctx)
 
+    -- `on_dispatch` fires once the route is resolved and validated but before
+    -- the handler runs, so a plugin can observe the target (tracing, metrics,
+    -- access logs).  `matched` is false when nothing matched.
+    emit_hook(app, "on_dispatch", ctx, matched, router)
+
     local ok, result = xpcall(function()
         return dispatcher:run(matched, router)
     end, require("Tilua.core.exception").handler("controller"))
@@ -399,7 +475,7 @@ function M.content_by_lua(app)
         pcall(ctx.on_content, ctx)
     end
 
-    M.emit(result)
+    M.emit_response(app, ctx, result)
 end
 
 -----------------------------------------------------------------------

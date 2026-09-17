@@ -427,16 +427,21 @@ function App:run()
     if result ~= nil then
         return result
     end
-    -- Fallback: classic HTTP path (if no channel claimed the request)
+    -- Fallback: classic HTTP path (if no channel claimed the request).
+    --
+    -- NOTE: this is the non-phase entry point.  Under a normal nginx config the
+    -- lifecycle handlers run instead and fire these hooks themselves; wiring the
+    -- hooks here as well would double-fire them, so the phase path is the one
+    -- that owns `on_request` / `on_dispatch` / `on_response` / `on_error`.
     local logger = self:make("logger")
     if logger and logger.error then
         logger:error("channel dispatch: ", err or "nil", " - fallback HTTP")
     end
     local plugins = self:make("plugin")
     local matched, router = self:make("router").run(self)
-    plugins.emit("on_dispatch", self, matched, router)
+    plugins.emit("on_dispatch", self, nil, matched, router)
     local out = self:make("dispatcher"):run(matched, router)
-    plugins.emit("on_response", self)
+    plugins.emit("on_response", self, nil, out)
     return out
 end
 

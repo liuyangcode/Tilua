@@ -35,6 +35,7 @@ route.group(function()
                 "GET    /todos/{id}",
                 "DELETE /todos/{id}",
                 "GET    /echo/{mode}      (mode: in,upper,lower)",
+                "GET    /traces           (plugin hooks)",
                 "GET    /admin/stats      (requires X-Api-Token)",
             },
         }
@@ -110,6 +111,27 @@ route.group(function()
             output   = mode == "upper" and text:upper() or text:lower(),
         }
     end
+
+    --- ---------------------------------------------------------------
+    --- Plugin output
+    --- ---------------------------------------------------------------
+    ---
+    --- `/traces` reads what the `request_trace` plugin recorded through the
+    --- framework's hooks (see Api/plugin/request_trace.lua).  Hooks fire on the
+    --- normal phase path -- no special wiring is needed to use them.
+    route.get("/traces", function(ctx)
+        local trace = ctx:make("plugin").get("request_trace")
+        if not trace then
+            return errors.new(503, "request_trace plugin is not enabled", "plugin_disabled")
+        end
+        return { traces = trace.entries() }
+    end)
+
+    --- A route that always throws, so the `on_error` hook has something to
+    --- report.  Check `/traces` afterwards: the entry records the failure.
+    route.get("/traces/boom", function()
+        error("intentional failure for the on_error hook")
+    end)
 
     --- ---------------------------------------------------------------
     --- Route-scoped access middleware

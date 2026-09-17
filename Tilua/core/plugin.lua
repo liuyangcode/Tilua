@@ -65,36 +65,83 @@ function Plugin.list()
     return Plugin._list
 end
 
---- Fire a named hook across all plugins (and optional app method)
-function Plugin.emit(hook, app_or_ctx, ...)
+--- Fire a named hook across every registered plugin.
+---
+--- Argument contract (see docs/EXTENSIONS.md):
+---
+---   on_boot          (app)
+---   on_route_loaded  (app, router)
+---   on_worker_init   (app)
+---   on_request       (app, ctx)
+---   on_dispatch      (app, ctx, matched, router)
+---   on_response      (app, ctx, response)
+---   on_error         (app, ctx, exception)
+---   on_shutdown      (app)
+---
+--- `app` is always the first argument because it exists in every phase (several
+--- run before any request exists) and carries the container, so a hook can
+--- resolve whatever it needs with `app:make(...)`.  `ctx` is the request scope
+--- when there is one, and nil during boot.  `ctx:make(...)` reaches the same
+--- services.
+---
+--- A throw inside a hook is caught and logged: one broken plugin must not take
+--- down the request.
+function Plugin.emit(hook, app, ctx, ...)
     for i = 1, #Plugin._list do
         local p = Plugin._list[i]
         local fn = p.hooks and p.hooks[hook]
         if type(fn) == "function" then
-            local ok, err = pcall(fn, app_or_ctx, ...)
+            local ok, err = pcall(fn, app, ctx, ...)
             if not ok then
-                local log = app_or_ctx and (app_or_ctx.logger or (app_or_ctx.ctx and app_or_ctx.ctx.logger))
+                local log = app and app.logger
+                    or (ctx and ctx.logger)
+                    or (app and app.ctx and app.ctx.logger)
                 if log and log.error then
-                    log:error("plugin ", p.name, " hook ", hook, " error: ", err)
+                    log:error("plugin ", tostring(p.name), " hook ", hook,
+                        " error: ", tostring(err))
                 elseif ngx then
-                    ngx.log(ngx.ERR, "plugin ", p.name, " hook ", hook, " error: ", tostring(err))
+                    ngx.log(ngx.ERR, "plugin ", tostring(p.name), " hook ", hook,
+                        " error: ", tostring(err))
                 end
             end
         end
     end
 end
 
+--- Failures from the last `load_from_config`, for diagnostics.
+Plugin._load_errors = {}
+
 --- Load plugins from config.plugins = { "Tilua.openapi", "myapp.plugins.x", ... }
+---
+--- Reads the config through `app:make("config")` rather than `app.config`, so it
+--- works whether it is called on the Application class (where a plain property
+--- read does NOT resolve bindings — invariant 2 in the container) or on an
+--- instance.
 function Plugin.load_from_config(app)
-    local list = app.config and app.config.plugins
+    local cfg = app and app.config
+    if cfg == nil and type(app.make) == "function" then
+        local ok, resolved = pcall(app.make, app, "config")
+        if ok then
+            cfg = resolved
+        end
+    end
+
+    local list = cfg and cfg.plugins
     if type(list) ~= "table" then
         return
     end
     for _, item in ipairs(list) do
         local mod
         if type(item) == "string" then
+            -- Loud, not silent: a mistyped plugin path used to be swallowed by
+            -- pcall(require) and the plugin simply never existed.
             local ok, m = pcall(require, item)
-            if ok then mod = m end
+            if ok then
+                mod = m
+            else
+                Plugin._load_errors[#Plugin._load_errors + 1] =
+                    item .. ": " .. tostring(m):gsub("\n.*", "")
+            end
         elseif type(item) == "table" then
             mod = item
         end

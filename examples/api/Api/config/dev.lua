@@ -20,6 +20,15 @@ return {
 
     route = {},
 
+    --- Plugins. Each entry is a module name (required and registered) or a table.
+    ---
+    --- `Api/plugin/request_trace.lua` records a per-request trace via the
+    --- framework hooks and exposes it at GET /traces -- see that file for the
+    --- full hook contract.
+    plugins = {
+        "Api.plugin.request_trace",
+    },
+
     --- Middleware by OpenResty phase.
     ---
     ---   body_parser -> parses JSON/form bodies into request.body. Must run

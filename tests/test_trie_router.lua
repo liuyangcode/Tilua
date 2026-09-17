@@ -262,9 +262,68 @@ do
     eq(who(rule), h_user, "run() returns the matched rule")
     eq(rule.vals.name, "ada", "run() exposes captures via rule.vals")
 
+    --- The first return value used to be the BOOLEAN `true` while callers named
+    --- it `matched` and passed it straight to the dispatcher.  Truthy, so routing
+    --- appeared to work — but `router.midware` / `router.responser` were nil,
+    --- which silently disabled ROUTE-LEVEL middleware.  It must be the rule.
+    eq(type(matched), "table", "run()'s first value is the rule, not a boolean")
+    ok(rawget(matched, "responser") ~= nil, "the returned rule carries its handler")
+    ok(rawget(matched, "vals") ~= nil, "the returned rule carries its captures")
+
     local matched2, path = route.run(make_ctx("/nope"))
     ok(not matched2, "run() reports no match for an unknown path")
     eq(path, "/nope", "run() returns the normalised path when unmatched")
+end
+
+----------------------------------------------------------------------
+-- 10b. route-level middleware survives the run() return shape
+----------------------------------------------------------------------
+do
+    local route = fresh_router()
+    local ran = {}
+
+    local h = function() return "handler" end
+    route.get("/guarded", h, { "TestApp.middleware.admin_guard" })
+    route.init_rule_caches({})
+
+    local function make_ctx(uri)
+        ngx.var.uri = uri
+        ngx.var.request_method = "GET"
+        return {
+            name = "TestApp",
+            make = function(_, what)
+                if what == "request" then
+                    return { method = "GET", path_info = uri }
+                end
+                error("unexpected service: " .. tostring(what))
+            end,
+        }
+    end
+
+    local matched = route.run(make_ctx("/guarded"))
+    ok(type(matched) == "table", "a route with middleware still resolves to a rule")
+    if type(matched) ~= "table" then
+        error("route.run returned " .. type(matched) .. "; cannot check middleware", 0)
+    end
+
+    -- The middleware list must reach the dispatcher; `create_responser` reads
+    -- `router.midware`.  A boolean first return made this nil.
+    ok(type(matched.midware) == "table" and #matched.midware >= 1,
+        "route-level middleware is present on the resolved rule")
+    if type(matched.midware) == "table" and matched.midware[1] then
+        eq(matched.midware[1][1], "TestApp.middleware.admin_guard",
+            "the declared middleware is the first entry")
+    end
+
+    -- and a route with no middleware reports none rather than an empty table
+    local route2 = fresh_router()
+    route2.get("/plain", h)
+    route2.init_rule_caches({})
+    local plain = route2.run(make_ctx("/plain"))
+    eq(type(plain), "table", "a plain route resolves to a rule")
+    if type(plain) == "table" then
+        eq(plain.midware, nil, "a route without middleware carries no list")
+    end
 end
 
 -----------------------------------------------------------------------
@@ -444,6 +503,92 @@ do
 end
 
 -----------------------------------------------------------------------
+-- 13. every documented route.get() call shape registers correctly
+----------------------------------------------------------------------
+do
+    -- The 3-argument form `route.get(path, handler, middleware)` used to bind
+    -- the middleware list as the HANDLER: with four arguments Lua bound
+    -- verbs="/p", path=<function>, handler={middleware} — all non-nil, so the
+    -- original reorder was skipped.  The route then had no handler, which
+    -- silently disabled route-level middleware.  And the explicit-nil form
+    -- `route.get(p, h, nil, { phases = ... })` lost its phase table because the
+    -- re-expansion used the length operator, which stops at the nil.
+    local MW = "TestApp.middleware.admin_guard"
+
+    -- (a) two arguments
+    local r1 = fresh_router()
+    local h1 = function() end
+    r1.get("/two", h1)
+    r1.init_rule_caches({})
+    local rule1 = r1.get_route_caches("TestApp")[1]
+    eq(who(rule1), h1, "route.get(path, handler) keeps the handler")
+    eq(rule1.midware, nil, "route.get(path, handler) has no middleware")
+
+    -- (b) three arguments: middleware list
+    local r2 = fresh_router()
+    local h2 = function() end
+    r2.get("/three", h2, { MW })
+    r2.init_rule_caches({})
+    local rule2 = r2.get_route_caches("TestApp")[1]
+    eq(who(rule2), h2, "route.get(path, handler, mw) keeps the HANDLER as handler")
+    ok(type(rule2.midware) == "table" and #rule2.midware == 1,
+        "route.get(path, handler, mw) registers the middleware")
+    if type(rule2.midware) == "table" and rule2.midware[1] then
+        eq(rule2.midware[1][1], MW, "the middleware entry is the declared name")
+    end
+
+    -- (c) three arguments: phases config only (no content middleware)
+    local r3 = fresh_router()
+    local h3 = function() end
+    r3.get("/phases", h3, { phases = { access = { MW } } })
+    r3.init_rule_caches({})
+    local rule3 = r3.get_route_caches("TestApp")[1]
+    eq(who(rule3), h3, "route.get(p, h, {phases}) keeps the handler")
+    eq(rule3.midware, nil, "a phases table is not mistaken for middleware")
+    ok(type(rule3.phases) == "table", "the phases config is stored")
+    if type(rule3.phases) == "table" and rule3.phases.access then
+        eq(rule3.phases.access[1], MW, "the access-phase entry is stored")
+    end
+
+    -- (d) four arguments with an explicit nil middleware placeholder
+    local r4 = fresh_router()
+    local h4 = function() end
+    r4.get("/nil-mw", h4, nil, { phases = { access = { MW } } })
+    r4.init_rule_caches({})
+    local rule4 = r4.get_route_caches("TestApp")[1]
+    eq(who(rule4), h4, "route.get(p, h, nil, {phases}) keeps the handler")
+    eq(rule4.midware, nil, "the nil placeholder stays nil middleware")
+    ok(type(rule4.phases) == "table",
+        "the phases table survives the nil placeholder")
+    if type(rule4.phases) == "table" then
+        local pm = r4.phase_middleware("TestApp", "access", rule4)
+        eq(#pm, 1, "the access-phase middleware is discoverable")
+    end
+
+    -- (e) internal form still works
+    local r5 = fresh_router()
+    local h5 = function() end
+    r5.get("GET", "/internal", h5)
+    r5.init_rule_caches({})
+    local rule5 = r5.get_route_caches("TestApp")[1]
+    eq(who(rule5), h5, "the internal (method, path, handler) form works")
+    eq(rule5.path, "/internal", "the internal form keeps the path")
+
+    -- (f) other verbs share the same handling
+    local r6 = fresh_router()
+    local h6 = function() end
+    r6.post("/posted", h6, { MW })
+    r6.init_rule_caches({})
+    local rule6 = r6.get_route_caches("TestApp")[1]
+    eq(who(rule6), h6, "route.post keeps the handler")
+    ok(type(rule6.midware) == "table" and #rule6.midware == 1,
+        "route.post registers middleware")
+    if type(rule6.method) == "table" then
+        eq(string.lower(rule6.method[1]), "post", "route.post sets the POST method")
+    end
+end
+
+----------------------------------------------------------------------
 print(string.format("trie router tests: %d checks, %d failures", checks, failures))
 if failures > 0 then
     os.exit(1)

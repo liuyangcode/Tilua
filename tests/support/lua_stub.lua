@@ -128,7 +128,15 @@ if not rawget(_G, "ngx") then
         log = noop,
         print = function(...) io.write(...) end,
         say = function(...) io.write(table.concat({ ... }, "\t"), "\n") end,
-        exit = function(code) os.exit(code or 0) end,
+        -- NOT `os.exit`: `response:send()` ends with `ngx.exit(status)`, which
+        -- in real OpenResty terminates the request but here would terminate the
+        -- whole test process — silently truncating any suite that drives the
+        -- content phase (the test simply stopped, exit code 200, no summary).
+        -- Raising a distinguishable error lets a test pcall the request.
+        exit = function(code)
+            error(setmetatable({ ngx_exit = true, code = code or 0 },
+                { __tostring = function(t) return "ngx.exit(" .. t.code .. ")" end }), 0)
+        end,
         flush = noop,
         sleep = noop,
 

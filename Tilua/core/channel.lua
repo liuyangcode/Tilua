@@ -70,8 +70,13 @@ local function http_handle(app)
     -- Services resolve through the container.  `app.config` / `app.dispatcher`
     -- only work on instances, and `route` is bound as `router`, so make() is
     -- used consistently for both the class and per-request contexts.
+    --
+    -- NOTE: this channel is the NON-phase entry point (App:run()).  A normal
+    -- nginx config uses the lifecycle handlers, which fire these hooks
+    -- themselves — so only one of the two paths ever runs for a given request,
+    -- and hooks must not be duplicated across both.
     local Plugin = require("Tilua.core.plugin")
-    Plugin.emit("on_request", app)
+    Plugin.emit("on_request", app, nil)
 
     local cfg = app:make("config")
     local path = cfg.health_path or "/health"
@@ -87,7 +92,7 @@ local function http_handle(app)
             resp.headers["Content-Type"] = "application/json; charset=utf-8"
             resp.body = body
         end
-        Plugin.emit("on_response", app)
+        Plugin.emit("on_response", app, nil, resp)
         return resp
     end
 
@@ -100,20 +105,20 @@ local function http_handle(app)
     if not ok then
         local ex = Exception.is(matched) and matched or Exception.wrap(matched, "router")
         Exception.log(app, ex)
-        Plugin.emit("on_error", app, ex)
+        Plugin.emit("on_error", app, nil, ex)
         return Exception.render(app:make("response"), ex, app)
     end
-    Plugin.emit("on_dispatch", app, matched, router)
+    Plugin.emit("on_dispatch", app, nil, matched, router)
     local ok2, result = xpcall(function()
         return app:make("dispatcher").run(matched, router)
     end, Exception.handler("controller"))
     if not ok2 then
         local ex = Exception.is(result) and result or Exception.wrap(result, "controller")
         Exception.log(app, ex)
-        Plugin.emit("on_error", app, ex)
+        Plugin.emit("on_error", app, nil, ex)
         return Exception.render(app:make("response"), ex, app)
     end
-    Plugin.emit("on_response", app)
+    Plugin.emit("on_response", app, nil, result)
     return result
 end
 

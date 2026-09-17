@@ -2,6 +2,72 @@
 
 All notable changes to Tilua are documented in this file.
 
+## [Unreleased] - Plugin hooks on the phase path, and route call-shape fixes
+
+### Fixed
+- **Plugin hooks now fire on the phase path.** `on_request`, `on_dispatch`,
+  `on_response` and `on_error` were emitted only from `App:run()` and
+  `Channel.dispatch()` — the *non-phase* entry points. A normal nginx config runs
+  the lifecycle handlers, which emitted nothing except `on_route_loaded`, so the
+  entire plugin system was inert in production. `on_worker_init` was declared and
+  documented but never emitted anywhere.
+  - `on_worker_init` fires once per worker from `init_worker_by_lua` (guarded, so
+    the lazy call from `rewrite_by_lua` cannot re-fire it).
+  - `on_request` fires once per request in `rewrite_by_lua`, before rewrite
+    middleware.
+  - `on_dispatch` fires once per request in `content_by_lua`, after the route is
+    matched and validated.
+  - `on_response` fires once per emitted response, through a single
+    `lifecycle.emit_response` used by every terminal path (content, rewrite
+    short-circuit, middleware denial, error rendering).
+  - `on_error` fires from the lifecycle error path **and** from the dispatcher,
+    because the dispatcher catches handler errors itself — without that, the hook
+    never saw a route handler that throws.
+  - Hook failures were already caught; the bus call is too, so a malformed
+    registry entry cannot break a request.
+- **Route-level middleware never ran.** `route.run` returned the **boolean**
+  `true` as its first value while every caller named it `matched` and passed it
+  straight to the dispatcher. Truthy, so routing appeared to work — but
+  `router.midware` and `router.responser` were nil, so `create_responser` saw no
+  handler. It now returns the rule.
+- **`route.get(path, handler, middleware)` registered the middleware as the
+  handler.** With three arguments Lua binds `verbs="/p"`, `path=<function>`,
+  `handler={middleware}` — all non-nil, so the old reorder was skipped. This is
+  the form documented in `docs/ROUTER.md` and used by both examples; the route
+  ended up with no handler *and* no middleware.
+- **`route.get(path, handler, nil, { phases = ... })` lost its phase config.**
+  The `nil` middleware placeholder must be preserved positionally. Two attempts at
+  re-expanding the arguments dropped it — first by nesting the tail in a new
+  table, then because `#t` (and a `table.unpack` without an explicit end) stops at
+  the `nil`. The trailing arguments are now carried with an explicit count. A
+  `{ phases = ... }` table passed without a `nil` placeholder is handled too.
+
+### Changed
+- `Plugin.emit(hook, app, ctx, ...)` — `app` is now always the first argument and
+  `ctx` the second. Several hooks run before a request exists, and `app` is the
+  container, so `app:make(...)` works everywhere; the previous signatures were
+  inconsistent between the boot hooks and the request hooks.
+- `Plugin.load_from_config` resolves config through `app:make("config")` so it
+  works on the Application class as well as an instance, and records modules it
+  could not require in `Plugin._load_errors` instead of swallowing the failure.
+- `tests/support/lua_stub.lua`: `ngx.exit` now raises a catchable error instead of
+  calling `os.exit`. It used to terminate the whole test process, silently
+  truncating any suite that drove the content phase (exit code 200, no summary).
+
+### Added
+- `examples/api/Api/plugin/request_trace.lua` — a worked plugin that records a
+  per-request trace through the hooks (`on_request` / `on_dispatch` /
+  `on_response` / `on_error`) and exposes it at `GET /traces`.
+- `tests/test_plugin_hooks.lua` — drives the real phase handlers and asserts each
+  hook fires, in order, exactly once: 40 checks covering success, 404, a throwing
+  handler, a middleware denial, a throwing hook, and the non-phase entry point.
+- `tests/test_trie_router.lua` — coverage for every documented `route.get()`
+  call shape (2-arg, 3-arg middleware, 3-arg phases, nil placeholder, internal).
+
+### Documentation
+- `docs/EXTENSIONS.md` rewritten around the real hook contract: which phase each
+  hook fires in, its arguments, and the `matched` / `status` / error semantics.
+
 ## [Unreleased] - Onboarding: examples, CLI entry point, fewer hard dependencies
 
 ### Added
