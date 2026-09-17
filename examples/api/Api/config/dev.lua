@@ -30,6 +30,19 @@ return {
     --- path, so this is additive.  Try: curl http://localhost:8081/demo/hello
     auto_routes = true,
 
+    --- Should actions with NO route annotation be registered too?
+    ---
+    ---   true  (default) `Demo:hello` carries no annotation and is still exposed
+    ---                   as GET /demo/hello
+    ---   false           only actions carrying `@get` / `@post` / `@route` are
+    ---                   exposed; unannotated ones are skipped and listed in the
+    ---                   discovery report
+    ---
+    --- Flip it to false and `curl -i http://localhost:8081/demo/hello` returns
+    --- 404 while `/demo/echo/hi` and `/demo/secure` keep working.  Use it when you
+    --- want the controller to be the complete, explicit list of endpoints.
+    auto_routes_unannotated = true,
+
     --- Plugins. Each entry is a module name (required and registered) or a table.
     ---
     --- `Api/plugin/request_trace.lua` records a per-request trace via the

@@ -1,9 +1,8 @@
-2026/09/17 14:32:00 [notice] 10#10: using the "epoll" event method
-2026/09/17 14:32:00 [notice] 10#10: openresty/1.21.4.1
-2026/09/17 14:32:00 [notice] 10#10: OS: Linux 6.6.87.2-microsoft-standard-WSL2
-2026/09/17 14:32:00 [notice] 10#10: getrlimit(RLIMIT_NOFILE): 1048576:1048576
-2026/09/17 14:32:00 [notice] 10#10: start worker processes
-2026/09/17 14:32:00 [notice] 10#10: start worker process 12
-[2026-09-17 14:32:03] [ERR] exception layer=controller status=500 code=controller_error msg=/app/tests/fixtures/TestApp/routes.lua:35: intentional route failure rid=3d1642a3bb21ab2fa63762e7d60c5014
-2026/09/17 14:32:03 [notice] 10#10: signal 15 (SIGTERM) received from 1, exiting
-2026/09/17 14:32:03 [notice] 12#12: exiting
+2026/09/17 14:41:51 [notice] 10#10: using the "epoll" event method
+2026/09/17 14:41:51 [notice] 10#10: openresty/1.21.4.1
+2026/09/17 14:41:51 [notice] 10#10: OS: Linux 6.6.87.2-microsoft-standard-WSL2
+2026/09/17 14:41:51 [notice] 10#10: getrlimit(RLIMIT_NOFILE): 1048576:1048576
+2026/09/17 14:41:51 [notice] 10#10: start worker processes
+2026/09/17 14:41:51 [notice] 10#10: start worker process 12
+[2026-09-17 14:41:53] [ERR] exception layer=controller status=500 code=controller_error msg=/app/tests/fixtures/TestApp/routes.lua:35: intentional route failure rid=7520b0c8437ced0489fc3d009736ced9
+2026/09/17 14:41:53 [notice] 10#10: signal 15 (SIGTERM) received from 1, exiting

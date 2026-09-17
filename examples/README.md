@@ -153,6 +153,26 @@ Things worth knowing: an **unannotated** action keeps the convention default, so
 annotating one action never changes another; and an explicit `routes.lua` entry
 always wins over a discovered route for the same method and path.
 
+### Exposing only annotated actions
+
+`auto_routes_unannotated` controls whether an action with no route annotation is
+still registered:
+
+```lua
+auto_routes = true,
+auto_routes_unannotated = false,   -- true by default
+```
+
+| Value | `Demo:hello` (no annotation) | `Demo:echo` (`@get` / `@post`) |
+|-------|------------------------------|-------------------------------|
+| `true` (default) | exposed as `GET /demo/hello` | exposed |
+| `false` | **404**, and listed in the discovery report | exposed |
+
+It defaults to `true` so enabling it cannot silently un-route a project that
+relies on convention routes. Use `false` when the controller should be the
+complete, explicit list of endpoints — the skipped actions appear in
+`app._discovery_report.skipped`, so the omission is visible.
+
 ```bash
 # the index lists every endpoint
 curl http://localhost:8081/

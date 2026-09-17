@@ -465,7 +465,14 @@ end
 ---
 --- @param app table the application (supplies `name` and `path`)
 --- @param router table the router module
---- @param opts table|nil { dir, prefix, modules, log }
+--- @param opts table|nil {
+---          dir         = string|nil   controller directory (default <App>/controller)
+---          prefix      = string|nil   URL prefix for every discovered route
+---          unannotated = boolean|nil  register actions with NO annotation?
+---                                     defaults to TRUE, so turning it off is
+---                                     opt-in and cannot break a project that
+---                                     already relies on convention routes
+---        }
 --- @return table report { registered, controllers, skipped, errors }
 function M.scan(app, router, opts)
     opts = opts or {}
@@ -476,6 +483,11 @@ function M.scan(app, router, opts)
         skipped = {},
         errors = {},
     }
+
+    -- Default TRUE: `auto_routes = true` keeps registering every public action,
+    -- which is what it did before this switch existed.  Only an explicit
+    -- `false` switches to "annotated actions only".
+    local unannotated = (opts.unannotated ~= false)
 
     local app_name = app.name
     if type(app_name) ~= "string" or app_name == "" then
@@ -515,7 +527,7 @@ function M.scan(app, router, opts)
 
             if is_lua then
                 M._register_controller(app_name, router, entry:gsub("%.lua$", ""),
-                    full, prefix, report)
+                    full, prefix, report, unannotated)
             elseif path_util.isdir(full) then
                 -- One level of nesting: scan subdirectory controllers too.
                 local sub = list_dir(full)
@@ -523,7 +535,7 @@ function M.scan(app, router, opts)
                     if inner:sub(-4) == ".lua" and inner:sub(1, 1) ~= "." then
                         local cname = controller_name_for(root, path_util.join(full, inner))
                         M._register_controller(app_name, router, cname,
-                            path_util.join(full, inner), prefix, report)
+                            path_util.join(full, inner), prefix, report, unannotated)
                     end
                 end
             end
@@ -536,9 +548,10 @@ end
 --- Load one controller module and register its actions.
 --- Exposed (`M._register_controller`) so tests can drive a single file.
 ---
---- Articles are registered with their `@route` / `@middleware` / `@phases`
---- annotations when present; an unannotated action keeps the
---- `GET /<controller>/<action>` default.
+--- Actions carrying a route annotation are always registered.  An action with
+--- NO annotation keeps the `GET /<controller>/<action>` default, unless
+--- `unannotated` is false — then it is skipped and listed in the report, so
+--- "why is my action not routed?" has a visible answer.
 ---
 --- @param app_name string
 --- @param router table
@@ -546,7 +559,12 @@ end
 --- @param file string absolute/relative path to the controller module
 --- @param prefix string "" or a "/api"-style prefix
 --- @param report table mutated in place
-function M._register_controller(app_name, router, cname, file, prefix, report)
+--- @param unannotated boolean register actions without a route annotation?
+function M._register_controller(app_name, router, cname, file, prefix, report, unannotated)
+    if unannotated == nil then
+        unannotated = true
+    end
+
     local module_name = app_name .. ".controller." .. cname:gsub("/", ".")
     local controller_class = lw_util.import(module_name)
     if not controller_class then
@@ -580,6 +598,37 @@ function M._register_controller(app_name, router, cname, file, prefix, report)
             end
         end
     end
+
+    -- Decide which actions are routable BEFORE bailing on "no actions": with
+    -- unannotated = false a controller may legitimately contribute nothing,
+    -- which is a skip, not an error.
+    local routable, skipped_actions = {}, {}
+    for _, action in ipairs(actions) do
+        local note = annotations[action]
+        local has_route = note ~= nil and note.routes ~= nil and #note.routes > 0
+        if has_route or unannotated then
+            routable[#routable + 1] = action
+        else
+            skipped_actions[#skipped_actions + 1] = action
+        end
+    end
+
+    for _, action in ipairs(skipped_actions) do
+        report.skipped[#report.skipped + 1] =
+            cname .. "." .. action .. " (no route annotation)"
+    end
+    -- Only set the counter when it is meaningful, so a caller can distinguish
+    -- "the switch dropped actions" from "the switch was never engaged".
+    if #skipped_actions > 0 then
+        report.unannotated_skipped = (report.unannotated_skipped or 0) + #skipped_actions
+    end
+
+    if #routable == 0 then
+        report.skipped[#report.skipped + 1] =
+            cname .. " (no routable actions)"
+        return
+    end
+    actions = routable
 
     -- The URL segment keeps the on-disk path so nested controllers stay
     -- addressable: admin/post.lua -> /admin/post/<action>.

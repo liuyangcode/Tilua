@@ -324,6 +324,83 @@ do
 end
 
 ----------------------------------------------------------------------
+-- 7. the `unannotated` switch
+----------------------------------------------------------------------
+do
+    local function fresh_router()
+        package.loaded["Tilua.http.router"] = nil
+        local router = require("Tilua.http.router")
+        router.set_app_name("TestApp")
+        return router
+    end
+
+    local function paths_of_router(router)
+        local out = {}
+        for _, r in ipairs(router.get_route_caches("TestApp") or {}) do
+            local m = type(r.method) == "table" and table.concat(r.method, ",") or tostring(r.method)
+            out[m .. " " .. tostring(r.path)] = true
+        end
+        return out
+    end
+
+    local header = { name = "TestApp", path = "./tests/fixtures/TestApp" }
+    local dir = "./tests/fixtures/TestApp/controller"
+
+    -- (a) default is TRUE: an unannotated action keeps its convention route
+    local r1 = fresh_router()
+    local rep1 = discovery.scan(header, r1, { dir = dir })
+    ok(paths_of_router(r1)["GET /annotated/plain"],
+        "with the default, an unannotated action is registered")
+    eq(rep1.unannotated_skipped, nil, "nothing is reported as skipped by default")
+
+    -- (b) default is TRUE even when unannotated is passed as nil explicitly
+    local r1b = fresh_router()
+    discovery.scan(header, r1b, { dir = dir, unannotated = nil })
+    ok(paths_of_router(r1b)["GET /annotated/plain"],
+        "an explicit nil keeps the default of true")
+
+    -- (c) unannotated = false: only annotated actions are registered
+    local r2 = fresh_router()
+    local rep2 = discovery.scan(header, r2, { dir = dir, unannotated = false })
+    local p2 = paths_of_router(r2)
+
+    ok(not p2["GET /annotated/plain"],
+        "with unannotated = false, an unannotated action is NOT registered")
+    ok(p2["GET /ann/read/{id}"], "an annotated action is still registered")
+    ok(p2["POST /ann/create"], "every annotation of that action is registered")
+    ok(p2["PUT /annotated/limited"],
+        "a bare-verb annotation is registered even without a path")
+    ok(not p2["GET /annotated/widget"],
+        "widget.lua's unannotated actions are not registered either")
+
+    -- (d) the omission is reported, not silent
+    ok((rep2.unannotated_skipped or 0) > 0,
+        "skipped unannotated actions are counted")
+    local msg = table.concat(rep2.skipped, " | ")
+    ok(msg:find("plain", 1, true) ~= nil,
+        "the skip names the action so it can be found: " .. msg)
+    ok(msg:find("no route annotation", 1, true) ~= nil,
+        "the skip explains why")
+
+    -- (e) annotated-only mode does not turn a skip into an error
+    eq(#rep2.errors, 2,
+        "only the two deliberate annotation errors are reported (got "
+        .. #rep2.errors .. ")")
+
+    -- (f) Explicit routes are unaffected by the switch
+    package.loaded["Tilua.http.router"] = nil
+    local r3 = require("Tilua.http.router")
+    r3.set_app_name("TestApp")
+    local explicit = function() return "E" end
+    r3.get("/annotated/plain", explicit)
+    r3.init_rule_caches({})
+    discovery.scan(header, r3, { dir = dir, unannotated = false })
+    local rule = r3.match("TestApp", "get", "/annotated/plain")
+    ok(rule ~= nil, "an explicitly registered route survives unannotated = false")
+    eq(rule and rule.responser, explicit, "and it is still the explicit handler")
+end
+
+----------------------------------------------------------------------
 print(string.format("annotation tests: %d checks, %d failures", checks, failures))
 if failures > 0 then
     os.exit(1)

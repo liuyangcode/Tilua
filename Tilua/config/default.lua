@@ -13,6 +13,10 @@ local config = {
     --     controller/index.lua   Index:index()  -> GET /index/index
     --     controller/user.lua    User:show()    -> GET /user/show
     --
+    -- Actions may declare their method and middleware with annotations
+    -- (`--- @get /users/{id}`, `@middleware auth`, `@phases access = guard`).
+    -- See Tilua/core/discovery.lua.
+    --
     -- Routes registered explicitly in `routes.lua` always win over a discovered
     -- route for the same method and path, so turning this on is additive.
     --
@@ -22,6 +26,19 @@ local config = {
     auto_routes = false,
     -- auto_routes_dir    = nil,   -- defaults to <App>/controller
     -- auto_routes_prefix = nil,   -- e.g. "/api" to nest every discovered route
+
+    -- Should an action with NO route annotation still be registered?
+    --
+    --   true  (default) every public action gets `GET /<controller>/<action>`,
+    --                   which is what `auto_routes` did before this switch
+    --   false           only actions carrying `@get` / `@post` / `@route` are
+    --                   exposed; the rest are skipped and listed in the
+    --                   discovery report, so the omission is visible
+    --
+    -- The default is `true` so enabling this cannot silently un-route a project
+    -- that already relies on convention routes.  Set it to `false` when you want
+    -- the controller to be the complete, explicit list of endpoints.
+    auto_routes_unannotated = true,
 
     -- Preferred new keys (middleware_*) + legacy keys (midware_*) for compatibility
     middleware_alias = {

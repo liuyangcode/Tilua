@@ -5,6 +5,20 @@ All notable changes to Tilua are documented in this file.
 ## [Unreleased] - Action annotations for methods and middleware
 
 ### Added
+- **`auto_routes_unannotated`** — controls whether a controller action with no
+  route annotation is registered.
+
+  | Value | `Demo:hello` (no annotation) | `Demo:echo` (`@get`) |
+  |-------|------------------------------|----------------------|
+  | `true` (default) | exposed as `GET /demo/hello` | exposed |
+  | `false` | **404**, and listed in the discovery report | exposed |
+
+  It defaults to `true` so enabling it cannot silently un-route a project that
+  already relies on convention routes. Skipped actions are recorded in
+  `report.skipped` (and counted in `report.unannotated_skipped`) so the omission
+  is visible rather than silent — "why is my action not routed?" has an answer.
+  An explicit `routes.lua` entry is unaffected by the switch.
+
 - **Action annotations.** A discovered controller action can declare its HTTP
   method and middleware in the comment block immediately above it:
 
@@ -39,11 +53,12 @@ All notable changes to Tilua are documented in this file.
   line ends the block. An unknown `@directive` or HTTP method is reported as an
   error rather than ignored, so a typo cannot silently drop a route.
 
-- `tests/test_annotations.lua` — 50 checks: the parser on synthetic sources
+- `tests/test_annotations.lua` — 64 checks: the parser on synthetic sources
   (the short verb form for all seven verbs, multi-path directives, method lists,
   middleware config tables, `@phases`, `@GET` rejection, missing leading slash,
-  block comments, blank-line separation, unknown directives, bad methods) plus
-  end-to-end discovery over a fixture controller.
+  block comments, blank-line separation, unknown directives, bad methods), the
+  `auto_routes_unannotated` switch in both directions, and end-to-end discovery
+  over a fixture controller.
 - `examples/api/Api/controller/demo.lua` now demonstrates annotations
   (`@get /demo/echo/{word}`, `@post /demo/echo`, `@get` with no path,
   `@phases access = api_token`, `@middleware request_id`), verified under nginx.

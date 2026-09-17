@@ -294,8 +294,9 @@ function App:boot_worker()
     if cfg.auto_routes then
         local ok, report = pcall(function()
             return require("Tilua.core.discovery").scan(self, self:make("router"), {
-                dir    = cfg.auto_routes_dir,
-                prefix = cfg.auto_routes_prefix,
+                dir         = cfg.auto_routes_dir,
+                prefix      = cfg.auto_routes_prefix,
+                unannotated = cfg.auto_routes_unannotated,
             })
         end)
         if not ok then

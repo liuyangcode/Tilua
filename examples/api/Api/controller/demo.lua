@@ -11,6 +11,11 @@ local controller = require("Tilua.controller")
 local Demo = controller.define()
 
 --- Unannotated: discovered as GET /demo/hello.
+---
+--- Whether this is routable is controlled by `auto_routes_unannotated` in
+--- `Api/config/dev.lua`.  It defaults to `true`, so this action is exposed;
+--- set it to `false` to expose only actions that carry a route annotation, and
+--- `GET /demo/hello` becomes a 404.
 function Demo:hello()
     return { discovered = true, controller = "demo", action = "hello" }
 end

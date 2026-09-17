@@ -240,6 +240,18 @@ framework's controller base methods are never registered. An explicit
 `routes.lua` (or `config.route`) entry always wins over a discovered route for
 the same method and path.
 
+To expose **only** annotated actions and skip everything else:
+
+```lua
+auto_routes = true,
+auto_routes_unannotated = false,   -- default is true
+```
+
+The skipped actions are listed in the discovery report
+(`app._discovery_report.skipped`), so the omission is visible rather than
+silent. `auto_routes_unannotated` defaults to `true` so that turning it on
+cannot silently un-route a project that already relies on convention routes.
+
 See [`examples/api/Api/controller/demo.lua`](examples/api/Api/controller/demo.lua)
 for a working example.
 
