@@ -12,7 +12,7 @@
 - Deep integration with OpenResty lifecycle (`init_by_lua`, `init_worker_by_lua`, etc.)
 - Middleware pipeline (session, body parser, JSON, CSRF, HTML cache…)
 - Built-in support for MySQL / Redis / shared dict cache
-- Template rendering via `lua-resty-template`
+- Built-in template engine (`Tilua.template`) — no external rendering dependency
 - Lightweight custom class system + utilities
 
 ## Requirements
@@ -25,14 +25,45 @@
 
 | Library | Purpose |
 |---------|---------|
-| [lua-resty-template](https://github.com/bungle/lua-resty-template) | Views |
 | [lua-resty-redis](https://github.com/openresty/lua-resty-redis) | Cache / Session |
 | [lua-resty-mysql](https://github.com/openresty/lua-resty-mysql) | Database |
+| LuaFileSystem (`lfs`, bundled with OpenResty) | Required by `Tilua.utils.path` |
 | Penlight (vendored or system) | Utilities (being reduced) |
 
 ## Quick Start
 
-### 1. Nginx configuration
+### Fastest path
+
+```bash
+tilua doctor   # verify OpenResty, required modules and writable dirs
+tilua serve    # generate a dev nginx.conf and boot OpenResty on :8001
+```
+
+`tilua serve` autodetects your app module (a `<Name>/app.lua` in the project
+root), writes `.tilua/dev.nginx.conf`, and runs OpenResty in the foreground.
+`lua_code_cache` is off, so edited Lua is picked up on the next request — only
+nginx.conf changes need a restart.
+
+```
+tilua serve --port 8080      # different port
+tilua serve --app MyApp      # skip autodetection
+tilua serve --print-conf     # just show the config, start nothing
+```
+
+The generated config is development-only. For production, write your own
+nginx.conf — `--print-conf` output is a reasonable starting point.
+
+### 1. Scaffold
+
+```bash
+tilua new MyApp && cd MyApp
+tilua serve
+```
+
+That generates the layout below. The rest of this section explains what the
+generated files do, if you would rather write them yourself.
+
+### 2. Nginx configuration
 
 ```nginx
 lua_package_path "$prefix/lua/?.lua;$prefix/lualib/?.lua;;";
@@ -57,29 +88,32 @@ server {
 }
 ```
 
-### 2. Application entry (`MyApp/app.lua`)
+### 3. Application entry (`MyApp/app.lua`)
 
 ```lua
-local App = require("Tilua.app").derive()
+local App = require("Tilua.app").define()
 
-function App:_init()
-    self.name      = "MyApp"          -- must match the require path
-    self.module    = "Home"           -- default controller module
-    self.debug     = true
-    self.status    = "dev"            -- loads config/dev.lua if exists
-    self:super(self)
+-- Class fields, not instance fields: the base constructor reads these while
+-- building the instance, so setting them in _construct would be too late.
+App.name   = "MyApp"   -- must match the require path
+App.status = "dev"     -- loads config/dev.lua if present
+App.debug  = true
+
+-- Optional: register application-owned services.
+function App:_construct(opts)
+    return self
 end
 
 return App
 ```
 
-### 3. Routes (`MyApp/routes.lua`) – two styles
+### 4. Routes (`MyApp/routes.lua`) – two styles
 
 **Style A – Closure / Express-like**
 
 ```lua
-local route    = require("Tilua.route")
-local response = require("Tilua.response")
+local route    = require("Tilua.http.router")
+local response = require("Tilua.http.response")
 
 route.get("/", function()
     return response("Hello Tilua!")
@@ -90,11 +124,13 @@ route.get("/user/welcome/{name}", function(ctx, name)
 end)
 ```
 
+(`Tilua.route` and `Tilua.response` still work as compatibility shims.)
+
 **Style B – Classic MVC Controller**
 
 ```lua
--- MyApp/Home/controller/index.lua
-local Index = require("Tilua.controller").derive()
+-- MyApp/controller/index.lua
+local Index = require("Tilua.controller").define()
 
 function Index:index(request, name)
     return "welcome, " .. (name or "guest")
@@ -102,6 +138,9 @@ end
 
 return Index
 ```
+
+Controllers resolve as `<App>/controller/<controller>.lua`; the second path
+segment selects the action and defaults to `index`.
 
 ## Project Structure (after refactor)
 

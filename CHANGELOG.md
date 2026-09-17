@@ -2,6 +2,90 @@
 
 All notable changes to Tilua are documented in this file.
 
+## [0.9.3] - Project scaffolding
+
+### Added
+- `tilua new <Name>` — generates a runnable project skeleton:
+  `<Name>/app.lua`, `routes.lua`, `config/dev.lua`, `controller/index.lua`,
+  `view/index.html`, plus `public/`, `.gitignore` and a README.
+  - `--dir DIR` target directory (default `./<Name>`), `--force` to write
+    into a non-empty one
+  - refuses invalid module names and non-empty targets; `--force` only fills
+    in missing files and never overwrites an existing one
+  - the generated config disables the HTML cache and uses stderr logging, so
+    a fresh project boots with no Redis and no writable log directory
+- `tests/test_cli_new.lua` — asserts the generated files exist, are valid
+  Lua, use current APIs (not `derive()`), that the routes actually register
+  against the live router, that the view renders through `Tilua.template`,
+  and that the scaffolded `SHDICIT_NAME` matches what `tilua serve` declares.
+
+### Fixed
+- `tilua serve` now declares both `app_cache` and `app_test_cache` as shared
+  dicts. The framework default for `config.SHDICIT_NAME` is `app_test_cache`,
+  which the previously generated config did not declare.
+- README Quick Start was documenting APIs that do not exist and would fail on
+  first run (`docs/ANALYSIS.md` item 25):
+  - `require("Tilua.app").derive()` → `.define()`; there is no `derive()`
+  - the `_init` / `self:super(self)` app entry → class fields + `_construct`
+  - `require("Tilua.controller").derive()` → `.define()`
+  - controller path `MyApp/Home/controller/index.lua` →
+    `MyApp/controller/index.lua`, which is what `mvc_router` actually resolves
+  - route/response requires updated to `Tilua.http.router` /
+    `Tilua.http.response` (the old paths remain as shims)
+
+## [0.9.2] - Dev server
+
+### Added
+- `tilua serve` — local OpenResty dev server, no hand-written nginx.conf
+  needed to get started:
+  - autodetects the app module (`<Name>/app.lua` under the project root),
+    with a clear "pass --app" error when it is ambiguous or absent
+  - generates `.tilua/dev.nginx.conf` wiring all six lifecycle phases
+    (`init` / `init_worker` / `rewrite` / `access` / `content` / `log`)
+  - `lua_code_cache off` + `daemon off` + single worker: edited Lua is picked
+    up on the next request, Ctrl-C stops the server
+  - flags: `--port`, `--app`, `--root`, `--log`, `--print-conf`
+  - `--print-conf` writes and prints the config without starting anything,
+    which also makes it usable as a starting point for a real deployment
+  - falls back to a readable message (not a stack trace) when no OpenResty
+    binary is on PATH; a stock nginx without ngx_lua is explicitly rejected
+- `tests/test_cli_serve.lua` — covers autodetection, both flag styles, phase
+  wiring, brace balance of the generated config, and all three error paths.
+
+### Changed
+- CLI argument parsing now understands `--flag value`, `--flag=value` and
+  bare `--flag` booleans, in addition to positional arguments.
+- `tilua help` output is sorted; it previously iterated `pairs()` and so
+  printed commands in an arbitrary order.
+- `.gitignore`: ignore the generated `.tilua/` scratch directory.
+
+## [0.9.1] - Dependency-free templates
+
+### Added
+- `Tilua.template` — a small, dependency-free template engine backing
+  `Tilua.view`:
+  - `{{ expr }}` HTML-escaped output, `{{{ expr }}}` raw output
+  - `{% lua %}` arbitrary Lua statements for control flow
+  - `{# comment #}` compiled away, no output
+  - `include(view, extra_context)` for partials, context inherited unless overridden
+  - `tests/test_template.lua` (interpolation, escaping, loops, comments,
+    include, precompile→process round-trip)
+
+### Removed
+- The `lua-resty-template` dependency. `Tilua.core.lifecycle.init_view_engine`
+  now requires `Tilua.template` instead; `Tilua.view`'s call sites
+  (`new/caching/compile/compile_string/process/precompile`) are unchanged, so
+  existing `view:render(...)` call sites in application code do not change.
+- `resty.template` stubs in `tests/support/lua_stub.lua` and
+  `tests/e2e/lua/resty/template.lua` (no longer needed).
+
+### Changed
+- `tilua doctor` no longer checks for `resty.template`; it now checks for
+  `lfs` (LuaFileSystem), which `Tilua.utils.path` has always hard-required
+  but was previously undocumented and unchecked.
+- README dependency table: removed `lua-resty-template`, added the
+  previously-undocumented `lfs` requirement.
+
 ## [0.9.0] - Trie router + lifecycle fixes
 
 ### Added
