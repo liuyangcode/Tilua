@@ -20,6 +20,16 @@ return {
 
     route = {},
 
+    --- Convention-based controller routes.
+    ---
+    --- With this on, `App:boot_worker()` scans `Api/controller/` and registers a
+    --- route per public action, so `Api/controller/demo.lua` is reachable at
+    --- GET /demo/hello and GET /demo/echo/{word} WITHOUT any entry in routes.lua.
+    ---
+    --- Explicit routes always win over a discovered route for the same method and
+    --- path, so this is additive.  Try: curl http://localhost:8081/demo/hello
+    auto_routes = true,
+
     --- Plugins. Each entry is a module name (required and registered) or a table.
     ---
     --- `Api/plugin/request_trace.lua` records a per-request trace via the

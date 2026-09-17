@@ -2,6 +2,129 @@
 
 All notable changes to Tilua are documented in this file.
 
+## [Unreleased] - Action annotations for methods and middleware
+
+### Added
+- **Action annotations.** A discovered controller action can declare its HTTP
+  method and middleware in the comment block immediately above it:
+
+  ```lua
+  --- @get  /users/{id}
+  --- @post /users
+  --- @middleware auth
+  --- @middleware rate_limit, { limit = 10 }
+  --- @phases access = admin_guard
+  function User:update(id) ... end
+  ```
+
+  | Directive | Meaning |
+  |-----------|---------|
+  | `@get` `@post` `@put` `@delete` `@patch` `@head` `@options` | One route per directive. The path is optional and defaults to `/<controller>/<action>`; repeat the directive to serve several methods. |
+  | `@route <methods> [path]` | The long form, kept for compatibility. Accepts a method list: `@route get,post /thing`. |
+  | `@middleware <entry>` | Content-phase middleware. Repeatable. Accepts `name`, `name, { config }`, `[group]`. |
+  | `@phases <phase> = <entry>` | Middleware for a non-content phase (`access`, `rewrite`). |
+
+  Directive names are **lowercase and case-sensitive**: `@get` is the directive,
+  so `@GET` is reported as an unknown annotation rather than silently ignored.
+  A path given without a leading slash (`@get users`) is normalised, because the
+  malformed key would have registered an unreachable route.
+
+  Each route directive keeps **its own** path, so `@get /a/{id}` + `@post /a`
+  register two routes with different URLs rather than collapsing into one.
+
+  An **unannotated** action keeps the `GET /<controller>/<action>` default, so
+  annotating one action never changes another. Annotations are read from the
+  controller *source* (Lua discards comments, and this is authoring metadata, not
+  runtime state). A `--[[ ]]` block comment is not an annotation, and a blank
+  line ends the block. An unknown `@directive` or HTTP method is reported as an
+  error rather than ignored, so a typo cannot silently drop a route.
+
+- `tests/test_annotations.lua` — 50 checks: the parser on synthetic sources
+  (the short verb form for all seven verbs, multi-path directives, method lists,
+  middleware config tables, `@phases`, `@GET` rejection, missing leading slash,
+  block comments, blank-line separation, unknown directives, bad methods) plus
+  end-to-end discovery over a fixture controller.
+- `examples/api/Api/controller/demo.lua` now demonstrates annotations
+  (`@get /demo/echo/{word}`, `@post /demo/echo`, `@get` with no path,
+  `@phases access = api_token`, `@middleware request_id`), verified under nginx.
+
+### Fixed
+- `@route` with a comma-separated method list only parsed the first method.
+- An unknown HTTP method was reported in lower case (`'wrong'`), making the
+  message hard to grep back to the source. It is reported as written.
+- An annotation block separated from its action by a **blank line** still
+  applied, because the block walk skipped blank lines instead of stopping at
+  them.
+- Multiple route directives with **different paths** collapsed into one: only the
+  last path survived, so `@get /a/{id}` + `@post /a` sent the GET to `/a`. Each
+  directive now keeps its own path.
+- A path written without a leading slash registered an unreachable route key.
+
+## [Unreleased] - Convention-based controller routing
+
+### Added
+- **`Tilua.core.discovery`** — scans `<App>/controller/` at worker start and
+  registers a route per public action, so an MVC app no longer has to list every
+  action in `routes.lua`:
+
+  ```
+  MyApp/controller/index.lua     Index:index()   -> GET /index/index
+  MyApp/controller/user.lua      User:show(id)   -> GET /user/show
+  MyApp/controller/admin/post.lua Post:index()   -> GET /admin/post/index
+  ```
+
+  Enable with `auto_routes = true`. Off by default: discovery depends on a
+  project layout, and a framework that silently invents URLs is harder to reason
+  about than one that does not.
+
+  - Private helpers (leading `_`) and the framework's controller base methods
+    (`assign` / `display` / `service` / `model` / `fail` / `_call` /
+    `_construct`, plus the class system's injected `define`) are not registered.
+  - Nested controllers are scanned to one level (`admin/post.lua`).
+  - Controllers are NOT instantiated at scan time; each route is bound to a
+    `<module>@<action>` handler string, which the dispatcher already resolves
+    per request.
+  - A missing controller directory is skipped, not an error.
+  - `auto_routes_prefix` nests every discovered route (e.g. `/api`).
+- `tests/test_discovery.lua` — 38 checks covering the scan, filtering, handler
+  form, precedence, and the error/skip paths.
+- `examples/api/Api/controller/demo.lua` + `/demo/*` expectations — discovery
+  verified under real nginx.
+
+### Fixed
+- **`resty`-style `@` handler strings needed the full module path.** The
+  dispatcher resolves `"<module>@<action>"` and prefixes the app name only when
+  the string does not already contain `"<app>."`. A bare `"demo@hello"` became
+  `Api.demo` (missing the `controller.` layer) and silently 404'd.
+- **`route.get(path, handler, middleware)` registered the middleware as the
+  handler**, and **`route.get(path, handler, nil, { phases = ... })` lost its
+  phase config.** Both are documented call shapes; see the detailed notes below.
+- **A route registered after boot was silently unreachable.** `add_route` recorded
+  it in `route.rules`, but `build_index` compiles from `route.rule_caches`, so the
+  trie never saw it until someone re-ran `init_rule_caches`. Registration now
+  compiles immediately, and the index rebuilds lazily on the next match.
+- **Registering a route before the app name was known crashed** with
+  `attempt to index a nil value`. Such routes are now parked in
+  `route._pending_rules` and adopted by the next `set_app_name`, which is what
+  makes registering routes ahead of time work.
+- **`route.run` returned the boolean `true`** where every caller expected the
+  matched rule, so `router.midware` / `router.responser` were nil — route-level
+  middleware never ran and the dispatcher fell through to a nil handler.
+- Explicit routes now always beat discovered ones for the same method + path.
+  Discovered rules carry `source = "scanned"`; `pick_rule` prefers `"explicit"`,
+  and a discovered duplicate is not registered at all when an explicit route
+  already covers it.
+- `tests/support/lua_stub.lua`: the `lfs` stub reported **every** path as a
+  directory and its `dir()` returned an iterator that never yielded. Both were
+  wrong in the same direction as a bug — code branching on `lfs.attributes(p,
+  "mode")` took the directory branch for files, and anything enumerating a
+  directory saw it as empty. Now backed by real `stat`/`ls`.
+
+### Notes
+- `plugin.request_trace`'s `on_boot` / `on_worker_init` hooks call
+  `app.logger`, which is nil during worker boot in some configurations; the hook
+  is caught and logged rather than fatal. Tracked in `docs/ANALYSIS-2.md`.
+
 ## [Unreleased] - Plugin hooks on the phase path, and route call-shape fixes
 
 ### Fixed

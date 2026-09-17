@@ -208,6 +208,41 @@ A middleware's `handle(next_fn, ...)` either continues the chain with
 [`examples/api/Api/middleware/`](examples/api/Api/middleware/) for two annotated
 examples.
 
+### Convention-based routes (`auto_routes`)
+
+For MVC apps, set `auto_routes = true` and skip `routes.lua` entirely: worker
+boot scans `<App>/controller/` and registers a route per public action.
+
+```lua
+-- MyApp/controller/user.lua
+--- @get  /users/{id}
+--- @post /users
+--- @middleware auth
+--- @phases access = rate_limit
+function User:update(id) ... end
+
+function User:index() ... end     -- no annotation -> GET /user/index
+```
+
+| Directive | Meaning |
+|-----------|---------|
+| `@get` `@post` `@put` `@delete` `@patch` `@head` `@options` | One route per directive. The path is optional and defaults to `/<controller>/<action>`; repeat the directive to serve several methods. |
+| `@route <methods> [path]` | The long form, kept for compatibility. Accepts a method list: `@route get,post /thing`. |
+| `@middleware <entry>` | Content-phase middleware; repeatable, accepts `name`, `name, { config }`, `[group]` |
+| `@phases <phase> = <entry>` | Middleware for a non-content phase (`access` / `rewrite`) |
+
+Directive names are lowercase and case-sensitive, so a stray `@GET` is reported
+rather than silently ignored.
+
+An unannotated action keeps the convention default, so adding annotations never
+changes the routes you did not touch. Private actions (leading `_`) and the
+framework's controller base methods are never registered. An explicit
+`routes.lua` (or `config.route`) entry always wins over a discovered route for
+the same method and path.
+
+See [`examples/api/Api/controller/demo.lua`](examples/api/Api/controller/demo.lua)
+for a working example.
+
 ### Nginx configuration
 
 `init_by_lua` / `init_worker_by_lua` are http-level; the four request phases

@@ -44,6 +44,13 @@ local split = helpers.split
 local lw_util = require("Tilua.utils.util")
 local midware_manager = require("Tilua.middleware")
 
+--- Forward declaration: `add_route` compiles a rule as it registers it, and
+--- `compile_rule` is defined with the rest of the rule DSL further down.  Without
+--- this, a rule added after `init_rule_caches` landed in `route.rules` only —
+--- while `build_index` compiles from `route.rule_caches` — so the route was
+--- silently unreachable until someone re-ran `init_rule_caches`.
+local compile_rule
+
 local stringx = {
     strip = strip,
     split = function(s, sep) return split(s, sep or ",", true) end,
@@ -188,18 +195,32 @@ local function trie_insert(trie, segments, args, rule)
 end
 
 --- Pick the rule at `node` that accepts `method`.
---- Several methods commonly share one path, so a node holds a list.
+---
+--- Several methods commonly share one path, so a node holds a list.  When more
+--- than one accepts, EXPLICIT declarations win: controller discovery registers
+--- routes after `routes.lua` has already run, and a scanned route must never
+--- shadow a hand-written one for the same method + path.  `rule.source` is
+--- "explicit" (default) or "scanned"; ties fall back to insertion order.
 local function pick_rule(node, method, accepts)
     local rules = node and node.rules
     if not rules then
         return nil
     end
+
+    local best, best_scanned, best_seq
     for _, r in ipairs(rules) do
         if accepts(r, method) then
-            return r
+            local scanned = (r.source == "scanned")
+            local seq = r.seq or math.huge
+            if best == nil
+                or (best_scanned and not scanned)
+                or (best_scanned == scanned and seq < best_seq)
+            then
+                best, best_scanned, best_seq = r, scanned, seq
+            end
         end
     end
-    return nil
+    return best
 end
 
 --- Match `segs` (array of path segments) against the trie.
@@ -413,19 +434,98 @@ local function build_index(app)
 end
 
 local function get_index(app)
-    return route.indexes[app] or build_index(app)
+    -- Any registration since the last compile invalidates the index.  Rebuilding
+    -- on demand is what makes a rule registered AFTER boot actually reachable:
+    -- `add_route` only records the rule, so without this the route is silently
+    -- invisible (`route.match` returns nil) until someone calls
+    -- `init_rule_caches` again.
+    --
+    -- The cost is bounded by the number of compile *batches*, not the number of
+    -- routes: N registrations followed by one request cost one rebuild.
+    --
+    -- NOTE the dirty check must come FIRST.  `route.indexes[app]` is non-nil
+    -- after boot, so checking it first and returning early meant the dirty flag
+    -- was never cleared there — the rebuild then happened one match late, and
+    -- `route.match` had already answered from the stale index.
+    if rawget(route, "_index_dirty") == true or route.indexes[app] == nil then
+        rawset(route, "_index_dirty", false)
+        return build_index(app)
+    end
+    return route.indexes[app]
 end
+
+--- Routes declared before an application name was known.
+---
+--- The app name selects which rule table a route belongs to, so a route
+--- registered before it is known cannot be filed yet.  It used to CRASH:
+--- `route.rules[route.cur_app]` is nil while `cur_app` is the empty default, so
+--- `route.get("/x", h)` at require time (i.e. before App:make("router") has run)
+--- raised "attempt to index a nil value" with no hint about the cause.
+---
+--- Such routes are parked here and adopted by the next `set_app_name`, which
+--- makes "register routes ahead of time" work.
+route._pending_rules = {}
+route._pending_seq = {}
 
 function route.set_app_name(name)
     -- rawset: a plain assignment would be swallowed by __newindex
     rawset(route, "cur_app", name)
-    route.rules[name] = {}
-    route.rule_caches[name] = {}
+    route.rules[name] = route.rules[name] or {}
+    route.rule_caches[name] = route.rule_caches[name] or {}
     route.indexes[name] = nil
+
     -- A new app starts a fresh declaration sequence so its rules compile in
     -- the order the app declared them.
     route._rule_seq = {}
     route._next_rule_seq = 0
+
+    -- Adopt anything registered before the name was known, preserving the order
+    -- it was declared in.
+    local pending = rawget(route, "_pending_rules") or {}
+    local pending_seq = rawget(route, "_pending_seq") or {}
+    local declared = {}
+    for key in pairs(pending) do
+        declared[#declared + 1] = key
+    end
+    table.sort(declared, function(a, b)
+        return (pending_seq[a] or math.huge) < (pending_seq[b] or math.huge)
+    end)
+    for _, key in ipairs(declared) do
+        if route.rules[name][key] == nil then
+            route.rules[name][key] = pending[key]
+        end
+    end
+    route._pending_rules = {}
+    route._pending_seq = {}
+    route._index_dirty = true
+end
+
+--- Compile one declarative rule key into a rule object and append it to the
+--- app's cache.
+---
+--- Shared by `init_rule_caches` (full replay, deterministic order) and
+--- `add_route` (incremental, so a route registered after boot is immediately
+--- reachable).  Keeping one implementation is what stops the two paths from
+--- disagreeing about `matcher` / `args` / `_method_set`.
+---
+--- @param app string
+--- @param location string the rule key, e.g. "get /user/{id} id:reg,^[0-9]+$"
+--- @param result any the handler or rule table registered under that key
+--- @param opts table|nil { source = "explicit"|"scanned" } — discovery marks its
+---        routes "scanned" so an explicit route of the same method + path wins
+--- @return table rule
+compile_rule = function(app, location, result, opts)
+    local method, matcher, url, validation = route.parse_rule(location)
+    local rule = route.to_router(result, url)
+    rule.matcher = matcher
+    rule.method = method
+    rule._method_set = route.method_set(method)
+    rule.validation = validation
+    rule.source = (opts and opts.source) or rule.source or "explicit"
+    rule.seq = (opts and opts.seq) or route._next_rule_seq
+    route._next_rule_seq = math.max(route._next_rule_seq, (rule.seq or 0) + 1)
+    table_insert(route.rule_caches[app], rule)
+    return rule
 end
 
 --- Compile `route.rules[app]` (the declarative `{ ["get /path"] = handler }`
@@ -477,16 +577,14 @@ function route.init_rule_caches(config_rules)
 
     for _, entry in ipairs(pending) do
         local location, result = entry[1], entry[2]
-        local method, matcher, url, validation = route.parse_rule(location)
-        local rule = route.to_router(result, url)
-        rule.matcher = matcher
-        rule.method = method
-        rule._method_set = route.method_set(method)
-        rule.validation = validation
-        table_insert(route.rule_caches[app], rule)
+        compile_rule(app, location, result, {
+            source = "explicit",
+            seq = route._rule_seq[location],
+        })
     end
 
     build_index(app)
+    rawset(route, "_index_dirty", false)
     return route.indexes[app]
 end
 
@@ -942,6 +1040,8 @@ local function add_route(verbs, path, handler, ...)
 
     -- An extra `{ phases = { access = {...} } }` argument declares middleware
     -- for a non-content OpenResty phase (e.g. auth in the access phase).
+    -- A `{ opts = { source = "scanned" } }` table is discovery metadata.
+    local opts
     for i = 1, #midargs do
         local a = midargs[i]
         if type(a) == 'table' and a.phases ~= nil then
@@ -949,6 +1049,8 @@ local function add_route(verbs, path, handler, ...)
             if midware == a then
                 midware = {}
             end
+        elseif type(a) == 'table' and a.opts ~= nil then
+            opts = a.opts
         end
     end
 
@@ -970,16 +1072,102 @@ local function add_route(verbs, path, handler, ...)
         route._next_rule_seq = route._next_rule_seq + 1
     end
 
-    route.rules[route.cur_app][key] = {
+    local entry = {
         responser = handler,
         path      = path,
         midware   = #midware > 0 and midware or nil,
         phases    = phases,
     }
+
+    local app = route.cur_app
+    if app == nil or app == "" or route.rules[app] == nil then
+        -- No application name yet, so there is no rule table to file this under.
+        -- Park it; `set_app_name` adopts pending routes in declaration order.
+        local pending = rawget(route, "_pending_rules")
+        if pending == nil then
+            pending = {}
+            rawset(route, "_pending_rules", pending)
+        end
+        local pending_seq = rawget(route, "_pending_seq")
+        if pending_seq == nil then
+            pending_seq = {}
+            rawset(route, "_pending_seq", pending_seq)
+        end
+        if pending[key] == nil then
+            pending_seq[key] = (pending_seq[key] or (route._next_rule_seq - 1))
+        end
+        pending[key] = entry
+        return
+    end
+
+    -- Re-registering the same rule key replaces the rule (last declaration
+    -- wins), matching the previous behaviour where `route.rules[app][key]` was
+    -- simply overwritten.  Without dropping the compiled copy, the cache would
+    -- keep the OLD handler forever and `init_rule_caches` would then disagree
+    -- with it.
+    --
+    -- EXCEPT when the incoming rule is convention-discovered and an EXPLICIT
+    -- rule already covers the same method + path: dropping the explicit one
+    -- would silently hand the URL to discovery, which is the opposite of the
+    -- documented precedence.  Discovery yields to what was written by hand.
+    --
+    -- Method membership is compared, not just the path: `get /x` and `post /x`
+    -- are different rules that share a path, and dropping both would remove a
+    -- route that is still declared.
+    local caches = route.rule_caches[app]
+    local incoming_scanned = (opts and opts.source == "scanned")
+    if caches then
+        local method_set = route.method_set(route.parse_rule(key))
+        for i = #caches, 1, -1 do
+            local existing = caches[i]
+            if existing.path == path then
+                local same = false
+                for m in pairs(method_set) do
+                    if accepts_method(existing, m) then
+                        same = true
+                        break
+                    end
+                end
+                if same then
+                    if incoming_scanned and existing.source ~= "scanned" then
+                        -- Explicit route stays; the discovered duplicate is not
+                        -- registered at all.
+                        return nil
+                    end
+                    table.remove(caches, i)
+                end
+            end
+        end
+    end
+
+    route.rules[app][key] = entry
+
+    -- Compile immediately so the route is reachable without a manual rebuild.
+    -- `build_index` compiles from `rule_caches`, so recording into `rules`
+    -- alone left the route invisible.
+    compile_rule(app, key, entry, opts)
+
+    -- A late registration must become visible on the next match.
+    rawset(route, "_index_dirty", true)
 end
 
+--- Register a route on behalf of an application.
+---
+--- This is the programmatic entry point (used by controller discovery, which
+--- cannot use the `route.get` sugar because it does not know the app name at
+--- file scope).  `opts.source = "scanned"` marks the rule as convention-derived,
+--- so an explicit route with the same method + path takes precedence.
+---
+---   route.add_route("MyApp", "GET", "/index/index", "index@index",
+---                   { opts = { source = "scanned" } })
 function route.add_route(cur_app, verbs, path, handler, ...)
-    rawset(route, "cur_app", cur_app)
+    if cur_app ~= nil and cur_app ~= "" then
+        rawset(route, "cur_app", cur_app)
+        if route.rules[cur_app] == nil then
+            route.rules[cur_app] = {}
+            route.rule_caches[cur_app] = {}
+        end
+    end
     add_route(verbs, path, handler, ...)
 end
 

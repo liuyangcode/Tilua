@@ -281,6 +281,34 @@ function App:boot_worker()
         mw.load(cfg)
     end
 
+    -- Convention-based controller routes.
+    --
+    -- Runs in the WORKER, after `init_by_lua` has already registered whatever
+    -- `routes.lua` declares.  Discovered routes are marked `source = "scanned"`,
+    -- which makes an explicit route of the same method + path win — so enabling
+    -- this is additive, not a replacement.
+    --
+    -- Deliberately not in the master phase: scanning touches the filesystem and
+    -- requires the controller modules, both of which the master phase avoids so
+    -- that a bad config fails `nginx -t`.
+    if cfg.auto_routes then
+        local ok, report = pcall(function()
+            return require("Tilua.core.discovery").scan(self, self:make("router"), {
+                dir    = cfg.auto_routes_dir,
+                prefix = cfg.auto_routes_prefix,
+            })
+        end)
+        if not ok then
+            self:make("logger"):error("controller discovery failed: ", tostring(report))
+            report = nil
+        elseif report and #report.errors > 0 then
+            for _, err in ipairs(report.errors) do
+                self:make("logger"):error("controller discovery: ", err)
+            end
+        end
+        self._discovery_report = report
+    end
+
     -- view engine (creates cache dirs) + template caching policy.
     -- `caching` is a colon method; a dot call would pass the flag as `self`.
     local engine = self:make("view_engine")

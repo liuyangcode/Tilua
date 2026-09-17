@@ -198,20 +198,100 @@ if not package.preload["lfs"] then
     local ok_lfs = pcall(require, "lfs")
     if not ok_lfs then
         package.preload["lfs"] = function()
+            local function shell_ok(cmd)
+                local ok = os.execute(cmd)
+                if ok == true then return true end
+                if type(ok) == "number" then return ok == 0 end
+                return false
+            end
+
+            local function q(path)
+                return "'" .. tostring(path):gsub("'", "'\\''") .. "'"
+            end
+
             return {
+                --- Real mode/size/times, not a hard-coded "directory".
+                ---
+                --- A stub that reports every path as a directory is worse than no
+                --- stub: code branching on `lfs.attributes(p, "mode")` takes the
+                --- directory path for FILES too, silently changing behaviour in the
+                --- same direction as a bug.  That is exactly what happened with the
+                --- missing `modification` field (see the e2e lfs stub).
                 attributes = function(path, what)
-                    if what == "mode" then
-                        return "directory"
+                    if type(path) ~= "string" or path == "" then
+                        return nil
                     end
-                    return 1700000000
+
+                    local ftype, size = "other", 0
+                    local f = io.open(path, "rb")
+                    if f then
+                        -- On Linux io.open succeeds for directories too, so probe
+                        -- explicitly rather than trusting the open.
+                        if shell_ok("test -d " .. q(path)) then
+                            ftype = "directory"
+                        else
+                            ftype = "file"
+                            local n = f:seek("end")
+                            if n then size = n end
+                        end
+                        f:close()
+                    else
+                        if shell_ok("test -d " .. q(path)) then
+                            ftype = "directory"
+                        else
+                            return nil
+                        end
+                    end
+
+                    local attr = {
+                        mode = ftype,
+                        size = size,
+                        modification = 1700000000,
+                        access = 1700000000,
+                        change = 1700000000,
+                    }
+                    if what then return attr[what] end
+                    return attr
                 end,
                 currentdir = function() return "." end,
-                dir = function() return function() return nil end end,
-                mkdir = function() return true end,
-                rmdir = function() return true end,
+
+                --- Real directory listing.
+                ---
+                --- This used to be `function() return function() return nil end end`
+                --- — an iterator that never yields.  Any code that enumerated a
+                --- directory therefore saw it as EMPTY, which is worse than no stub
+                --- at all: it silently changes behaviour in the same direction as a
+                --- bug (the same failure mode that `attributes` had, see the note in
+                --- the e2e lfs stub).  Uses `ls -a`, like the real lfs includes "." and "..".
+                dir = function(path)
+                    local names = {}
+                    local f = io.popen("ls -a " .. q(path) .. " 2>/dev/null")
+                    if f then
+                        for line in f:lines() do
+                            names[#names + 1] = line
+                        end
+                        f:close()
+                    end
+                    local i = 0
+                    return function()
+                        i = i + 1
+                        return names[i]
+                    end
+                end,
+
+                mkdir = function(path)
+                    return shell_ok("mkdir -p " .. q(path))
+                end,
+                rmdir = function(path)
+                    shell_ok("rmdir " .. q(path) .. " 2>/dev/null")
+                    return true
+                end,
                 chdir = function() return true end,
                 symlinkattributes = function() return nil end,
-                touch = function() return true end,
+                touch = function(path)
+                    shell_ok("touch " .. q(path))
+                    return true
+                end,
             }
         end
     end

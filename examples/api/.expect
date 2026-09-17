@@ -29,4 +29,31 @@ check "/traces"                 200
 # Throws on purpose so the on_error hook fires; see /traces afterwards.
 check "/traces/boom"            500
 
+# Controller discovery (config.auto_routes = true) with action annotations.
+#
+# `hello` has no annotation -> convention default GET /demo/hello.
+# The others declare their method and middleware inline.
+check "/demo/hello"             200
+
+# @get /demo/echo/{word}  -> a real path parameter
+check "/demo/echo/hi"           200
+# @post /demo/echo        -> POST only; a GET must not match
+check "/demo/echo"              404
+
+# @get with no path       -> convention default /demo/from_verb
+check "/demo/from_verb"         200
+
+# @get /demo/methods repeated for GET/POST/PUT
+check "/demo/methods"           200
+
+# @get /demo/secure + @phases access = api_token
+check "/demo/secure"            401
+check "/demo/secure"            200 --header "X-Api-Token: secret"
+
+# @get /demo/traced + @middleware request_id
+check "/demo/traced"            200
+
+# A leading-underscore method is private and must NOT be routable.
+check "/demo/_secret"           404
+
 check "/nope"                   404

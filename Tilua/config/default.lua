@@ -4,6 +4,25 @@ local config = {
     html_cache_time = 60,
     html_cache_rules = {},
     html_cache_file_ext = '.html',
+
+    -- Convention-based routing for MVC controllers.
+    --
+    -- When true, `App:boot_worker()` scans `<App>/controller/` and registers a
+    -- route per public action using a flat `/<controller>/<action>` URL:
+    --
+    --     controller/index.lua   Index:index()  -> GET /index/index
+    --     controller/user.lua    User:show()    -> GET /user/show
+    --
+    -- Routes registered explicitly in `routes.lua` always win over a discovered
+    -- route for the same method and path, so turning this on is additive.
+    --
+    -- Off by default: discovery depends on a project layout, and a framework
+    -- that silently invents URLs is harder to reason about than one that does
+    -- not.  Turn it on for convention-over-configuration apps.
+    auto_routes = false,
+    -- auto_routes_dir    = nil,   -- defaults to <App>/controller
+    -- auto_routes_prefix = nil,   -- e.g. "/api" to nest every discovered route
+
     -- Preferred new keys (middleware_*) + legacy keys (midware_*) for compatibility
     middleware_alias = {
         mvc         = 'Tilua.middleware.mvc_router',

@@ -116,6 +116,42 @@ An in-memory todo API. No external services.
 | `DELETE /todos/{id}` | The same validation, different method |
 | `GET /echo/{mode}` | `mode:in,upper,lower` — validating against a value list |
 | `GET /admin/stats` | A route-scoped **access-phase** guard (`X-Api-Token`) |
+| `GET /traces` | Plugin hooks on the phase path |
+| `GET /demo/*` | **Auto-discovered** from `Api/controller/demo.lua` — no `routes.lua` entry |
+
+The last one is convention-based routing: `auto_routes = true` (in
+`Api/config/dev.lua`) makes worker boot scan `Api/controller/` and register a
+route per public action. `demo.lua`'s `Demo:hello` becomes `GET /demo/hello`
+without being declared anywhere.
+
+An action can declare its own method and middleware with annotations:
+
+```lua
+--- @get  /demo/echo/{word}
+--- @post /demo/echo
+--- @middleware request_id
+--- @phases access = api_token
+function Demo:echo(word) ... end
+```
+
+| Directive | Meaning |
+|-----------|---------|
+| `@get` `@post` `@put` `@delete` `@patch` `@head` `@options` | One route per directive; the path is optional and defaults to `/<controller>/<action>` |
+| `@route <methods> [path]` | Long form, kept for compatibility (`@route get,post /thing`) |
+| `@middleware <entry>` | Content-phase middleware (repeatable) |
+| `@phases <phase> = <entry>` | Middleware for `access` / `rewrite` |
+
+```bash
+curl http://localhost:8081/demo/hello      # unannotated -> GET /demo/hello
+curl http://localhost:8081/demo/echo/hi    # @route GET /demo/echo/{word}
+curl -X POST http://localhost:8081/demo/echo
+curl -i http://localhost:8081/demo/secure  # @phases access = api_token -> 401
+curl -i http://localhost:8081/demo/_secret # 404 - leading _ is private
+```
+
+Things worth knowing: an **unannotated** action keeps the convention default, so
+annotating one action never changes another; and an explicit `routes.lua` entry
+always wins over a discovered route for the same method and path.
 
 ```bash
 # the index lists every endpoint

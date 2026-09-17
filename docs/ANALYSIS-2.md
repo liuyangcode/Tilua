@@ -249,6 +249,12 @@ name .. "." .. m[1] .. m[2]     -- "post" → "post.GET/new"、"post.DELETE/{id}
    其余 7 个钩子均已接线。要么实现（`init_worker_by_lua` 里注册
    `ngx.timer.every` 检查 `ngx.worker.exiting()`），要么从文档中移除。
 
+5. **`app.logger` 在 worker 启动阶段可能为 nil**
+   `examples/api/Api/plugin/request_trace.lua` 的 `on_boot` / `on_worker_init`
+   调用 `app.logger:debug(...)`，在 nginx 下实测报
+   `attempt to index field 'logger' (a nil value)`。钩子异常被 `Plugin.emit`
+   捕获并记入错误日志，因此不影响请求，但说明**启动期钩子不应假定 `logger` 已可解析**。
+
 ### 4.2 安全 / 健壮性
 
 4. **`Exception.request_id` 用 `math.random`**（`core/exception.lua:114`）
