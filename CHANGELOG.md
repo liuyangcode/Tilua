@@ -2,6 +2,33 @@
 
 All notable changes to Tilua are documented in this file.
 
+## [0.9.1] - Dependency-free templates
+
+### Added
+- `Tilua.template` — a small, dependency-free template engine backing
+  `Tilua.view`:
+  - `{{ expr }}` HTML-escaped output, `{{{ expr }}}` raw output
+  - `{% lua %}` arbitrary Lua statements for control flow
+  - `{# comment #}` compiled away, no output
+  - `include(view, extra_context)` for partials, context inherited unless overridden
+  - `tests/test_template.lua` (interpolation, escaping, loops, comments,
+    include, precompile→process round-trip)
+
+### Removed
+- The `lua-resty-template` dependency. `Tilua.core.lifecycle.init_view_engine`
+  now requires `Tilua.template` instead; `Tilua.view`'s call sites
+  (`new/caching/compile/compile_string/process/precompile`) are unchanged, so
+  existing `view:render(...)` call sites in application code do not change.
+- `resty.template` stubs in `tests/support/lua_stub.lua` and
+  `tests/e2e/lua/resty/template.lua` (no longer needed).
+
+### Changed
+- `tilua doctor` no longer checks for `resty.template`; it now checks for
+  `lfs` (LuaFileSystem), which `Tilua.utils.path` has always hard-required
+  but was previously undocumented and unchecked.
+- README dependency table: removed `lua-resty-template`, added the
+  previously-undocumented `lfs` requirement.
+
 ## [0.9.0] - Trie router + lifecycle fixes
 
 ### Added
