@@ -1,17 +1,10 @@
--- Prefer pure helpers; soft-load Penlight only when available
+-- Pure helpers only.  Penlight was historically soft-loaded here (`pl.tablex`,
+-- `pl.pretty`) with hand-rolled fallbacks; since Penlight is not installed in a
+-- stock OpenResty, those branches were dead code on every real deployment.  The
+-- replacements now live in `Tilua.core.helpers`, so there is one implementation
+-- instead of two divergent ones.
 local helpers = require("Tilua.core.helpers")
-local ok_tablex, tablex = pcall(require, "pl.tablex")
-if not ok_tablex then tablex = nil end
-local ok_pretty, pretty = pcall(require, "pl.pretty")
-if not ok_pretty then pretty = nil end
-local tablex_size = tablex and tablex.size or function(t)
-    local n = 0
-    for _ in pairs(t or {}) do n = n + 1 end
-    return n
-end
-local foreach = (tablex and tablex.foreach) or function(t, fn, ...)
-    for k, v in pairs(t or {}) do fn(v, k, ...) end
-end
+local foreach = helpers.foreach
 local ngx = ngx
 local now, update_time = ngx.now, ngx.update_time
 local md5 = ngx.md5
@@ -193,24 +186,23 @@ function util.addslashes(str)
     return ngx.re.gsub(str, "([\'\\\"])", "\\$1", "jo")
 end
 
----extend
+--- Deep merge `src` into `dest` (in place), returning `dest`.
+---
+--- Arrays append, nested tables merge recursively, scalars overwrite — i.e. the
+--- semantics Penlight's `tablex.update` provided.  With Penlight absent this
+--- used to fall back to a flat overwrite, which REPLACED whole nested config
+--- subtables instead of merging them, so `app.lua`'s layered config
+--- (`Tilua.config.default` -> `<App>.config.default` -> `<App>.config.<status>`)
+--- lost the framework defaults for any nested table the app also defined.
+---
+--- Delegating to `helpers.update` keeps one implementation.  Callers that need a
+--- flat overwrite (middleware/config option merging) use `helpers.extend`.
 ---@param dest table
 ---@param src table
 function util.extend(dest, src)
     assert_arg(1, dest, 'table')
-    assert_arg(1, src, 'table')
-    for k, v in pairs(src) do
-        if type(v) == 'table' and type(dest[k]) == 'table' and util.is_array(v) and util.is_array(dest[k]) then
-            if tablex and tablex.update then
-                tablex.update(dest[k], v)
-            else
-                helpers.extend(dest[k], v)
-            end
-        else
-            dest[k] = v
-        end
-    end
-    return dest
+    assert_arg(2, src, 'table')
+    return helpers.update(dest, src)
 end
 
 function util.prequire(module)
@@ -235,12 +227,7 @@ end
 function util.dump(...)
     local params = { ... }
     for i = 1, #params do
-        local s
-        if pretty and pretty.write then
-            s = pretty.write(params[i])
-        else
-            s = util.json_encode(params[i]) or tostring(params[i])
-        end
+        local s = helpers.pretty(params[i])
         ngx.say(s .. '<br/>')
     end
 end
@@ -446,9 +433,6 @@ end
 ---@param array table
 ---@param val any
 function util.in_array(array, val)
-    if tablex and tablex.find then
-        return tablex.find(array, val) ~= nil
-    end
     return helpers.find(array, val) ~= nil
 end
 

@@ -267,6 +267,12 @@ name .. "." .. m[1] .. m[2]     -- "post" → "post.GET/new"、"post.DELETE/{id}
     无法加载**——"脱离 OpenResty 跑 CLI"这个卖点仍不成立（CLI 必须跑在 `resty` 或 nginx 里）。
     这正是上一份报告的结论之一，**依然成立**。
 
+    **已解决（本轮）**：Penlight 依赖已**彻底移除**。实测确认运行时不包含
+    `pl.tablex` / `pl.pretty` / `pl.dir`，因此原有调用点一直在走手写回退分支——
+    该依赖只以死代码形式存在。替换实现位于 `Tilua/core/helpers.lua`
+    （`update` / `size` / `foreach` / `pretty`），并由 `tests/test_no_penlight.lua` 覆盖。
+    同时修掉了 `useragent.lua` 里**唯一一处硬 `require("pl.tablex")`**（且该变量从未被使用）。
+
 ---
 
 ## 5. 建议的下一步（按价值排序）

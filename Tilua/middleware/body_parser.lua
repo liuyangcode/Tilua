@@ -20,10 +20,8 @@ local io_open = io.open
 local path_exists = path.exists
 local function makepath(p)
     if path_exists(p) then return true end
-    local ok_pl, pl_dir = pcall(require, "pl.dir")
-    if ok_pl and pl_dir.makepath then
-        return pl_dir.makepath(p)
-    end
+    -- `mkdir -p` handles nested paths; Penlight's pl.dir.makepath is not a
+    -- dependency of this project (it is absent from a stock OpenResty).
     return os.execute("mkdir -p " .. p:gsub("'", "'\\''"))
 end
 

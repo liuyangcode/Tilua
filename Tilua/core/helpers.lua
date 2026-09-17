@@ -1,5 +1,10 @@
 --- Tilua.core.helpers
---- Lightweight pure-Lua helpers to reduce Penlight dependency on hot paths.
+--- Lightweight pure-Lua helpers shared across the framework.
+---
+--- This module is the single home for the small table/string utilities the
+--- framework needs.  It replaces Penlight (`pl.tablex` / `pl.pretty`), which is
+--- not installed in a stock OpenResty — see `M.update` / `M.size` / `M.foreach` /
+--- `M.pretty` for the former Penlight surface.
 
 local M = {}
 
@@ -127,6 +132,87 @@ function M.extend(dst, src)
     return dst
 end
 
+--- Penlight `tablex.update(dst, src)`: merge `src` into `dst` in place.
+---
+--- Array values are APPENDED rather than replaced:
+---   update({1,2}, {3,4})            -> {1,2,3,4}
+---   update({a={1,2}}, {a={3}})      -> {a={1,2,3}}
+--- Everything else overwrites.
+---
+--- The array case MUST be detected on the source *table itself*, before
+--- iterating it.  `pairs({3,4})` yields `1 -> 3, 2 -> 4`, so a per-element
+--- `type(v) == "table"` test is false for every entry and the values silently
+--- overwrite `dst[1]`/`dst[2]` instead of being appended.  That is the bug this
+--- function shipped with twice.
+---
+--- Deliberately separate from `extend`, which is a flat overwrite used for
+--- config merging — making `extend` append would duplicate middleware lists.
+function M.update(dst, src)
+    if type(dst) ~= "table" or type(src) ~= "table" then
+        return dst
+    end
+
+    -- Whole-source array: append it, never index-by-index.
+    if M.is_array(src) then
+        for i = 1, #src do
+            dst[#dst + 1] = src[i]
+        end
+        return dst
+    end
+
+    for k, v in pairs(src) do
+        local existing = dst[k]
+        if type(v) == "table" then
+            if type(existing) == "table" then
+                M.update(existing, v)   -- recurse (handles nested arrays)
+            else
+                dst[k] = v
+            end
+        else
+            dst[k] = v
+        end
+    end
+    return dst
+end
+
+--- Count entries in a table (both array and hash part).
+function M.size(t)
+    if type(t) ~= "table" then
+        return 0
+    end
+    local n = 0
+    for _ in pairs(t) do
+        n = n + 1
+    end
+    return n
+end
+
+--- Iterate any table in key order, calling `fn(value, key, ...)`.
+--- Penlight calls this `tablex.foreach`; the argument order matches it.
+function M.foreach(t, fn, ...)
+    if type(t) ~= "table" or type(fn) ~= "function" then
+        return
+    end
+    local keys = {}
+    for k in pairs(t) do
+        keys[#keys + 1] = k
+    end
+    table.sort(keys, function(a, b)
+        local ta, tb = type(a), type(b)
+        if ta == tb then
+            if ta == "number" or ta == "string" then
+                return a < b
+            end
+            return tostring(a) < tostring(b)
+        end
+        return ta < tb
+    end)
+    for i = 1, #keys do
+        local k = keys[i]
+        fn(t[k], k, ...)
+    end
+end
+
 --- Find value in array; returns index or nil
 function M.find(t, value)
     if type(t) ~= "table" then
@@ -198,6 +284,69 @@ function M.imap(fn, t)
         r[i] = fn(v, i)
     end
     return r
+end
+
+--- Render a value as readable, Lua-parseable text.
+---
+--- Pure-Lua stand-in for Penlight's `pretty.write` (used by `util.dump`).
+--- Table keys are sorted so the output is stable across runs, and cycles are
+--- reported instead of recursing forever.
+local function format_key(k)
+    if type(k) == "string" and k:match("^[%a_][%w_]*$") then
+        return k
+    end
+    return "[" .. M.pretty(k) .. "]"
+end
+
+function M.pretty(value, indent, seen)
+    indent = indent or 0
+    local t = type(value)
+
+    if t ~= "table" then
+        if t == "string" then
+            return string.format("%q", value)
+        end
+        return tostring(value)
+    end
+
+    seen = seen or {}
+    if seen[value] then
+        return "<cycle>"
+    end
+    seen[value] = true
+
+    local pad = string.rep("  ", indent + 1)
+    local close_pad = string.rep("  ", indent)
+
+    -- array part first, in order
+    local parts = {}
+    for i = 1, #value do
+        parts[#parts + 1] = pad .. M.pretty(value[i], indent + 1, seen)
+    end
+    -- then the remaining keys, sorted for stability
+    local keys = {}
+    for k in pairs(value) do
+        if not (type(k) == "number" and k >= 1 and k <= #value and k == math.floor(k)) then
+            keys[#keys + 1] = k
+        end
+    end
+    table.sort(keys, function(a, b)
+        if type(a) == type(b) then
+            return tostring(a) < tostring(b)
+        end
+        return type(a) < type(b)
+    end)
+    for _, k in ipairs(keys) do
+        parts[#parts + 1] = pad .. format_key(k) .. " = "
+            .. M.pretty(value[k], indent + 1, seen)
+    end
+
+    seen[value] = nil
+
+    if #parts == 0 then
+        return "{}"
+    end
+    return "{\n" .. table.concat(parts, ",\n") .. "\n" .. close_pad .. "}"
 end
 
 return M

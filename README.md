@@ -30,7 +30,12 @@
 | [lua-resty-redis](https://github.com/openresty/lua-resty-redis) | Cache / Session |
 | [lua-resty-mysql](https://github.com/openresty/lua-resty-mysql) | Database |
 | LuaFileSystem (`lfs`, bundled with OpenResty) | Required by `Tilua.utils.path` |
-| Penlight (vendored or system) | Utilities (being reduced) |
+| [lua-resty-jit-uuid](https://github.com/thibaultcha/lua-resty-jit-uuid) | UUID generation |
+
+**No Penlight dependency.** Earlier versions soft-loaded `pl.tablex` / `pl.pretty`
+and speculative `pl.dir`, with hand-rolled fallbacks. Penlight is not installed in
+a stock OpenResty, so those branches were dead code; the pure-Lua replacements now
+live in `Tilua.core.helpers` (`update` / `size` / `foreach` / `pretty`).
 
 ## Quick Start
 

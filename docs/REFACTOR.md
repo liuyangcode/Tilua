@@ -7,7 +7,7 @@
 See CHANGELOG.md for full details.
 
 ### Phase 3 highlights
-- Pure Lua helpers reduce Penlight on hot paths
+- Pure Lua helpers replaced Penlight entirely (see CHANGELOG "Penlight dependency removed")
 - Structured errors (Tilua.core.errors)
 - Built-in /health endpoint
 - Production config defaults

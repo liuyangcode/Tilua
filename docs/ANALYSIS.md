@@ -8,6 +8,10 @@
 >
 > 仍然有效的部分：§5 的依赖硬绑定分析（纯 Lua 环境无法加载框架）——该结论至今成立，
 > 并已并入 `ANALYSIS-2.md` §4.5。
+>
+> **已经解决的条目**：§5.2 / 第 393、395 行指出的 Penlight 依赖（`pl.tablex`、
+> `pl.pretty`、`pl.dir`）**已全部移除** —— 见 `CHANGELOG.md` 的
+> "Penlight dependency removed"，以及 `tests/test_no_penlight.lua` 的回归测试。
 
 > 分析对象：`D:\Tilua\Tilua`（`VERSION` = 0.7.0，73 个 Lua 文件 / 约 10,000 行）
 > 分析方式：逐文件静态阅读，覆盖 ORM 层、HTTP/路由/中间件层、核心运行时与文档。所有问题均标注 `file:line`。

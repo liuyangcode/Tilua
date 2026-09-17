@@ -2,6 +2,47 @@
 
 All notable changes to Tilua are documented in this file.
 
+## [Unreleased] - Penlight dependency removed
+
+### Removed
+- **Penlight is no longer referenced anywhere.** It was never actually installed
+  in a stock OpenResty, so every Penlight call site was already running its
+  hand-rolled fallback — the dependency only existed as dead branches and a
+  misleading README row. Verified by probing the runtime: `pl.tablex`,
+  `pl.pretty` and `pl.dir` all fail to load.
+  - `Tilua/utils/util.lua` — dropped the soft-loads of `pl.tablex` / `pl.pretty`.
+  - `Tilua/utils/useragent.lua` — dropped an **unused hard `require("pl.tablex")`**
+    (the only hard Penlight dependency left in the framework).
+  - `Tilua/core/lifecycle.lua`, `Tilua/middleware/body_parser.lua` — dropped the
+    speculative `pcall(require, "pl.dir")` `makepath` attempts; `mkdir -p` was
+    always the branch that ran.
+
+### Added
+- `Tilua/core/helpers.lua` — pure-Lua replacements for the Penlight surface the
+  framework actually used: `update` (merge/append), `size`, `foreach`, `pretty`.
+- `Tilua/utils/path.lua` — `_searchpath_fallback`, a pure-Lua
+  `package.searchpath`. The framework previously called `package.searchpath`
+  directly; it exists in OpenResty's LuaJIT but not in every LuaJIT build, where
+  its absence broke `App.path` (and therefore the whole view engine).
+- `tests/test_no_penlight.lua` — asserts no `require("pl...")` survives in
+  `Tilua/`, and covers each replacement (including that `helpers.pretty` output
+  re-parses as Lua and that cycles do not hang).
+
+### Fixed
+- `helpers.update` appends arrays instead of overwriting them. `pairs({3,4})`
+  yields `1 -> 3, 2 -> 4`, so array-ness must be detected on the source *table*,
+  not per element.
+- `util.extend` now deep-merges nested tables. With Penlight absent it fell back
+  to a flat overwrite, so `app.lua`'s layered config
+  (`Tilua.config.default` -> `<App>.config.default` -> `<App>.config.<status>`)
+  **replaced** whole nested config subtables instead of merging them, silently
+  losing framework defaults for any nested table the app also defined.
+
+### Changed
+- `util.extend` delegates to `helpers.update` so there is one merge
+  implementation. `helpers.extend` remains a flat overwrite for
+  middleware/config option merging.
+
 ## [0.9.3] - Project scaffolding
 
 ### Added

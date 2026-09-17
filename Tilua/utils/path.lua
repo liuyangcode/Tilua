@@ -437,6 +437,48 @@ function path.get_module_path(...)
     end
     return path.normpath(path.dirname(module_file))
 end
+--- Pure-Lua search of a package template list (`package.path` / `cpath`).
+---
+--- Exposed for tests: `path._searchpath_fallback` lets the suite verify this
+--- implementation even on a LuaJIT that ships the C built-in.
+---
+--- Like the standard `package.searchpath`, the module name's dots are first
+--- converted to the directory separator, so `Tilua.utils.util` is looked up as
+--- `./Tilua/utils/util.lua`.  (Substituting the dotted name directly finds
+--- nothing — that is exactly the bug this fallback had before it was tested.)
+local function searchpath_fallback(name, template)
+    if type(name) ~= "string" or type(template) ~= "string" then
+        return nil, "bad argument to searchpath"
+    end
+    local file_name = name:gsub("%.", sep)
+    local tried = {}
+    for entry in template:gmatch("[^;]+") do
+        local candidate = entry:gsub("%?", file_name)
+        local f = io.open(candidate, "rb")
+        if f then
+            f:close()
+            return candidate
+        end
+        tried[#tried + 1] = "\n\tno file '" .. candidate .. "'"
+    end
+    return nil, table.concat(tried)
+end
+path._searchpath_fallback = searchpath_fallback
+
+--- Search a template list, preferring the runtime's optimized implementation.
+---
+--- `package.searchpath` is a Lua 5.2+ / LuaJIT feature that this project was
+--- relying on implicitly.  It exists in OpenResty's LuaJIT but not in every
+--- LuaJIT build, where a missing one made `App.path` — and therefore the whole
+--- view engine — fail to resolve.
+local function searchpath(name, template)
+    if type(package.searchpath) == "function" then
+        return package.searchpath(name, template)
+    end
+    return searchpath_fallback(name, template)
+end
+path._searchpath = searchpath
+
 --- return the full path where a particular Lua module would be found.
 -- Both package.path and package.cpath is searched, so the result may
 -- either be a Lua file or a shared library.
@@ -444,17 +486,26 @@ end
 -- @return on success: path of module, lua or binary
 -- @return on error: nil,error string
 function path.package_path(mod)
-    local res
-    mod = mod:gsub('%.', sep)
-    res = package.searchpath(mod, package.path)
-    if res then
-        return res, true
+    local errs = {}
+
+    for _, candidate in ipairs({
+        { mod, package.path,  true  },   -- Lua source
+        { mod, package.cpath, false },   -- shared library
+    }) do
+        local name, template, is_lua = candidate[1], candidate[2], candidate[3]
+        if template and template ~= "" then
+            local res, serr = searchpath(name, template)
+            if res then
+                return res, is_lua
+            end
+            if serr then
+                errs[#errs + 1] = serr
+            end
+        end
     end
-    res = package.searchpath(mod, package.cpath)
-    if res then
-        return res, false
-    end
-    return nil, 'cannot find module on path'
+
+    return nil, "cannot find module '" .. tostring(mod) .. "' on package.path/cpath"
+        .. table.concat(errs)
 end
 
 ---- finis -----

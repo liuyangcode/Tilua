@@ -1,7 +1,7 @@
 ########## HTTP RESULTS ##########
 ### /greeter   [JSON route (response:send)]
 status: 200
-body: {"marker":"GREETER","title":"Container Demo"}
+body: {"title":"Container Demo","marker":"GREETER"}
 
 ### /text   [plain string return -> text body]
 status: 200
@@ -73,26 +73,26 @@ body: Not Found
 
 ### /boom   [500 from a throwing route]
 status: 500
-body: {"code":500,"error_code":"controller_error","request_id":"5e299728c9a5c58707031a2136032f99","layer":"controller","message":"\/app\/tests\/fixtures\/TestApp\/routes.lua:35: intentional route failure"}
+body: {"request_id":"2dd659c38987d1dc40e9ad4b81098a1d","layer":"controller","code":500,"message":"\/app\/tests\/fixtures\/TestApp\/routes.lua:35: intentional route failure","error_code":"controller_error"}
 
 ########## ACCESS LOG ##########
-127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /greeter HTTP/1.0" 200 45 "-" "-"
-127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /text HTTP/1.0" 200 11 "-" "-"
-127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /text-literal HTTP/1.0" 200 11 "-" "-"
-127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /view HTTP/1.0" 200 189 "-" "-"
-127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /about HTTP/1.0" 200 5 "-" "-"
-127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /user/ada HTTP/1.0" 200 9 "-" "-"
-127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /num/42 HTTP/1.0" 200 13 "-" "-"
-127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /num/abc HTTP/1.0" 404 9 "-" "-"
-127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /kind/ok HTTP/1.0" 200 7 "-" "-"
-127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /kind/no HTTP/1.0" 404 9 "-" "-"
-127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /pair/x HTTP/1.0" 200 8 "-" "-"
-127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /left/1 HTTP/1.0" 200 8 "-" "-"
-127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /right/2 HTTP/1.0" 200 9 "-" "-"
-127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /view-assign HTTP/1.0" 200 199 "-" "-"
-127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /admin HTTP/1.0" 403 20 "-" "-"
-127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /admin HTTP/1.0" 200 10 "-" "-"
-127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /healthz HTTP/1.0" 404 9 "-" "-"
-127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /nope HTTP/1.0" 404 9 "-" "-"
-127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /boom HTTP/1.0" 500 199 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:50:30 +0000] "GET /greeter HTTP/1.0" 200 45 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:50:30 +0000] "GET /text HTTP/1.0" 200 11 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:50:30 +0000] "GET /text-literal HTTP/1.0" 200 11 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:50:30 +0000] "GET /view HTTP/1.0" 200 189 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:50:30 +0000] "GET /about HTTP/1.0" 200 5 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:50:30 +0000] "GET /user/ada HTTP/1.0" 200 9 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:50:30 +0000] "GET /num/42 HTTP/1.0" 200 13 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:50:30 +0000] "GET /num/abc HTTP/1.0" 404 9 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:50:30 +0000] "GET /kind/ok HTTP/1.0" 200 7 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:50:30 +0000] "GET /kind/no HTTP/1.0" 404 9 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:50:30 +0000] "GET /pair/x HTTP/1.0" 200 8 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:50:30 +0000] "GET /left/1 HTTP/1.0" 200 8 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:50:30 +0000] "GET /right/2 HTTP/1.0" 200 9 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:50:30 +0000] "GET /view-assign HTTP/1.0" 200 199 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:50:30 +0000] "GET /admin HTTP/1.0" 403 20 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:50:30 +0000] "GET /admin HTTP/1.0" 200 10 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:50:30 +0000] "GET /healthz HTTP/1.0" 404 9 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:50:30 +0000] "GET /nope HTTP/1.0" 404 9 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:50:30 +0000] "GET /boom HTTP/1.0" 500 199 "-" "-"
 ########## ERROR LOG (lua only) ##########

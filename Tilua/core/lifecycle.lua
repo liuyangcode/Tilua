@@ -39,17 +39,13 @@ local MIDDLEWARE_PHASES = { "rewrite", "access", "content" }
 --- reliable success signal — the previous `ret ~= 0 and ret ~= true` test
 --- wrongly treated a successful mkdir as failure.  Verify by re-checking the
 --- filesystem instead, and surface the shell error when that really fails.
+---
+--- `mkdir -p` is the only implementation: an earlier version tried
+--- `pl.dir.makepath` first, but Penlight is not installed in a stock OpenResty,
+--- so that branch never ran (and `-p` already handles nested paths).
 local function ensure_dir(p)
     if path_exists(p) then
         return true
-    end
-
-    local ok_pl, pl_dir = pcall(require, "pl.dir")
-    if ok_pl and pl_dir.makepath then
-        pcall(pl_dir.makepath, p)
-        if path_exists(p) then
-            return true
-        end
     end
 
     local output = os.execute("mkdir -p " .. p:gsub("'", "'\\''") .. " 2>&1")

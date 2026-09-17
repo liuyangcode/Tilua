@@ -3,7 +3,6 @@
 --- Created by liuyang.
 --- DateTime: 2020/8/20 2:43 下午
 ---
-local tablex = require("pl.tablex")
 local pairsByKeys = require("Tilua.utils.util").pairsByKeys
 local re_match = ngx.re.match
 local M = {
