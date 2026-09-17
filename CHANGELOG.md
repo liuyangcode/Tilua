@@ -2,6 +2,62 @@
 
 All notable changes to Tilua are documented in this file.
 
+## [Unreleased] - Controller and view layer
+
+### Fixed
+- **`view:render(view, context)` discarded everything set with `assign`.** The
+  context argument REPLACED the view context instead of merging into it, so the
+  most natural controller style silently lost data:
+
+  ```lua
+  self:assign("title", "Hi")
+  return self:display("index", { items = items })   -- "title" was lost
+  ```
+
+  It now merges: explicit values win per key, and `mount_context` remains the
+  final fallback.
+
+- **`controller:display(name, context)` ignored its second argument.**
+  `display` only accepted a template name, so a context table passed by an
+  action was dropped and every template key came out `nil`. It now forwards the
+  context (and documents that it returns the response object, with the rendered
+  HTML on `response.body`).
+
+- **Framework methods leaked as routable actions.** `Tilua.controller` gained
+  `get` and `mount_context` while the reserved-name list lived in the discovery
+  module as a hand-maintained copy, so `GET /<controller>/get` and
+  `GET /<controller>/mount_context` were published for every controller. The set
+  now lives beside the definitions as `controller.framework_methods`, is read by
+  discovery at scan time, and a test fails if a base method is not accounted for.
+
+- **`find_handler` crashed on a nil `responser`** with
+  `bad argument #1 to 'string_find' (string expected, got nil)`. It is treated as
+  the empty string and falls through to the conventional path form.
+
+### Changed
+- `find_handler`'s two handler forms are now documented, because they invoke the
+  controller differently and only one supports the controller API:
+
+  | `responser` | Controller | `assign` / `display` / `service` |
+  |---|---|---|
+  | `"<module>@<action>"` | called on the **class**, `self = ctx` | unavailable |
+  | `"<action>"` (or absent) | **instantiated** from `router.path` | available |
+
+  Its dead `handler.__parent` check was removed; the branch now has explicit
+  precedence (named action, then `_call`) and always returns a callable.
+
+- `Tilua.controller` gained `get` and `mount_context`, so the view API is
+  reachable from a controller instead of only part of it being delegated.
+
+### Added
+- `tests/test_mvc_pipeline.lua` — 34 checks covering the pipeline that had **no
+  coverage at all**: instantiating a controller, running an action, rendering
+  through `display()`, `assign` values surviving the render, `mount_context` as
+  the fallback, an action returning a table, both `find_handler` forms, the
+  nil-`responser` guard, and the framework-method drift guard.
+- Fixtures `TestApp/controller/mvc.lua` plus `view/mvc/{index,mounted}.html`, and
+  four `/mvc/*` cases in the e2e suite (real nginx, 23 cases now).
+
 ## [Unreleased] - Action annotations for methods and middleware
 
 ### Added

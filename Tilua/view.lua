@@ -30,10 +30,34 @@ function view:assign(name, value)
     end
 end
 
+--- Merge `context` into the assigned context and render.
+---
+--- The context passed here is MERGED over whatever `assign` already put in
+--- place, rather than replacing it.  Replacing meant
+---
+---     view:assign("title", "Hi")
+---     view:render("index", { items = ... })   -- "title" silently lost
+---
+--- which broke the most natural controller style:
+---
+---     self:assign("title", "Hi")
+---     return self:display("index", { items = ... })
+---
+--- Explicit values still win over assigned ones for the same key, and
+--- `mount_context` remains the final fallback (it is installed as the
+--- metatable's `__index` in `fetch`).
+---
+--- `context` may be omitted or non-table; both are tolerated.
 function view:render(view_file, context)
     assert(view_file, "[view.render] Template view file must been specified")
     if path.extension(view_file) == '' then
         view_file = view_file .. '.html'
+    end
+
+    if type(context) == 'table' then
+        for k, v in pairs(context) do
+            self.context[k] = v
+        end
     end
 
     local enabled = self.ctx.view_engine.template:caching()
@@ -54,7 +78,6 @@ function view:render(view_file, context)
             self:precompile(view_file)
         end
     end
-    self.context = context or self.context
     local content = self:fetch(view_file)
     return (content)
 end

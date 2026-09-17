@@ -357,10 +357,37 @@ function dispatch:to_handler(fn)
     rawset(self:ctx(), "_phase_handler", fn)
 end
 
+--- Resolve a rule's `responser` into a callable.
+---
+--- Two forms are supported, and they differ in how the controller is invoked:
+---
+---   1. `"<module>@<action>"` — the form controller discovery generates and the
+---      examples use.  The action is called on the controller CLASS:
+---      `handler[action](ctx, ...)`.  This suits stateless actions, which is what
+---      discovery targets.
+---
+---   2. a plain string (`"show"`), or a missing `responser` — the controller and
+---      action are derived conventionally from `router.path` as
+---      `/<controller>/<action>`, and the controller is INSTANTIATED via
+---      `class(ctx, controller, action)` before the action runs:
+---      `handler[action](handler, ctx, ...)`.
+---
+---   The difference is not cosmetic: `Tilua.controller`'s helpers (`assign`,
+---   `display`, `service`, `model`) read `self.ctx`, so they only work on the
+---   instantiated form.  Use form 2 when the action renders a view through the
+---   controller API; form 1 when it is a plain function returning a value.
+---
+--- Always returns a callable; a rule that resolves to nothing yields a 404
+--- handler rather than nil, so callers never have to nil-check.
 function dispatch:find_handler(router)
     local ctx = self:ctx()
-    local responser = router.responser
-    if string_find(responser, "@", 1, true) then
+    -- `responser` can legitimately be absent (a rule key registered with no
+    -- handler), and `string.find` on nil raised
+    -- "bad argument #1 to 'string_find' (string expected, got nil)".
+    -- Treat it as the empty string so it falls through to the path form.
+    local responser = router.responser or ""
+
+    if type(responser) == "string" and string_find(responser, "@", 1, true) then
         local resp = split(responser, "@", true)
         local controller = resp[1]
         local action = resp[2]
@@ -374,40 +401,46 @@ function dispatch:find_handler(router)
                 return handler[action](ctx, table.unpack(bind_args))
             end
         end
-    else
-        local parts = split(strip(router.path .. (router.extra_path or ""), "/"), "/", true)
-        local cleaned = {}
-        for _, p in ipairs(parts) do
-            if p ~= "" then
-                cleaned[#cleaned + 1] = p
+        return function()
+            return errors.not_found()
+        end
+    end
+
+    -- Conventional form: derive controller and action from the path, and
+    -- instantiate so the controller helpers are available.
+    local parts = split(strip(router.path .. (router.extra_path or ""), "/"), "/", true)
+    local cleaned = {}
+    for _, p in ipairs(parts) do
+        if p ~= "" then
+            cleaned[#cleaned + 1] = p
+        end
+    end
+    local controller = cleaned[1] or "index"
+    local action = cleaned[2] or "index"
+    local params = {}
+    for i = 3, #cleaned do
+        params[#params + 1] = cleaned[i]
+    end
+
+    local handler = lw_util.import(ctx.name, "controller", controller)
+    if type(handler) == "table" and handler._construct then
+        handler = handler(ctx, controller, action)
+    end
+
+    if type(handler) == "table" then
+        if type(handler[action]) == "function" then
+            return function()
+                return handler[action](handler, ctx, table.unpack(params))
             end
         end
-        local controller = cleaned[1] or "index"
-        local action = cleaned[2] or "index"
-        local params = {}
-        for i = 3, #cleaned do
-            params[#params + 1] = cleaned[i]
-        end
-        local handler = lw_util.import(ctx.name, "controller", controller)
-        if handler then
-            if handler._construct then
-                handler = handler(ctx, controller, action)
-            end
-            if handler.__parent and not handler.__parent[action] and type(handler[action]) == "function" then
-                return function()
-                    return handler[action](handler, ctx, table.unpack(params))
-                end
-            elseif type(handler._call) == "function" then
-                return function()
-                    return handler._call(handler, ctx, table.unpack(params))
-                end
-            elseif type(handler[action]) == "function" then
-                return function()
-                    return handler[action](handler, ctx, table.unpack(params))
-                end
+        -- `_call` is the controller's catch-all; the base class returns 404.
+        if type(handler._call) == "function" then
+            return function()
+                return handler._call(handler, ctx, table.unpack(params))
             end
         end
     end
+
     return function()
         return errors.not_found()
     end

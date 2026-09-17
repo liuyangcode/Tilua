@@ -15,12 +15,21 @@ App.debug  = true
 --- instance resolves `App.config` unless a binding provides it — which is why
 --- app-level bindings are registered lazily inside `_construct`.
 function App:_construct(opts)
-    -- base wiring already ran (Container._construct -> App._construct):
-    -- container tables exist, loader set, framework bindings registered.
+    -- `greet` is a closure rather than method syntax: services returned from a
+    -- container binding are plain tables, and callers reach them through more
+    -- than one path (`self:service("greeter")`, `self:service().greeter`,
+    -- `ctx:make("greeter")`).  Method syntax would make the result depend on
+    -- which path was used.
     self:singleton("greeter", function(c)
         return {
-            greet = function()
-                return "hello " .. tostring(c.config.app_title)
+            --- `who` is optional, so the original one-argument contract
+            --- (`greet()` -> "hello <title>") still holds.
+            greet = function(who)
+                local base = "hello " .. tostring(c.config.app_title)
+                if who == nil then
+                    return base
+                end
+                return base .. ", " .. tostring(who)
             end,
         }
     end)

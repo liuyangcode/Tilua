@@ -255,6 +255,41 @@ cannot silently un-route a project that already relies on convention routes.
 See [`examples/api/Api/controller/demo.lua`](examples/api/Api/controller/demo.lua)
 for a working example.
 
+### Controllers and views
+
+A controller action is just a handler, so it can return a table (JSON) or render
+a view:
+
+```lua
+-- MyApp/controller/user.lua
+local controller = require("Tilua.controller")
+local User = controller.define()
+
+function User:show(id)
+    self:mount_context("site", "MyApp")          -- every view gets this
+    self:assign("user", user_service:find(id))   -- this view only
+    return self:display("user/show", {            -- merged over the above
+        title = "User " .. id,
+    })
+end
+```
+
+`display(name, context)` renders `view/<name>.html` and returns the **response**
+object (the HTML is on `response.body`). `name` defaults to
+`<controller>/<action>`, and `context` is merged over anything already set with
+`assign` — it does not replace it. `mount_context` is the fallback below both.
+
+To reach a controller, a route's handler must be the bare **action name**:
+
+```lua
+route.get("/user/show/{id}", "show")            -- instantiates the controller
+```
+
+That is different from the `"<module>@<action>"` form that convention discovery
+generates, which calls the action on the **class** with `self = ctx` — fine for a
+plain function, but the controller API (`assign` / `display` / `service`) is not
+available there.
+
 ### Nginx configuration
 
 `init_by_lua` / `init_worker_by_lua` are http-level; the four request phases

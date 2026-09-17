@@ -48,6 +48,18 @@ route["get /kind/{k} k:eq,ok"] = function(ctx, k)
     return response("kind=" .. tostring(k))
 end
 
+--- Full MVC pipeline: a bare action NAME as the handler.
+---
+--- The handler form matters.  `"index"` (no `@`) makes the dispatcher derive the
+--- controller and action from the path and INSTANTIATE the controller, which is
+--- what makes `assign` / `display` / `service` available.  The
+--- `"<module>@<action>"` form calls the action on the class instead.
+route.get("/mvc/index",   "index")
+route.get("/mvc/mounted", "mounted")
+route.get("/mvc/bare",    "bare")
+route.get("/mvc/json",    "json")
+route.get("/mvc/svc",     "svc")
+
 --- Two routes sharing the SAME trie shape but different parameter names.  A
 --- trie keeps one param slot per node, so the second declaration is shadowed
 --- (a documented limitation); the point of these routes is that whichever one

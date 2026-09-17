@@ -86,14 +86,28 @@ do
 
     ok(widget ~= nil, "the widget controller is in the report")
 
-    -- Count the routes this controller produced, not every discovered route.
+    -- The fixture directory holds more than one controller and grows as
+    -- coverage is added, so assert on the routes under test rather than on a
+    -- global count.
+    local widget_paths = {}
     local widget_routes = 0
     for _, r in ipairs(router.get_route_caches("TestApp") or {}) do
-        if tostring(r.path):find("^/widget/") then
+        local p = tostring(r.path)
+        if p:find("^/widget/") then
+            widget_paths[p] = true
             widget_routes = widget_routes + 1
         end
     end
-    eq(widget_routes, 3, "widget contributed exactly three routes")
+    eq(widget_routes, 3, "widget contributed exactly three rules (got: "
+        .. (function()
+            local ks = {}
+            for k in pairs(widget_paths) do ks[#ks + 1] = k end
+            table.sort(ks)
+            return table.concat(ks, ", ")
+        end)() .. ")")
+    ok(widget_paths["/widget/index"], "widget's index route exists")
+    ok(widget_paths["/widget/show"], "widget's show route exists")
+    ok(widget_paths["/widget/greet"], "widget's greet route exists")
 
     if widget then
         eq(widget.name, "widget", "controller name comes from the filename")

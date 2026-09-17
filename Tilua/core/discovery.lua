@@ -349,19 +349,24 @@ function M.parse_annotations(source)
     return annotations, errors
 end
 
---- Method names that come from the framework's controller base class and are
---- therefore not actions.  `_call` returns 404 by design; the rest are helpers.
-local RESERVED = {
-    _construct = true,
-    _call = true,
-    -- Injected by the class system into every derived class, not an action.
-    define = true,
-    assign = true,
-    display = true,
-    service = true,
-    model = true,
-    fail = true,
-}
+--- Method names that are framework API rather than application actions.
+---
+--- Sourced from the base controller itself (`controller.framework_methods`) so
+--- the two cannot drift: a hand-maintained copy here leaked `get` and
+--- `mount_context` as routable actions when they were added to the base class.
+--- The inline fallback is only for a base controller too old to declare the
+--- list.
+local function reserved_methods()
+    local base = require("Tilua.controller")
+    if type(base.framework_methods) == "table" then
+        return base.framework_methods
+    end
+    return {
+        _construct = true, _call = true, define = true,
+        assign = true, get = true, mount_context = true,
+        display = true, service = true, model = true, fail = true,
+    }
+end
 
 --- Discovered methods that are conveniences, not URLs.
 local function is_action_name(name)
@@ -372,7 +377,7 @@ local function is_action_name(name)
     if name:sub(1, 1) == "_" then
         return false
     end
-    return not RESERVED[name]
+    return not reserved_methods()[name]
 end
 
 --- List directory entries.
