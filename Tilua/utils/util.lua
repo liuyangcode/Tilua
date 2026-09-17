@@ -27,7 +27,14 @@ local ffi_fill = ffi.fill
 local ffi_new = ffi.new
 local ffi_str = ffi.string
 
-local uuid = require("resty.jit-uuid")
+-- `resty.jit-uuid` is optional.  It is NOT shipped with the stock
+-- `openresty/openresty` image, so a hard require here made the framework
+-- impossible to load outside a hand-provisioned deployment.  A v4 generator
+-- backed by the same randomness as `util.random_string` is used when absent.
+local ok_uuid, uuid = pcall(require, "resty.jit-uuid")
+if not ok_uuid then
+    uuid = nil
+end
 
 ffi.cdef [[
 typedef unsigned char u_char;
@@ -49,7 +56,7 @@ int close(int fd);
 char *strerror(int errnum);
 ]]
 
-local lrandom = require "random"
+local lrandom = nil -- the `random` rock was required but never used (see docs/ANALYSIS.md 5.1)
 
 ---@class util
 local util = {
@@ -231,16 +238,50 @@ function util.dump(...)
         ngx.say(s .. '<br/>')
     end
 end
-util.CreateUUID = function
-()
-    uuid.seed()
-    return uuid()
+--- Generate a v4 UUID without `resty.jit-uuid`.
+---
+--- Uses `get_rand_bytes` (declared later in this file and assigned before any
+--- call site runs), so it is cryptographically random and needs no extra rock.
+local function fallback_uuid()
+    local raw = get_rand_bytes(16, true)
+    if not raw then
+        -- Last resort: still a valid v4 shape, seeded from the clock.  This
+        -- path only triggers when both /dev/urandom and OpenSSL are missing.
+        local out = {}
+        local seed = tostring(now()) .. tostring(math.random(1, 1e9))
+        for i = 0, 15 do
+            out[i + 1] = string.char((seed:byte((i % #seed) + 1) + i * 17) % 256)
+        end
+        raw = table.concat(out)
+    end
+
+    local b = { raw:byte(1, 16) }
+    b[7] = math.floor(b[7] / 16) * 16 + 4          -- version 4
+    b[9] = math.floor(b[9] / 64) * 64 + 128        -- RFC 4122 variant
+
+    local hex = {}
+    for i = 1, 16 do
+        hex[i] = string.format("%02x", b[i])
+    end
+    local h = table.concat(hex)
+    return h:sub(1, 8) .. "-" .. h:sub(9, 12) .. "-" .. h:sub(13, 16)
+        .. "-" .. h:sub(17, 20) .. "-" .. h:sub(21, 32)
 end
 
-util.uuid = function
-(seed)
-    uuid.seed(seed)
-    return uuid()
+util.CreateUUID = function()
+    if uuid then
+        uuid.seed()
+        return uuid()
+    end
+    return fallback_uuid()
+end
+
+util.uuid = function(seed)
+    if uuid then
+        uuid.seed(seed)
+        return uuid()
+    end
+    return fallback_uuid()
 end
 
 function util.get_hostname()

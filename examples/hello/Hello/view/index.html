@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ app_name }}</title>
+    <style>
+        :root { color-scheme: light dark; }
+        body {
+            font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 44rem; margin: 4rem auto; padding: 0 1.25rem;
+        }
+        code {
+            background: rgba(128,128,128,.15); padding: .15em .4em;
+            border-radius: 4px; font-size: .9em;
+        }
+        ul { padding-left: 1.2rem; }
+        li { margin: .35rem 0; }
+        .ok { color: #1a7f37; font-weight: 600; }
+        footer { margin-top: 3rem; opacity: .65; font-size: .9em; }
+    </style>
+</head>
+<body>
+    <h1>{{ app_name }}</h1>
+    <p class="ok">{{ message }}</p>
+
+    <h2>Try these</h2>
+    <ul>
+        <li><a href="/hello/world"><code>/hello/world</code></a> &mdash; a path parameter</li>
+        <li><a href="/api/ping"><code>/api/ping</code></a> &mdash; a Lua table, encoded as JSON</li>
+        <li><a href="/boom"><code>/boom</code></a> &mdash; a handler that throws (structured 500)</li>
+        <li><a href="/nope"><code>/nope</code></a> &mdash; no such route (404)</li>
+    </ul>
+
+    <h2>Where to look</h2>
+    <ul>
+        <li><code>Hello/routes.lua</code> &mdash; the four routes above</li>
+        <li><code>Hello/app.lua</code> &mdash; name/status/debug and a custom service</li>
+        <li><code>Hello/config/dev.lua</code> &mdash; configuration for <code>status = "dev"</code></li>
+        <li><code>Hello/view/index.html</code> &mdash; this template</li>
+        <li><code>nginx.conf</code> &mdash; the phase wiring</li>
+    </ul>
+
+    <footer>
+        <p>Template values are escaped by default. This one is intentionally
+        raw: {{{ "<em>unescaped</em>" }}}</p>
+    </footer>
+</body>
+</html>

@@ -441,14 +441,36 @@ function route.init_rule_caches(config_rules)
     local app = route.cur_app
     lw_util.extend(route.rules[app], config_rules or {})
 
+    -- Rebuild from scratch.  `route.rules` is the source of truth and the loop
+    -- below replays all of it, so starting from an empty cache is what makes
+    -- this function idempotent; without it, a second call appended a full
+    -- duplicate set (matching still worked because the first copy won, but
+    -- `routes` listed everything twice).
+    route.rule_caches[app] = {}
+
+    -- Assign a declaration index to every rule that does not have one yet.
+    --
+    -- Keys that came from `config.route` (or `route["get /x"] = h`) were inserted
+    -- straight into `route.rules` and never went through `add_route`, so they
+    -- have no index.  Comparing a missing index against a number raises
+    -- "attempt to compare nil with number" — that broke any app using
+    -- `config.route`, and only stayed hidden because the test fixtures register
+    -- all their routes programmatically.
+    for location in pairs(route.rules[app]) do
+        if route._rule_seq[location] == nil then
+            route._rule_seq[location] = route._next_rule_seq
+            route._next_rule_seq = route._next_rule_seq + 1
+        end
+    end
+
     local pending = {}
     for location, result in pairs(route.rules[app]) do
-        pending[#pending + 1] = { location, result, route._next_rule_seq }
-        route._next_rule_seq = route._next_rule_seq + 1
+        pending[#pending + 1] = { location, result }
     end
     table.sort(pending, function(a, b)
-        if route._rule_seq[a[1]] ~= route._rule_seq[b[1]] then
-            return route._rule_seq[a[1]] < route._rule_seq[b[1]]
+        local sa, sb = route._rule_seq[a[1]], route._rule_seq[b[1]]
+        if sa ~= sb then
+            return (sa or math.huge) < (sb or math.huge)
         end
         return a[1] < b[1]
     end)
@@ -560,14 +582,36 @@ function route.parse_rule(location)
         end
     end
 
-    if matchers == '~' then
+    -- Parse the validation spec whenever one is present.
+    --
+    -- This used to run only for the `~` matcher.  A rule with a validation spec
+    -- but NO path parameters (e.g. `get /echo mode:in,upper,lower`, validating a
+    -- query argument) keeps matcher `=`, so the spec stayed a raw STRING and
+    -- `route.validate` called `pairs()` on it — aborting the request with
+    -- "bad argument #1 to 'pairs' (table expected, got string)".
+    if validation ~= nil and validation ~= '' then
         validation = route.parse_validation(validation)
+    else
+        validation = nil
     end
     method = stringx.split(method, ',')
     return method, matchers, route_url, validation
 end
 
----@param validation string like uid:reg,[0-9]+
+--- Parse a validation spec into `{ [param] = { operator, argument } }`.
+---
+--- Spec grammar:
+---     <param>:<op>[,<arg>][;<param>:<op>[,<arg>]...]
+--- with ops: reg, eq, neq, in, notin
+---
+--- `in` / `notin` take a comma-separated list, so their argument is rebuilt into
+--- a string here and split again at match time.  The old code stored `v[2]`
+--- verbatim, and `parse_expression` returns a *list* for multi-value input —
+--- so `mode:in,upper,lower` became `{ "in", "upper" }`, silently dropping every
+--- value after the first, and `ngx.re.find(value, <table>)` then aborted the
+--- whole request with "bad argument #1 to 'pairs'".
+---
+--- @param validation string like uid:reg,^[0-9]+$
 function route.parse_validation(validation)
     if not validation then
         return nil
@@ -576,12 +620,15 @@ function route.parse_validation(validation)
     local validations = {}
     for k, v in pairs(validation_parsed) do
         if type(v) == "table" then
-            local matchers = string_lower(v[1])
+            local matchers = string_lower(tostring(v[1]))
             if matchers == 'reg' or matchers == 'eq' or matchers == 'neq' then
-                validations[k] = { matchers, v[2] }
+                -- Rebuild into a string: single values are fine either way, but
+                -- a regex containing a comma would otherwise arrive as a list.
+                validations[k] = { matchers, table.concat(v, ",", 2) }
             elseif matchers == 'in' or matchers == 'notin' then
-                validations[k] = { matchers, v[2] }
+                validations[k] = { matchers, table.concat(v, ",", 2) }
             else
+                -- No recognised operator: treat the first token as a literal.
                 validations[k] = { 'eq', v[1] }
             end
         else

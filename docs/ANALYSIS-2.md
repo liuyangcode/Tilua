@@ -273,6 +273,37 @@ name .. "." .. m[1] .. m[2]     -- "post" → "post.GET/new"、"post.DELETE/{id}
     （`update` / `size` / `foreach` / `pretty`），并由 `tests/test_no_penlight.lua` 覆盖。
     同时修掉了 `useragent.lua` 里**唯一一处硬 `require("pl.tablex")`**（且该变量从未被使用）。
 
+    **进一步（本轮）**：`lfs` 与 `resty.jit-uuid` 同样改为**可选**，各配纯 Lua 回退
+    （`Tilua/utils/path.lua` 的 `io`/`os` 分支；`util.fallback_uuid`）。实测
+    `openresty/openresty:1.21.4.1-buster` 镜像**两者都没有**，README 长期声称
+    LuaFileSystem "bundled with OpenResty" 是**错误的**。现在框架可在该镜像上
+    直接运行。`bin/tilua` 也不再需要 `resty`（该镜像同样不提供 `resty` CLI）。
+
+    仍然硬依赖：`cjson.safe`（OpenResty lualib 自带）。
+
+---
+
+## 4.6 本轮（入门体验）新发现并修复的缺陷
+
+在构建可运行示例的过程中，又暴露出 5 个真实缺陷——**全部是"只有真跑起来才会发现"的类型**，
+单元测试与既有 e2e 都覆盖不到。
+
+| # | 缺陷 | 影响 |
+|---|---|---|
+| 15 | `Tilua.middleware.json_response` require 了不存在的 `Tilua.midware.base` | 使用默认 `api` / `web` 中间件组的应用**启动即崩**。上一份报告已指出（§`json_response.lua:1`），但一直未修 |
+| 16 | `config.route` 声明的路由让 master 崩溃 | `init_rule_caches` 按"声明序号"排序，而 config 注入的键从未经过 `add_route`，序号为 `nil` → `attempt to compare nil with number`（`init_by_lua` 阶段） |
+| 17 | `init_rule_caches` 重复调用会**复制**所有规则 | 规则数组翻倍；匹配仍正常（先注册者胜），但 `tilua routes` 列出两遍 |
+| 18 | 无路径参数的校验规则直接 500 | 校验串只在 `~` 匹配器下解析，`get /echo mode:in,upper,lower`（匹配器 `=`）把**字符串**留给 `route.validate`，`pairs()` 收到 string 而中止请求 |
+| 19 | `in` / `notin` 静默丢弃第一个以外的所有值 | `util.parse_expression` 对多值返回列表，router 存 `v[2]` → `mode:in,upper,lower` 变成 `{"in","upper"}`，`lower` 被拒；含逗号的正则同样被截断 |
+
+另外修复：`path.exists` 对不存在的路径返回 `false` 而非文档承诺的 `nil`。
+
+**教训**：15 / 18 都是"静态阅读能发现、但没人跑过"的问题。本轮新增的
+`tests/test_middleware_registry.lua`（加载默认配置里的每一个中间件并实例化）
+与 `tests/syntax_check.sh`（把 `examples/` 纳入检查）正是为了把这类缺陷变成
+可自动发现的。
+
+
 ---
 
 ## 5. 建议的下一步（按价值排序）

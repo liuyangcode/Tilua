@@ -1,8 +1,21 @@
 --- Path manipulation and file queries.
 --
--- This is modelled after Python's os.path library (10.1); see @{04-paths.md|the Guide}.
+-- This is modelled after Python's os.path library (10.1).
 --
--- Dependencies: `Tilua.utils.util`, `lfs`
+-- Dependencies: `Tilua.utils.util` only.  **LuaFileSystem is optional.**
+--
+-- The module used to `error()` at require time when `lfs` was missing, which
+-- made the whole framework unloadable on a stock `openresty/openresty` image —
+-- that image ships no `lfs.so`, despite LuaFileSystem being widely described as
+-- "bundled with OpenResty".  `lfs` is now used when present and a pure
+-- `io`/`os` implementation takes over otherwise.
+--
+-- What the fallback can and cannot do:
+--   * file/directory existence, size  -- pure io, always available
+--   * modification time               -- `os.time` from the open file handle
+--     (the view cache's staleness check depends on this)
+--   * atime / ctime / symlink status  -- best effort, may be nil/false
+--   * directory iteration (`path.dir`) -- needs `lfs`; nil otherwise
 -- @module Tilua.utils.path
 
 -- imports and locals
@@ -10,43 +23,164 @@ local _G = _G
 local sub = string.sub
 local getenv = os.getenv
 local tmpnam = os.tmpname
-local attributes, currentdir, link_attrib
 local package = package
 local append, concat, remove = table.insert, table.concat, table.remove
 local utils = require 'Tilua.utils.util'
 local split = require 'Tilua.utils.strings'.split
 
-local attrib
 local path = {}
 
-local res, lfs = _G.pcall(_G.require, 'lfs')
-if res then
-    attributes = lfs.attributes
-    currentdir = lfs.currentdir
-    link_attrib = lfs.symlinkattributes
-else
-    error("Tilua.utils.path requires LuaFileSystem")
+----------------------------------------------------------------------
+-- filesystem backend (lfs when available, pure io/os otherwise)
+----------------------------------------------------------------------
+
+local ok_lfs, lfs = _G.pcall(_G.require, 'lfs')
+if not ok_lfs then
+    lfs = nil
 end
 
-attrib = attributes
+--- Is LuaFileSystem driving the queries?  Diagnostics-only.
+path.has_lfs = lfs ~= nil
+
+--- Modification time for `p`, or nil.
+---
+--- Pure Lua has no portable way to read a file's mtime (`os.time` only accepts a
+--- date table), so this shells out to `stat(1)` and falls back to `date -r`
+--- (BSD/macOS form).  Returns nil when neither works rather than inventing a
+--- value — a fabricated mtime would make the view cache look permanently fresh.
+local function pure_mtime(p)
+    local quoted = "'" .. tostring(p):gsub("'", "'\\''") .. "'"
+
+    -- GNU coreutils: -c '%Y' = mtime as epoch seconds
+    local f = io.popen("stat -c %Y " .. quoted .. " 2>/dev/null")
+    if f then
+        local out = f:read("*l")
+        f:close()
+        local t = tonumber(out)
+        if t then
+            return t
+        end
+    end
+
+    -- BSD/macOS: -f %m = mtime as epoch seconds
+    f = io.popen("stat -f %m " .. quoted .. " 2>/dev/null")
+    if f then
+        local out = f:read("*l")
+        f:close()
+        local t = tonumber(out)
+        if t then
+            return t
+        end
+    end
+
+    return nil
+end
+
+--- Is `p` a directory?  (`io.open` succeeds on directories on Linux, so this
+--- cannot be inferred from a successful open.)
+local function pure_isdir(p)
+    local ok = os.execute("test -d '" .. tostring(p):gsub("'", "'\\''") .. "' 2>/dev/null")
+    return ok == true or ok == 0
+end
+
+--- Attribute lookup returning `field` (or the whole table).
+---
+--- Mirrors `lfs.attributes(p, field)`: returns nil when the path does not exist.
+local function attrib(p, field)
+    if type(p) ~= "string" or p == "" then
+        return nil
+    end
+
+    if lfs then
+        return lfs.attributes(p, field)
+    end
+
+    -- A trailing separator confuses io.open; keep it for the directory probe.
+    local trimmed = p:gsub("[/\\]+$", "")
+    if trimmed == "" then
+        trimmed = "/"
+    end
+
+    local attr
+
+    if pure_isdir(trimmed) then
+        attr = {
+            mode = "directory",
+            modification = pure_mtime(trimmed),
+            access = nil,
+            change = nil,
+            size = nil,
+        }
+    else
+        -- Not a directory: it exists only if it opens as a regular file.
+        local file = io.open(trimmed, "rb")
+        if not file then
+            return nil
+        end
+        local size = file:seek("end")
+        file:close()
+
+        attr = {
+            mode = "file",
+            modification = pure_mtime(trimmed),
+            access = nil,
+            change = nil,
+            size = size,
+        }
+    end
+
+    if field then
+        return attr[field]
+    end
+    return attr
+end
+
 path.attrib = attrib
-path.link_attrib = link_attrib
+path.link_attrib = lfs and lfs.symlinkattributes or nil
 
 --- Lua iterator over the entries of a given directory.
--- Behaves like `lfs.dir`
-path.dir = lfs.dir
+-- Behaves like `lfs.dir`. Requires LuaFileSystem; nil otherwise.
+path.dir = lfs and lfs.dir or nil
 
---- Creates a directory.
-path.mkdir = lfs.mkdir
+--- Creates a directory.  Scoped to a single level like `lfs.mkdir`.
+function path.mkdir(p)
+    if lfs and lfs.mkdir then
+        return lfs.mkdir(p)
+    end
+    local ok = os.execute("mkdir '" .. tostring(p):gsub("'", "'\\''") .. "' 2>/dev/null")
+    return ok == true or ok == 0
+end
 
 --- Removes a directory.
-path.rmdir = lfs.rmdir
+function path.rmdir(p)
+    if lfs and lfs.rmdir then
+        return lfs.rmdir(p)
+    end
+    local ok = os.execute("rmdir '" .. tostring(p):gsub("'", "'\\''") .. "' 2>/dev/null")
+    return ok == true or ok == 0
+end
 
 ---- Get the working directory.
-path.currentdir = currentdir
+function path.currentdir()
+    if lfs and lfs.currentdir then
+        return lfs.currentdir()
+    end
+    local f = io.popen("pwd 2>/dev/null")
+    if not f then
+        return "."
+    end
+    local dir = f:read("*l")
+    f:close()
+    return dir or "."
+end
 
 --- Changes the working directory.
-path.chdir = lfs.chdir
+function path.chdir(p)
+    if lfs and lfs.chdir then
+        return lfs.chdir(p)
+    end
+    return false, "path.chdir requires LuaFileSystem"
+end
 
 
 --- is this a directory?
@@ -67,8 +201,8 @@ end
 -- is this a symbolic link?
 -- @string P A file path
 function path.islink(P)
-    if link_attrib then
-        return link_attrib(P, 'mode') == 'link'
+    if path.link_attrib then
+        return path.link_attrib(P, 'mode') == 'link'
     else
         return false
     end
@@ -84,7 +218,12 @@ end
 -- @string P A file path
 -- @return the file path if it exists, nil otherwise
 function path.exists(P)
-    return attrib(P, 'mode') ~= nil and P
+    -- Explicitly return nil rather than the boolean from `a ~= nil and P`,
+    -- which yielded `false` for a missing path despite the documented contract.
+    if attrib(P, 'mode') == nil then
+        return nil
+    end
+    return P
 end
 
 --- Return the time of last access as the number of seconds since the epoch.
@@ -157,11 +296,8 @@ end
 -- @string[opt] pwd optional start path to use (default is current dir)
 function path.abspath(P, pwd)
     local use_pwd = pwd ~= nil
-    if not use_pwd and not currentdir then
-        return P
-    end
     P = P:gsub('[\\/]$', '')
-    pwd = pwd or currentdir()
+    pwd = pwd or path.currentdir()
     if not path.isabs(P) then
         P = path.join(pwd, P)
     elseif path.is_windows and not use_pwd and at(P, 2) ~= ':' and at(P, 2) ~= '\\' then
@@ -319,7 +455,7 @@ end
 function path.relpath (P, start)
     local split, min, append = split, math.min, table.insert
     P = path.abspath(P, start)
-    start = start or currentdir()
+    start = start or path.currentdir()
     local compare
     if path.is_windows then
         P = P:gsub("/", "\\")

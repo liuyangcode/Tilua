@@ -2,7 +2,79 @@
 
 All notable changes to Tilua are documented in this file.
 
-## [Unreleased] - Penlight dependency removed
+## [Unreleased] - Onboarding: examples, CLI entry point, fewer hard dependencies
+
+### Added
+- **`bin/tilua` + `bin/tilua.lua`** — a real CLI entry point. The README had
+  documented `tilua doctor` / `serve` / `new` for several releases with no such
+  executable in the repository. It runs under plain LuaJIT: no nginx, no `resty`
+  CLI (the stock `openresty/openresty` image does not ship one), and no
+  LuaFileSystem or lua-resty-jit-uuid.
+- **`examples/hello`** — a minimal but complete application: a view, a path
+  parameter, a JSON endpoint, a throwing handler, and a route declared in config.
+  Ships with `nginx.conf`, `Dockerfile` and `docker-compose.yml`, so
+  `docker compose up --build` works with nothing installed.
+- **`examples/api`** — a realistic JSON service: container services
+  (singleton + scoped), two annotated middleware split across phases, declarative
+  parameter validation (`reg`, `in`), structured errors, JSON request bodies, and
+  a per-route access guard.
+- **`examples/README.md`** — how to run both, what each route demonstrates,
+  which files to read in what order, and a troubleshooting table.
+- **`tests/run_example.sh`** / **`tests/run_examples.sh`** — boot an example
+  under real nginx and assert every path in its `.expect` file, printing status
+  and body.
+- **`tests/support/http_get.lua`** — small FFI HTTP client for those tests.
+- **`tests/syntax_check.sh`** — parse-checks every Lua file **including
+  `examples/`**, which the previous check skipped.
+- **`tests/test_path_no_lfs.lua`** — proves the framework loads and resolves
+  paths with `lfs` hidden.
+- **`tests/test_middleware_registry.lua`** — loads every middleware named by the
+  default config, expands every default group, and instantiates each one.
+
+### Changed
+- **LuaFileSystem is now optional.** `Tilua/utils/path.lua` used to `error()` at
+  require time without `lfs`, so the framework could not load at all on a stock
+  `openresty/openresty` image — which ships no `lfs.so`, despite LuaFileSystem
+  often being described as bundled with OpenResty. A pure `io`/`os` fallback now
+  covers existence, type, size and modification time; `path.dir`, `path.chdir`
+  and symlink queries still need `lfs` and are documented as such.
+- **`resty.jit-uuid` is now optional.** A built-in v4 UUID generator uses the
+  same randomness (`/dev/urandom`, falling back to OpenSSL `RAND_bytes`) as
+  `util.random_string`.
+- Removed the unused `require("random")` (flagged in `docs/ANALYSIS.md` §5.1).
+- `tilua doctor` now reports `lfs` and `resty.jit-uuid` as **optional** instead
+  of failing on them, and treats `## [Unreleased]` as a valid CHANGELOG head so
+  a checkout with work in progress no longer reports a version mismatch.
+- `CLI.run` skips app boot when no `App.name` is set (running from the framework
+  checkout) instead of emitting "App.name must be set" on every command.
+
+### Fixed
+- **`Tilua.middleware.json_response` required a non-existent module**
+  (`Tilua.midware.base` — only the `Tilua.midware` *module* shim exists, not the
+  `.base` submodule). Every other middleware had been migrated; this one was
+  missed, so any app using the default `api` / `web` middleware groups crashed at
+  boot with "module 'Tilua.midware.base' not found".
+- **Config-declared routes crashed the master process.** `route.init_rule_caches`
+  sorted rules by declaration order, but keys injected from `config.route` never
+  went through `add_route` and had no order index, so the sort compared `nil`
+  with a number: "attempt to compare nil with number" in `init_by_lua`. Rules
+  missing an index are now assigned one.
+- **`init_rule_caches` duplicated every rule when called twice.** It now rebuilds
+  from `route.rules`, which makes it idempotent.
+- **Validation specs on rules without path parameters aborted the request.**
+  The spec was parsed only for the `~` matcher, so `get /echo mode:in,upper,lower`
+  (matcher `=`) left `rule.validation` a raw *string* and `route.validate` called
+  `pairs()` on it — "bad argument #1 to 'pairs' (table expected, got string)".
+  Validation is now parsed whenever the spec is present.
+- **`in` / `notin` validation silently dropped all values but the first.**
+  `util.parse_expression` returns a list for multi-value input, and the router
+  stored `v[2]` — so `mode:in,upper,lower` became `{"in", "upper"}`, rejecting
+  `lower`. The argument is now rebuilt into a string and split at match time;
+  this also stops a regex containing a comma from being truncated.
+- `path.exists` returned the boolean `false` for a missing path instead of the
+  documented `nil` (`a ~= nil and P` evaluates to `false`, not `nil`).
+
+## [0.9.3] - Project scaffolding
 
 ### Removed
 - **Penlight is no longer referenced anywhere.** It was never actually installed
@@ -43,9 +115,7 @@ All notable changes to Tilua are documented in this file.
   implementation. `helpers.extend` remains a flat overwrite for
   middleware/config option merging.
 
-## [0.9.3] - Project scaffolding
-
-### Added
+### Added (scaffolding)
 - `tilua new <Name>` — generates a runnable project skeleton:
   `<Name>/app.lua`, `routes.lua`, `config/dev.lua`, `controller/index.lua`,
   `view/index.html`, plus `public/`, `.gitignore` and a README.

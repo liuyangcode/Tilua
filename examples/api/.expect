@@ -1,0 +1,26 @@
+# Expected status for each path. Sourced by tests/run_example.sh.
+#
+# port: 8081
+#
+# check <path> <expected_status> [header:value ...]
+
+check "/"                       200
+check "/health"                 200
+check "/todos"                  200
+
+# Parameter validation: numeric ids match, non-numeric fall through to 404.
+check "/todos/1"                404
+check "/todos/abc"              404
+
+# `mode:in,upper,lower` validation on a path parameter.
+# `in` takes a comma-separated list; a bad value is treated as no-match (404).
+check "/echo/upper"             200
+check "/echo/lower"             200
+check "/echo/bogus"             404
+
+# Route-scoped access guard
+check "/admin/stats"            401
+check "/admin/stats"            403 --header "X-Api-Token: wrong"
+check "/admin/stats"            200 --header "X-Api-Token: secret"
+
+check "/nope"                   404

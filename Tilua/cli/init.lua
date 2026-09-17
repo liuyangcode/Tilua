@@ -109,6 +109,12 @@ function CLI.doctor(app)
         end)
     end
 
+    --- Informational check: reported, but does not fail `doctor`.
+    local function check_optional(name, fn)
+        local ok, detail = fn()
+        checks[#checks + 1] = { name = name, ok = ok, optional = true, detail = detail }
+    end
+
     check("LuaJIT runtime", function()
         if jit then return true, jit.version end
         return false, "OpenResty requires LuaJIT; this looks like stock Lua"
@@ -121,8 +127,21 @@ function CLI.doctor(app)
         return false, "ngx not visible - run via the `resty` CLI or inside nginx for full checks"
     end)
 
-    check_module("resty.jit-uuid", "needed by Tilua.utils.util")
-    check_module("lfs", "needed by Tilua.utils.path (LuaFileSystem)")
+    -- LuaFileSystem and resty.jit-uuid are deliberately OPTIONAL: the framework
+    -- has pure-Lua fallbacks for both (`Tilua.utils.path`, `util.fallback_uuid`).
+    -- Neither ships with the stock openresty/openresty image, so failing on them
+    -- told every new user their setup was broken when it was not.
+    if not pcall(require, "lfs") then
+        check_optional("LuaFileSystem (optional)", function()
+            return false, "using the pure-Lua fallback; install `lfs` for path.dir/symlinks"
+        end)
+    end
+
+    if not pcall(require, "resty.jit-uuid") then
+        check_optional("resty.jit-uuid (optional)", function()
+            return false, "using the built-in v4 UUID generator"
+        end)
+    end
 
     local ok_cfg, config = pcall(function() return app and app.config end)
     config = ok_cfg and config or nil
@@ -144,35 +163,66 @@ function CLI.doctor(app)
         end)
     else
         check("app config", function()
-            return false, "could not resolve app.config - run doctor from your app entry point"
+            if not app or not app.name or app.name == "" then
+                -- Running from the framework checkout rather than an app.
+                -- Nothing to configure, so this is informational, not a failure.
+                return true, "no application in this directory (framework checkout)"
+            end
+            return false, "could not resolve app.config for '" .. tostring(app.name)
+                .. "' - run doctor from your app root"
         end)
     end
 
     check("VERSION matches CHANGELOG", function()
         local vf = io.open("VERSION", "r")
         if not vf then return true, "no VERSION file, skipped" end
-        local v = vf:read("*l"); vf:close()
+        -- strip the trailing newline, or the substring test below can never match
+        local v = (vf:read("*l") or ""):gsub("%s+$", "")
+        vf:close()
 
         local cf = io.open("CHANGELOG.md", "r")
         if not cf then return true, "no CHANGELOG.md, skipped" end
+        -- Skip `## [Unreleased]` sections: the released VERSION legitimately sits
+        -- below them, and treating that as a mismatch failed every checkout with
+        -- work in progress.
         local top
         for line in cf:lines() do
-            if line:match("^##%s*%[") then top = line; break end
+            if line:match("^##%s*%[") then
+                if line:lower():find("unreleased", 1, true) then
+                    top = nil
+                else
+                    top = line
+                    break
+                end
+            end
         end
         cf:close()
 
+        if not top then return true, "latest entry is [Unreleased], skipped" end
         if v and top and top:find(v, 1, true) then return true end
         return false, string.format("VERSION=%s but CHANGELOG's latest entry is %s",
             v or "?", top or "?")
     end)
 
     print("Tilua doctor")
-    print(string.rep("-", 46))
+    print(string.rep("-", 52))
     for _, c in ipairs(checks) do
-        print(string.format("[%s] %-28s %s", c.ok and "OK  " or "FAIL", c.name, c.detail or ""))
+        local label
+        if c.ok then
+            label = "OK  "
+        elseif c.optional then
+            label = "INFO"
+        else
+            label = "FAIL"
+        end
+        print(string.format("[%s] %-26s %s", label, c.name, c.detail or ""))
     end
-    print(string.rep("-", 46))
-    print(fail == 0 and "All checks passed." or (fail .. " check(s) failed."))
+    print(string.rep("-", 52))
+    if fail == 0 then
+        print("All required checks passed.")
+    else
+        print(fail .. " check(s) failed.")
+    end
 
     return fail == 0 and 0 or 1
 end
@@ -676,7 +726,13 @@ function CLI.handle(app, args)
     return cmd.handler(app, a)
 end
 
---- Standalone entry: boots app in CLI mode and runs command
+--- Standalone entry: boots app in CLI mode and runs command.
+---
+--- `AppClass` is usually an application class with `name` set.  When it is the
+--- base `Tilua.app` (no name — e.g. running `./bin/tilua` inside the framework
+--- checkout) there is no application config or route module to load, so booting
+--- is skipped rather than raising.  `serve` and `new` autodetect the app
+--- themselves; `doctor` reports the missing config explicitly.
 function CLI.run(AppClass, args)
     args = args or arg or {}
     local app = AppClass()
@@ -689,14 +745,16 @@ function CLI.run(AppClass, args)
     -- no longer exist (they were merged into `load_config_and_routes`), and the
     -- pcall swallowed the "attempt to call a nil value" error — so the CLI
     -- silently ran against an unconfigured app.
-    local ok, err = pcall(function()
-        app:load_config_and_routes()
-        app:boot_worker()
-    end)
-    if not ok then
-        -- Not fatal: `help`, `version` and `new` do not need a configured app,
-        -- and a broken app config should not stop the user from finding out why.
-        io.stderr:write("tilua: app boot failed: " .. tostring(err) .. "\n")
+    if app.name and app.name ~= "" then
+        local ok, err = pcall(function()
+            app:load_config_and_routes()
+            app:boot_worker()
+        end)
+        if not ok then
+            -- Not fatal: `help`, `version` and `new` do not need a configured
+            -- app, and a broken config should not stop the user finding out why.
+            io.stderr:write("tilua: app boot failed: " .. tostring(err) .. "\n")
+        end
     end
 
     local Plugin = require("Tilua.core.plugin")

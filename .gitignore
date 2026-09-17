@@ -45,6 +45,11 @@ luac.out
 # End-to-end run artifacts (nginx pid/logs, captured result.txt)
 .e2e/
 
-# Generated template caches
+# Generated template caches. The engine creates <App>/cache/{view,html}/ even
+# when caching is off, so these appear as soon as an app is booted.
 **/cache/view/
 **/cache/html/
+
+# nginx runtime output from running the examples / e2e configs directly
+logs/
+examples/*/logs/

@@ -1,0 +1,45 @@
+#!/usr/bin/env sh
+# Tilua CLI entry point.
+#
+#   ./bin/tilua doctor
+#   ./bin/tilua serve --port 8001
+#   ./bin/tilua new MyApp
+#
+# Framework root (the directory containing Tilua/) resolution order:
+#   1. $TILUA_ROOT
+#   2. the parent of this script's directory (i.e. a checkout)
+#   3. the current working directory
+#
+# Runs under plain LuaJIT — no nginx, no `resty` CLI, and neither LuaFileSystem
+# nor lua-resty-jit-uuid is required.  See bin/tilua.lua for the details.
+set -e
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+CHECKOUT_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+
+if [ -z "${TILUA_ROOT:-}" ]; then
+    if [ -f "$CHECKOUT_ROOT/Tilua/cli/init.lua" ]; then
+        TILUA_ROOT=$CHECKOUT_ROOT
+    else
+        TILUA_ROOT=$(pwd)
+    fi
+fi
+
+if [ ! -f "$TILUA_ROOT/Tilua/cli/init.lua" ]; then
+    echo "tilua: cannot find the Tilua framework under '$TILUA_ROOT'" >&2
+    echo "       set TILUA_ROOT to the directory containing Tilua/" >&2
+    exit 1
+fi
+
+if ! command -v luajit >/dev/null 2>&1; then
+    echo "tilua: 'luajit' not found on PATH." >&2
+    echo "       Install OpenResty, which bundles LuaJIT:" >&2
+    echo "       https://openresty.org/en/installation.html" >&2
+    exit 1
+fi
+
+TILUA_ROOT=$TILUA_ROOT
+TILUA_LUALIB=${TILUA_LUALIB:-/usr/local/openresty/lualib}
+export TILUA_ROOT TILUA_LUALIB
+
+exec luajit "$SCRIPT_DIR/tilua.lua" "$@"

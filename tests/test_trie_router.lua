@@ -342,6 +342,81 @@ do
 end
 
 -----------------------------------------------------------------------
+-- 11d. config-declared rules compile (no declaration index assigned yet)
+----------------------------------------------------------------------
+do
+    -- `config.route = { ["get /x"] = handler }` injects keys straight into
+    -- route.rules, bypassing add_route() and therefore _rule_seq.  The
+    -- deterministic-ordering sort used to compare nil against a number and
+    -- raised "attempt to compare nil with number" in init_by_lua, which broke
+    -- every app that declared routes in config.
+    local route = fresh_router()
+    local h_cfg  = function() end
+    local h_prog = function() end
+
+    -- a programmatic route first (has an index), then config routes (none do)
+    route.get("/prog", h_prog)
+    route.init_rule_caches({
+        ["get /cfg-a"] = h_cfg,
+        ["get /cfg-b"] = function() end,
+    })
+
+    local r = route.match("TestApp", "get", "/prog")
+    eq(who(r), h_prog, "programmatic route still matches alongside config routes")
+
+    local r2 = route.match("TestApp", "get", "/cfg-a")
+    ok(r2 ~= nil, "config-declared route matches")
+
+    local r3 = route.match("TestApp", "get", "/cfg-b")
+    ok(r3 ~= nil, "second config-declared route matches")
+
+    -- and calling init_rule_caches again must not duplicate or explode
+    route.init_rule_caches({})
+    local count = 0
+    for _ in ipairs(route.get_route_caches("TestApp")) do count = count + 1 end
+    eq(count, 3, "re-running init_rule_caches does not duplicate rules")
+end
+
+----------------------------------------------------------------------
+-- 11e. validation specs parse for every matcher, and `in` keeps its list
+----------------------------------------------------------------------
+do
+    local route = fresh_router()
+
+    -- Validation on a rule with NO path parameters keeps matcher "=".  The spec
+    -- used to be parsed only for "~", so it stayed a raw string and
+    -- route.validate called pairs() on it ("bad argument #1 to 'pairs'").
+    local _, matcher, url, validation = route.parse_rule("get /echo mode:in,upper,lower")
+    eq(matcher, "=", "a parameterless rule keeps the exact matcher")
+    eq(url, "/echo", "path is preserved")
+    eq(type(validation), "table", "validation is parsed even for the '=' matcher")
+    if type(validation) == "table" then
+        eq(validation.mode[1], "in", "operator is 'in'")
+        -- The whole list must survive: it used to be truncated to the first
+        -- value, silently accepting "upper" and rejecting "lower".
+        eq(validation.mode[2], "upper,lower", "'in' keeps the full value list")
+    end
+
+    -- Single-argument ops still work.
+    local _, _, _, v2 = route.parse_rule("get /n/{id} id:reg,^[0-9]+$")
+    eq(type(v2), "table", "parameterised rule parses validation")
+    eq(v2.id[1], "reg", "reg operator preserved")
+    eq(v2.id[2], "^[0-9]+$", "reg pattern preserved")
+
+    local _, _, _, v3 = route.parse_rule("get /k/{k} k:eq,ok")
+    eq(v3.k[1], "eq", "eq operator preserved")
+    eq(v3.k[2], "ok", "eq value preserved")
+
+    -- No validation spec -> nil, not an empty table or a string.
+    local _, _, _, v4 = route.parse_rule("get /plain")
+    eq(v4, nil, "a rule without a spec yields nil validation")
+
+    -- A regex containing a comma must survive parsing intact.
+    local _, _, _, v5 = route.parse_rule("get /r/{x} x:reg,^a{1,2}$")
+    eq(v5.x[2], "^a{1,2}$", "a regex containing a comma is not truncated")
+end
+
+----------------------------------------------------------------------
 -- 12. path helpers used elsewhere in the framework
 -----------------------------------------------------------------------
 do

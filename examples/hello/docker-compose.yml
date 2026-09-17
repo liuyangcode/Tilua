@@ -1,0 +1,15 @@
+# Hello example.
+#
+#   docker compose up --build
+#   open http://localhost:8080
+#
+# The build context is the repository root so the image can contain both the
+# framework (Tilua/) and this example.
+
+services:
+  hello:
+    build:
+      context: ../..
+      dockerfile: examples/hello/Dockerfile
+    ports:
+      - "8080:8080"

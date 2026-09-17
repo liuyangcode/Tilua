@@ -1,0 +1,12 @@
+# Expected status for each path. Sourced by tests/run_example.sh.
+#
+# port: 8080
+#
+# check <path> <expected_status> [header:value ...]
+
+check "/"                 200
+check "/hello/world"      200
+check "/api/ping"         200
+check "/from-config"      200
+check "/boom"             500
+check "/nope"             404

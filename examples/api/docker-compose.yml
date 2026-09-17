@@ -1,0 +1,15 @@
+# Api example.
+#
+#   docker compose up --build
+#   curl http://localhost:8081/
+#
+# The build context is the repository root so the image can contain both the
+# framework (Tilua/) and this example.
+
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: examples/api/Dockerfile
+    ports:
+      - "8081:8081"
