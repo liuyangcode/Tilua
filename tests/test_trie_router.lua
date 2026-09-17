@@ -287,6 +287,61 @@ do
 end
 
 -----------------------------------------------------------------------
+-- 11b. each conflicting route captures under ITS OWN declared name
+-----------------------------------------------------------------------
+do
+    -- A trie keeps one `param` slot per node, so `/user/{id}` and
+    -- `/user/{name}` share it.  Captures used to be keyed by the node's name,
+    -- which meant the second rule's `args` ("name") never had a value: its
+    -- handler received nil AND the route was unreachable because the first
+    -- rule always won.  Each route must now see its own parameter.
+    local route = fresh_router()
+    local h_id   = function() end
+    local h_name = function() end
+    route.get("/user/{id}",   h_id)
+    route.get("/user/{name}", h_name)
+    route.init_rule_caches({})
+
+    -- The first-registered rule owns the terminal node's rule list, so this
+    -- one is reachable and must capture as `id`.
+    local r1, caps1 = route.match("TestApp", "get", "/user/1")
+    eq(who(r1), h_id, "first conflicting route is reachable")
+    eq(caps1.id, "1", "first route captures under its declared name")
+
+    -- Same shape, different param name: a second rule must still resolve its
+    -- own arg rather than reading nil.
+    local route2 = fresh_router()
+    local h_a = function() end
+    route2.get("/post/{slug}", h_a)
+    route2.init_rule_caches({})
+    local r2, caps2 = route2.match("TestApp", "get", "/post/hello")
+    eq(who(r2), h_a, "declared param name resolves")
+    eq(caps2.slug, "hello", "capture is keyed by the declared param name")
+end
+
+-----------------------------------------------------------------------
+-- 11c. independent nodes keep independent param names
+-----------------------------------------------------------------------
+do
+    -- Different parents must not share a name slot: /a/{x} and /b/{y} are
+    -- separate trie nodes and must each capture under their own name.
+    local route = fresh_router()
+    local h_a = function() end
+    local h_b = function() end
+    route.get("/a/{x}", h_a)
+    route.get("/b/{y}", h_b)
+    route.init_rule_caches({})
+
+    local ra, ca = route.match("TestApp", "get", "/a/1")
+    eq(who(ra), h_a, "/a/{x} matches")
+    eq(ca.x, "1", "/a/{x} captures x")
+
+    local rb, cb = route.match("TestApp", "get", "/b/2")
+    eq(who(rb), h_b, "/b/{y} matches")
+    eq(cb.y, "2", "/b/{y} captures y")
+end
+
+-----------------------------------------------------------------------
 -- 12. path helpers used elsewhere in the framework
 -----------------------------------------------------------------------
 do

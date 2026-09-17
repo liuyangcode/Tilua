@@ -349,27 +349,50 @@ do
 end
 
 do
-    local char = string.char
-    local rand = math.random
-    local encode_base64 = ngx.encode_base64
+    local ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
-    -- generate a random-looking string by retrieving a chunk of bytes and
-    -- replacing non-alphanumeric characters with random alphanumeric replacements
-    -- (we dont care about deriving these bytes securely)
-    -- this serves to attempt to maintain some backward compatibility with the
-    -- previous implementation (stripping a UUID of its hyphens), while significantly
-    -- expanding the size of the keyspace.
-    local function random_string()
-        -- get 24 bytes, which will return a 32 char string after encoding
-        -- this is done in attempt to maintain backwards compatibility as
-        -- much as possible while improving the strength of this function
-        return encode_base64(get_rand_bytes(24, true))
-                :gsub("/", char(rand(48, 57)))  -- 0 - 10
-                :gsub("+", char(rand(65, 90)))  -- A - Z
-                :gsub("=", char(rand(97, 122))) -- a - z
+    --- URL-safe base64 (RFC 4648 §5) with no padding.
+    ---
+    --- Not `ngx.encode_base64(s, true)`: the `no_padding` second argument is not
+    --- honoured by every OpenResty version, and the standard alphabet emits `+`
+    --- and `/`, which the session id validator rejects.
+    local function b64url(raw)
+        local out = {}
+        for i = 1, #raw, 3 do
+            local a1, a2, a3 = raw:byte(i, i + 2)
+            local v = a1 * 65536 + (a2 or 0) * 256 + (a3 or 0)
+            local function ch(six)
+                return ALPHABET:sub(six + 1, six + 1)
+            end
+            out[#out + 1] = ch(math.floor(v / 262144) % 64)
+                .. ch(math.floor(v / 4096) % 64)
+                .. (a2 and ch(math.floor(v / 64) % 64) or "")
+                .. (a3 and ch(v % 64) or "")
+        end
+        return table.concat(out)
+    end
+
+    -- Cryptographically-random, URL-safe token.
+    --
+    -- Backed by /dev/urandom, falling back to OpenSSL RAND_bytes (see
+    -- get_rand_bytes above), so it is suitable for session ids and CSRF tokens.
+    --
+    -- The charset `[A-Za-z0-9_-]` matters: `Tilua.session:valid_key` accepts only
+    -- `^[%w%-_=]+$`.  The previous implementation returned standard base64 with
+    -- a broken `gsub` post-process, emitting `+`, `/`, `=` and base64 line
+    -- breaks; such ids were rejected by valid_key and the session silently got a
+    -- NEW id on every request, so sessions never persisted.
+    local function random_string(n_bytes)
+        local raw, err = get_rand_bytes(n_bytes or 24, true)
+        if not raw then
+            -- Never silently degrade to a weak id.
+            error("Tilua.utils.util.random_string: " .. tostring(err), 2)
+        end
+        return b64url(raw)
     end
 
     util.random_string = random_string
+    util.b64url = b64url
 end
 
 local uuid_regex = "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"

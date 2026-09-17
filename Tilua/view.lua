@@ -15,7 +15,9 @@ function view:precompile(view_file)
     local viewCacheFile = self.ctx.view_engine.view_cache_abs_path .. view_file
     view_file = path.join('view', view_file)
     self.ctx.logger:debug(view_file, ' precompile to ', viewCacheFile)
-    self.ctx.view_engine.template.precompile(view_file, viewCacheFile, '', false)
+    -- Tilua.template methods are colon-style; a dot call passes the argument
+    -- as `self`.
+    self.ctx.view_engine.template:precompile(view_file, viewCacheFile, '', false)
 end
 
 function view:assign(name, value)
@@ -34,7 +36,7 @@ function view:render(view_file, context)
         view_file = view_file .. '.html'
     end
 
-    local enabled = self.ctx.view_engine.template.caching()
+    local enabled = self.ctx.view_engine.template:caching()
     if enabled then
         view_file = path.join('view', view_file)
     else
@@ -68,13 +70,13 @@ function view:fetch(view_file)
     })
     local cache_key_prefix = self.ctx.view_engine.cache_key_prefix
     local cache_key = "no-cache"
-    local enabled = self.ctx.view_engine.template.caching()
+    local enabled = self.ctx.view_engine.template:caching()
     if not enabled then
         view_file = self.ctx.view_engine.view_cache_path .. view_file
     else
         cache_key = path.join(cache_key_prefix, view_file)
     end
-    return self.ctx.view_engine.template.process(view_file, self.context, cache_key, false)
+    return self.ctx.view_engine.template:process(view_file, self.context, cache_key, false)
 end
 
 function view:_construct(ctx, context)

@@ -415,7 +415,7 @@ body{background:#fff;font-family:sans-serif;color:#333;font-size:16px}
 
     local tpl = (self.ctx and self.ctx.config and self.ctx.config.jump_tpl) or default_jump_tpl
     if self.ctx and self.ctx.view_engine and self.ctx.view_engine.template then
-        self:set_body(self.ctx.view_engine.template.process(tpl, context, nil, not (self.ctx.config and self.ctx.config.jump_tpl)))
+        self:set_body(self.ctx.view_engine.template:process(tpl, context, nil, not (self.ctx.config and self.ctx.config.jump_tpl)))
     else
         self:html(message or "", success and 200 or 400)
     end

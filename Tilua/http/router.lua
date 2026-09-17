@@ -203,26 +203,34 @@ local function pick_rule(node, method, accepts)
 end
 
 --- Match `segs` (array of path segments) against the trie.
+---
+--- Captures are keyed by the parameter names **on the matched path**, not by the
+--- names declared on the rule.  A trie stores one `param` slot per node, so
+--- `/user/{id}` and `/user/{name}` share a node and the first registered name
+--- would otherwise be applied to every rule: the second route was silently
+--- unreachable (`rule.args` said `name`, the traverse captured `id`, and the
+--- dispatcher bound `nil`).  Walks accumulate an ordered name list instead.
+---
 --- @param method string already lowercased
 --- @param accepts function(rule, method) -> boolean
 --- @return table|nil rule, table captures
 local function trie_match(trie, segs, method, accepts)
-    local captures = {}
-
-    local function walk(node, i)
+    local function walk(node, i, names, values)
         -- Whole path consumed: accept a terminal rule, else a wildcard that
         -- matches the empty remainder.
         if i > #segs then
             local hit = pick_rule(node, method, accepts)
             if hit then
-                return hit, captures
+                return hit, names, values
             end
             local wc = node.wildcard
             if wc then
                 local wh = pick_rule(wc.node, method, accepts)
                 if wh then
-                    captures[wc.name] = ""
-                    return wh, captures
+                    local n2, v2 = {}, {}
+                    for k = 1, #names do n2[k], v2[k] = names[k], values[k] end
+                    n2[#n2 + 1], v2[#v2 + 1] = wc.name, ""
+                    return wh, n2, v2
                 end
             end
             return nil
@@ -233,35 +241,60 @@ local function trie_match(trie, segs, method, accepts)
         -- 1. static (highest precedence)
         local child = node.static and node.static[seg]
         if child then
-            local rule, caps = walk(child, i + 1)
+            local rule, n, v = walk(child, i + 1, names, values)
             if rule then
-                return rule, caps
+                return rule, n, v
             end
         end
 
         -- 2. `{name}` single-segment parameter
         if node.param then
-            captures[node.param.name] = seg
-            local rule, caps = walk(node.param.node, i + 1)
+            names[#names + 1] = node.param.name
+            values[#values + 1] = seg
+            local rule, n, v = walk(node.param.node, i + 1, names, values)
             if rule then
-                return rule, caps
+                return rule, n, v
             end
-            captures[node.param.name] = nil
+            -- backtrack
+            names[#names] = nil
+            values[#values] = nil
         end
 
         -- 3. `*` / `{name*}` swallows the remainder
         if node.wildcard then
             local wh = pick_rule(node.wildcard.node, method, accepts)
             if wh then
-                captures[node.wildcard.name] = table_concat(segs, "/", i)
-                return wh, captures
+                local n2, v2 = {}, {}
+                for k = 1, #names do n2[k], v2[k] = names[k], values[k] end
+                n2[#n2 + 1] = node.wildcard.name
+                v2[#v2 + 1] = table_concat(segs, "/", i)
+                return wh, n2, v2
             end
         end
 
         return nil
     end
 
-    return walk(trie.root, 1)
+    local rule, names, values = walk(trie.root, 1, {}, {})
+    if not rule then
+        return nil
+    end
+
+    local captures = {}
+    for i = 1, #names do
+        captures[names[i]] = values[i]
+    end
+
+    -- A rule may also declare argument names that differ from the registered
+    -- path's (e.g. `/user/{id}` registered while the rule says `name`).  Expose
+    -- those too, positionally, so neither naming style reads as nil.
+    for i, name in ipairs(rule.args or {}) do
+        if captures[name] == nil and values[i] ~= nil then
+            captures[name] = values[i]
+        end
+    end
+
+    return rule, captures
 end
 
 -----------------------------------------------------------------------
@@ -285,6 +318,13 @@ local route = {
 --- which broke `set_app_name` and `route.group` middleware inheritance.
 ---
 --- Group state lives here because this table already exists.
+---
+--- `_rule_seq` records the declaration index of each declarative rule key, and
+--- `_next_rule_seq` hands out the next one.  They must be pre-created here so
+--- that assigning to them later is a plain store rather than a `__newindex`
+--- call that would register a bogus route.
+route._rule_seq = {}
+route._next_rule_seq = 0
 route._group = { midwares = nil }
 
 -----------------------------------------------------------------------
@@ -382,15 +422,39 @@ function route.set_app_name(name)
     route.rules[name] = {}
     route.rule_caches[name] = {}
     route.indexes[name] = nil
+    -- A new app starts a fresh declaration sequence so its rules compile in
+    -- the order the app declared them.
+    route._rule_seq = {}
+    route._next_rule_seq = 0
 end
 
 --- Compile `route.rules[app]` (the declarative `{ ["get /path"] = handler }`
 --- shape) into rule objects.
+---
+--- Registration order is explicit and deterministic.  `route.rules[app]` is a
+--- hash table, so iterating it with `pairs` produced a different rule order in
+--- every process — and when two routes share a trie shape but differ in
+--- parameter name or validation (`/user/{id}` vs `/user/{name}`), the
+--- per-process order decided which one was reachable and which validation ran.
+--- Rules are therefore collected with their declaration index and sorted.
 function route.init_rule_caches(config_rules)
     local app = route.cur_app
     lw_util.extend(route.rules[app], config_rules or {})
 
+    local pending = {}
     for location, result in pairs(route.rules[app]) do
+        pending[#pending + 1] = { location, result, route._next_rule_seq }
+        route._next_rule_seq = route._next_rule_seq + 1
+    end
+    table.sort(pending, function(a, b)
+        if route._rule_seq[a[1]] ~= route._rule_seq[b[1]] then
+            return route._rule_seq[a[1]] < route._rule_seq[b[1]]
+        end
+        return a[1] < b[1]
+    end)
+
+    for _, entry in ipairs(pending) do
+        local location, result = entry[1], entry[2]
         local method, matcher, url, validation = route.parse_rule(location)
         local rule = route.to_router(result, url)
         rule.matcher = matcher
@@ -841,6 +905,13 @@ local function add_route(verbs, path, handler, ...)
         end
     end
 
+    -- Record declaration order for this key unless it was already declared;
+    -- `init_rule_caches` replays the rules in it (see there for why).
+    if rawget(route, "_rule_seq")[key] == nil then
+        route._rule_seq[key] = route._next_rule_seq
+        route._next_rule_seq = route._next_rule_seq + 1
+    end
+
     route.rules[route.cur_app][key] = {
         responser = handler,
         path      = path,
@@ -912,24 +983,39 @@ function route.options(verbs, path, handler, ...)
 end
 
 --- RESTful resource shorthand.
-function route.rest(path, handler, ...)
-    local name = handler
+---
+--- `handler` is the controller base name; each route is bound to the matching
+--- MVC action on it (`"post" -> "post.index"`, `"post.index"` is accepted too).
+---
+--- The action map is deliberately conventional (index / store / create / show /
+--- update / destroy / edit).  The previous version concatenated the method and
+--- the path onto the base name, producing module names such as
+--- `post.GET/new` and `post.DELETE/{id}`, which no require() can ever resolve —
+--- every generated route 404'd.
+function route.rest(path, name, ...)
     local base = normalize_path(path)
+    if type(name) ~= "string" then
+        error("route.rest(path, controller_name): controller name must be a string", 2)
+    end
+
+    -- Accept either "post" or "post.index"; only the base name is used.
+    local controller = name:match("^([^.]+)") or name
+
     local map = {
-        { "GET",    "" },
-        { "POST",   "" },
-        { "GET",    "/new" },
-        { "GET",    "/{id}" },
-        { "PUT",    "/{id}" },
-        { "DELETE", "/{id}" },
-        { "GET",    "/{id}/edit" },
+        { "GET",    "",         "index"   },
+        { "POST",   "",         "store"   },
+        { "GET",    "/new",     "create"  },
+        { "GET",    "/{id}",    "show"    },
+        { "PUT",    "/{id}",    "update"  },
+        { "DELETE", "/{id}",    "destroy" },
+        { "GET",    "/{id}/edit", "edit"  },
     }
     for _, m in ipairs(map) do
         local full = base .. m[2]
         if full == "" then
             full = "/"
         end
-        add_route(m[1], full, type(handler) == "string" and (name .. "." .. m[1] .. m[2]) or handler, ...)
+        add_route(m[1], full, controller .. "." .. m[3], ...)
     end
 end
 

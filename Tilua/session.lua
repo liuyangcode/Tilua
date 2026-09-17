@@ -18,13 +18,33 @@ local STATUS_DISABLED = -1
 local STATUS_CLOSED   = 0
 local STATUS_ACTIVE   = 1
 
+--- Fallback id generator, used only when Tilua.utils.util cannot be loaded.
+---
+--- Hex-encodes an md5 digest so the result matches `valid_key`'s charset.  The
+--- previous fallback returned `ngx.md5(...)` RAW — a binary digest containing
+--- bytes outside `[%w%-_=]` — so it failed valid_key, the id was discarded, and
+--- the session was silently recreated on every request.
+---
+--- NOTE: this path is weaker than util.random_string (which uses /dev/urandom).
+--- It exists only so a broken install degrades visibly-but-usably instead of
+--- failing every request; `tilua doctor` reports the missing dependency.
+local function fallback_random_id()
+    local digest = ngx.md5(tostring(ngx.now()) .. tostring(math.random(1, 1e6))
+        .. tostring(ngx.worker and ngx.worker.pid() or 0))
+    return (digest:gsub(".", function(c)
+        return format("%02x", c:byte())
+    end))
+end
+
 local function default_random_id()
     local ok, util = pcall(require, "Tilua.utils.util")
     if ok and util.random_string then
-        return util.random_string()
+        local ok2, id = pcall(util.random_string)
+        if ok2 and type(id) == "string" and id ~= "" then
+            return id
+        end
     end
-    -- fallback: md5 of time + random
-    return ngx.md5(tostring(ngx.now()) .. tostring(math.random(1, 1e9)))
+    return fallback_random_id()
 end
 
 --- Validate session id shape (non-empty, reasonable charset/length)

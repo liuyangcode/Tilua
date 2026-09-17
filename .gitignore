@@ -41,3 +41,10 @@ luac.out
 
 # `tilua serve` scratch dir (generated dev nginx.conf, pid, logs)
 .tilua/
+
+# End-to-end run artifacts (nginx pid/logs, captured result.txt)
+.e2e/
+
+# Generated template caches
+**/cache/view/
+**/cache/html/

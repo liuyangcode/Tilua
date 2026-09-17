@@ -69,7 +69,7 @@ function dispatch:make_chain_call(midware, handler)
     end
     local list = reverse(midware or {})
     return reduce(function(res, next_midware)
-        local mid = ctx:make("middleware"):instance(next_midware)
+        local mid = ctx:make("middleware"):instance(next_midware, ctx)
         local func = bind1(mid.handle, mid)
         return function(...)
             local ok, out = xpcall(function(...)
@@ -110,7 +110,7 @@ function dispatch:run_phase(entries, ...)
         local entry = chain[i]
         local prev = next_fn
         next_fn = function(...)
-            local mid = ctx:make("middleware"):instance(entry)
+            local mid = ctx:make("middleware"):instance(entry, ctx)
             local func = bind1(mid.handle, mid)
             local ok, out = xpcall(function(...)
                 return func(prev, ...)

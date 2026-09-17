@@ -2,7 +2,9 @@
 
 **A simple, modern MVC web development kit for OpenResty (Lua).**
 
-> Status: **v0.2.0** (Phase 1–3 complete). Originally marked "Production not ready".  
+> Status: **v0.9.3** — container-based architecture, trie router, phase-split
+> middleware, request-scoped lifecycle. See `docs/` for the design notes and
+> `VERSION` for the current release. Originally marked "Production not ready".  
 > Goal: cleaner architecture, better maintainability, production-ready defaults while keeping the original spirit.
 
 

@@ -72,13 +72,41 @@ local function resolve_middleware_module(ctx, ref)
     return ref, ref
 end
 
-function manager.instance(self, midware)
-    local hash = lw_util.get_hash and lw_util.get_hash(midware) or table.concat(midware, "|")
-    if self.midwares[hash] then
-        return self.midwares[hash]
+--- Instantiate (or reuse) a middleware for one request.
+---
+--- The instance cache is keyed by the middleware reference but MUST live on the
+--- request context, never on this manager.  The manager is the worker-scoped
+--- container singleton "middleware" (built during `init_worker_by_lua`, i.e.
+--- with the boot/Application class as `ctx`), so a cache or a `self.ctx` on the
+--- manager pins the first caller's context forever: every later request re-ran
+--- the middleware with a stale `self.ctx` while per-request state
+--- (mvc_router's controller/action, session's handle) accumulated on a shared
+--- instance.
+---
+--- @param midware table   { name, config }
+--- @param ctx table|nil   the resolving request context; defaults to the
+---                        manager's for non-request callers (tests, CLI).
+function manager.instance(self, midware, ctx)
+    ctx = ctx or self.ctx
+
+    -- Per-request cache.  Stored on the request context so it is discarded with
+    -- the rest of the request scope.
+    local holder = self
+    if ctx ~= nil and type(ctx) == "table" then
+        holder = ctx
+    end
+    local cache = rawget(holder, "_middleware_instances")
+    if cache == nil then
+        cache = {}
+        rawset(holder, "_middleware_instances", cache)
     end
 
-    local midware_class, alias_name = resolve_middleware_module(self.ctx, midware[1])
+    local hash = lw_util.get_hash and lw_util.get_hash(midware) or table.concat(midware, "|")
+    if cache[hash] then
+        return cache[hash]
+    end
+
+    local midware_class, alias_name = resolve_middleware_module(ctx, midware[1])
 
     local mid_class = midware_class and import(midware_class)
     if not mid_class then
@@ -86,12 +114,12 @@ function manager.instance(self, midware)
             .. " (tried '" .. tostring(midware_class) .. "')")
     end
 
-    local mid = mid_class(self.ctx, midware[2])
+    local mid = mid_class(ctx, midware[2])
     if not mid.handle then
         error("middleware '" .. tostring(midware[1]) .. "' must implement handle()")
     end
 
-    self.midwares[hash] = mid
+    cache[hash] = mid
     return mid
 end
 
@@ -229,9 +257,11 @@ end
 
 -- constructor used by app
 local function new(app)
+    -- NOTE: no `midwares` instance cache here.  Middleware instances are
+    -- per-request state and are cached on the request context instead; see
+    -- manager.instance().
     local m = setmetatable({
-        ctx      = app,
-        midwares = {},
+        ctx = app,
     }, { __index = manager })
     return m
 end

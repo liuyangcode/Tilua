@@ -39,20 +39,65 @@ local function is_file(path)
     return shell_ok("test -f " .. q(path))
 end
 
---- mode: "file" | "directory" | nil
-function lfs.attributes(path, what)
+--- Real metadata via `stat(1)`.
+---
+--- The earlier version returned only `mode`/`size` and hard-coded the size to
+--- 0, which made `path.getmtime` (i.e. `attributes(P, "modification")`) return
+--- *nil for every path that exists*.  View rendering treats a nil mtime as
+--- "template missing" (`view.lua:51`), so the e2e `/view` case reported a 500
+--- that a real LuaFileSystem never would have produced.  A stub that is wrong
+--- in the same direction as the code under test is worse than no stub, so read
+--- the timestamps from the filesystem for real.
+---
+--- `stat -c` is the GNU coreutils form; the OpenResty (Debian) image has it.
+local function stat_fields(path)
     if type(path) ~= "string" or path == "" then
         return nil
     end
-
-    local attr
-    if is_dir(path) then
-        attr = { mode = "directory", size = 0 }
-    elseif is_file(path) then
-        attr = { mode = "file", size = 0 }
-    else
+    -- %F file type, %s size, %X atime, %Y mtime, %Z ctime
+    local f = io.popen("stat -c '%F|%s|%X|%Y|%Z' " .. q(path) .. " 2>/dev/null")
+    if not f then
         return nil
     end
+    local line = f:read("*l")
+    f:close()
+    if not line or line == "" then
+        return nil
+    end
+    local ftype, size, atime, mtime, ctime = line:match("^(.-)|(%d+)|(%d+)|(%d+)|(%d+)$")
+    if not ftype then
+        return nil
+    end
+    return ftype, tonumber(size), tonumber(atime), tonumber(mtime), tonumber(ctime)
+end
+
+--- mode: "file" | "directory" | "link" | "other" | nil
+function lfs.attributes(path, what)
+    local ftype, size, atime, mtime, ctime = stat_fields(path)
+    if not ftype then
+        return nil
+    end
+
+    local mode
+    if ftype == "directory" then
+        mode = "directory"
+    elseif ftype == "regular file" or ftype == "regular empty file" then
+        mode = "file"
+    elseif ftype == "symbolic link" then
+        mode = "link"
+    else
+        mode = "other"
+    end
+
+    local attr = {
+        mode       = mode,
+        size       = size,
+        access     = atime,
+        modification = mtime,
+        change     = ctime,
+        -- `lfs.attributes` normally also reports permissions/nlink/uid/gid;
+        -- nothing in Tilua reads them, so they are omitted rather than faked.
+    }
 
     if what then
         return attr[what]

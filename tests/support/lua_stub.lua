@@ -85,9 +85,40 @@ if not rawget(_G, "ngx") then
         utctime = function() return "2026-01-01" end,
         today = function() return "2026-01-01" end,
 
-        -- encoding / hashing
-        md5 = function(s) return "md5:" .. tostring(s) end,
-        encode_base64 = function(s) return tostring(s) end,
+        -- Encoding / hashing.  These are implemented rather than stubbed as
+        -- identity: an identity `encode_base64` hides real charset bugs (session
+        -- ids stopped passing valid_key because base64 emitted "+", "/", "=").
+        md5 = function(s)
+            -- not a real MD5; only needs to be a stable 16-byte binary digest
+            local out, acc = {}, 0
+            s = tostring(s)
+            for i = 1, #s do
+                acc = (acc * 31 + s:byte(i)) % 4294967296
+            end
+            for i = 0, 15 do
+                out[#out + 1] = string.char((math.floor(acc / (2 ^ (i % 4))) + i * 7) % 256)
+            end
+            return table.concat(out)
+        end,
+        encode_base64 = function(s, no_padding)
+            local alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+            local out = {}
+            s = tostring(s)
+            for i = 1, #s, 3 do
+                local a1, a2, a3 = s:byte(i, i + 2)
+                local v = a1 * 65536 + (a2 or 0) * 256 + (a3 or 0)
+                out[#out + 1] = alpha:sub(math.floor(v / 262144) % 64 + 1,
+                                          math.floor(v / 262144) % 64 + 1)
+                    .. alpha:sub(math.floor(v / 4096) % 64 + 1,
+                                 math.floor(v / 4096) % 64 + 1)
+                    .. (a2 and alpha:sub(math.floor(v / 64) % 64 + 1,
+                                         math.floor(v / 64) % 64 + 1)
+                        or (no_padding and "" or "="))
+                    .. (a3 and alpha:sub(v % 64 + 1, v % 64 + 1)
+                        or (no_padding and "" or "="))
+            end
+            return table.concat(out)
+        end,
         decode_base64 = function(s) return tostring(s) end,
         escape_uri = function(s) return tostring(s) end,
         unescape_uri = function(s) return tostring(s) end,

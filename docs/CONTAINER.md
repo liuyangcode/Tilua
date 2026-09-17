@@ -167,7 +167,9 @@ App (类，worker 单例的属主)
 - 上下文通过 `_parent` 向上查找绑定与单例，所以请求里 `ctx:make("router")` 与
   `App:make("router")` 是**同一个对象**。
 
-`Tilua/core/lifecycle.lua` 的 `set_by_lua` 负责建立这条 `_parent` 连接。
+`Tilua/core/request.lua` 的 `context()` 在 `rewrite_by_lua` 里建立这条 `_parent`
+连接（把请求容器挂到 worker 级的 `App` 类上），`log_by_lua` 再通过
+`RequestCtx.finish()` 释放作用域。
 
 ---
 

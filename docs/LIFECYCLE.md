@@ -79,13 +79,15 @@ end
 文件系统。新设计拆开：
 
 ```
-App:load_config()                  # 纯配置，无副作用
-App:register_routes()              # 路由规则 → 路由索引
+App:load_config_and_routes()       # 配置 + 路由规则 → 路由索引（无 worker 副作用）
         ↓  (master, init_by_lua)
 
 App:boot_worker()                  # view engine / middleware / plugins / 预热
         ↓  (worker, init_worker_by_lua)
 ```
+
+`register_routes()` 保留为 `load_config_and_routes()` 的别名（旧代码里的
+`load_config()` / `load_route()` 已合并删除，CLI 入口见 `Tilua/cli/init.lua`）。
 
 配置校验放在 master：`config` 缺失必填项、`dispatch` 类不可加载、路由规则语法错误，
 都应在 `init_by_lua` 阶段直接报错让 `nginx -t` / reload 失败，而不是等到第一个请求。

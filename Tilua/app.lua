@@ -281,10 +281,11 @@ function App:boot_worker()
         mw.load(cfg)
     end
 
-    -- view engine (creates cache dirs) + template caching policy
+    -- view engine (creates cache dirs) + template caching policy.
+    -- `caching` is a colon method; a dot call would pass the flag as `self`.
     local engine = self:make("view_engine")
     if engine and engine.template and engine.template.caching then
-        engine.template.caching(not self.debug)
+        engine.template:caching(not self.debug)
     end
 
     local plugins = self:make("plugin")

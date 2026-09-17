@@ -683,13 +683,22 @@ function CLI.run(AppClass, args)
     app._channel = "cli"
     app._cli = true
     app._cli_args = args
-    if type(app.init_by_lua) == "function" then
-        -- minimal boot without ngx phases when possible
-        pcall(function()
-            app:load_config()
-            app:load_route()
-        end)
+
+    -- Boot the app before handling the command, so commands can read config and
+    -- routes.  This used to call `app:load_config()` / `app:load_route()`, which
+    -- no longer exist (they were merged into `load_config_and_routes`), and the
+    -- pcall swallowed the "attempt to call a nil value" error — so the CLI
+    -- silently ran against an unconfigured app.
+    local ok, err = pcall(function()
+        app:load_config_and_routes()
+        app:boot_worker()
+    end)
+    if not ok then
+        -- Not fatal: `help`, `version` and `new` do not need a configured app,
+        -- and a broken app config should not stop the user from finding out why.
+        io.stderr:write("tilua: app boot failed: " .. tostring(err) .. "\n")
     end
+
     local Plugin = require("Tilua.core.plugin")
     Plugin.register(CLI)
     CLI.register(app)

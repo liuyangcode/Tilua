@@ -78,8 +78,14 @@ local function init_view_engine(root)
         view                = view_path,
         root                = root,
         cache_key_prefix    = view_path,
+        -- `view_cache_path` is the *relative* path the template engine uses
+        -- for its own cache-key lookups; `view_cache_abs_path` is the
+        -- filesystem prefix `view.lua` passes to `getmtime`/`mkdir`, so it
+        -- must be absolute.  The two used to hold the same relative value,
+        -- which made the mtime check resolve against the nginx prefix
+        -- instead of the app root.
         view_cache_path     = path_join("cache", "view", ""),
-        view_cache_abs_path = view_cache_path,
+        view_cache_abs_path = path_join(cache_path, "view", ""),
         html_cache_path     = html_cache_path,
     }
 end

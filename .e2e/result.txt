@@ -11,9 +11,9 @@ body: TEXT-MARKER
 status: 200
 body: TEXT-MARKER
 
-### /view   [string + table -> view render]
-status: 500
-body: {"error_code":"controller_error","message":"\/app\/Tilua\/view.lua:49: [view.render] Template file named \/app\/tests\/fixtures\/TestApp\/view\/index.html not exists!","code":500,"layer":"controller","request_id":"82f916c018b6f7493877746071296dec"}
+### /view   [view render -> Tilua.template]
+status: 200
+body: <!doctype html>\n<html>\n<head><meta charset="utf-8"><title>from view</title></head>\n<body>\n<h1>from view</h1>\n<p>marker: VIEW-OK</p>\n<p>escaped: &lt;b&gt;&amp;&lt;/b&gt;</p>\n</body>\n</html>\n
 
 ### /about   [route from the callback form]
 status: 200
@@ -24,20 +24,36 @@ status: 200
 body: hello ada
 
 ### /num/42   [param validation (reg) ACCEPT]
-status: 597
-body: CONTENT ERROR: /usr/local/openresty/lualib/resty/core/regex.lua:584: attempt to concatenate local 'regex' (a nil value)\n
+status: 200
+body: numeric id=42
 
 ### /num/abc   [param validation (reg) REJECT]
-status: 597
-body: CONTENT ERROR: /usr/local/openresty/lualib/resty/core/regex.lua:584: attempt to concatenate local 'regex' (a nil value)\n
+status: 404
+body: Not Found
 
 ### /kind/ok   [param validation (eq) ACCEPT]
-status: 597
-body: CONTENT ERROR: /usr/local/openresty/lualib/resty/core/regex.lua:584: attempt to concatenate local 'regex' (a nil value)\n
+status: 200
+body: kind=ok
 
 ### /kind/no   [param validation (eq) REJECT]
-status: 597
-body: CONTENT ERROR: /usr/local/openresty/lualib/resty/core/regex.lua:584: attempt to concatenate local 'regex' (a nil value)\n
+status: 404
+body: Not Found
+
+### /pair/x   [same-shape params: winner captures its own name]
+status: 200
+body: pair-a=x
+
+### /left/1   [separate parents keep separate param names (x)]
+status: 200
+body: left-x=1
+
+### /right/2   [separate parents keep separate param names (y)]
+status: 200
+body: right-y=2
+
+### /view-assign   [view:assign + render without a context table]
+status: 200
+body: <!doctype html>\n<html>\n<head><meta charset="utf-8"><title>assigned title</title></head>\n<body>\n<h1>assigned title</h1>\n<p>marker: ASSIGN-OK</p>\n<p>escaped: &lt;i&gt;raw&lt;/i&gt;</p>\n</body>\n</html>\n
 
 ### /admin   [access-phase DENY (no token)]
 status: 403
@@ -48,37 +64,35 @@ status: 200
 body: admin area
 
 ### /healthz   [health endpoint short-circuit]
-status: 597
-body: CONTENT ERROR: /usr/local/openresty/lualib/resty/core/regex.lua:584: attempt to concatenate local 'regex' (a nil value)\n
+status: 404
+body: Not Found
 
 ### /nope   [404]
-status: 597
-body: CONTENT ERROR: /usr/local/openresty/lualib/resty/core/regex.lua:584: attempt to concatenate local 'regex' (a nil value)\n
+status: 404
+body: Not Found
 
 ### /boom   [500 from a throwing route]
 status: 500
-body: {"error_code":"controller_error","message":"\/app\/tests\/fixtures\/TestApp\/routes.lua:31: intentional route failure","code":500,"layer":"controller","request_id":"348b29d3fbc3f2742228144d1211a3d7"}
+body: {"code":500,"error_code":"controller_error","request_id":"5e299728c9a5c58707031a2136032f99","layer":"controller","message":"\/app\/tests\/fixtures\/TestApp\/routes.lua:35: intentional route failure"}
 
 ########## ACCESS LOG ##########
-127.0.0.1 - - [15/Sep/2026:14:53:49 +0000] "GET /greeter HTTP/1.0" 200 45 "-" "-"
-127.0.0.1 - - [15/Sep/2026:14:53:49 +0000] "GET /text HTTP/1.0" 200 11 "-" "-"
-127.0.0.1 - - [15/Sep/2026:14:53:49 +0000] "GET /text-literal HTTP/1.0" 200 11 "-" "-"
-127.0.0.1 - - [15/Sep/2026:14:53:49 +0000] "GET /view HTTP/1.0" 500 248 "-" "-"
-127.0.0.1 - - [15/Sep/2026:14:53:49 +0000] "GET /about HTTP/1.0" 200 5 "-" "-"
-127.0.0.1 - - [15/Sep/2026:14:53:49 +0000] "GET /user/ada HTTP/1.0" 200 9 "-" "-"
-127.0.0.1 - - [15/Sep/2026:14:53:49 +0000] "GET /num/42 HTTP/1.0" 597 120 "-" "-"
-127.0.0.1 - - [15/Sep/2026:14:53:49 +0000] "GET /num/abc HTTP/1.0" 597 120 "-" "-"
-127.0.0.1 - - [15/Sep/2026:14:53:49 +0000] "GET /kind/ok HTTP/1.0" 597 120 "-" "-"
-127.0.0.1 - - [15/Sep/2026:14:53:49 +0000] "GET /kind/no HTTP/1.0" 597 120 "-" "-"
-127.0.0.1 - - [15/Sep/2026:14:53:49 +0000] "GET /admin HTTP/1.0" 403 20 "-" "-"
-127.0.0.1 - - [15/Sep/2026:14:53:49 +0000] "GET /admin HTTP/1.0" 200 10 "-" "-"
-127.0.0.1 - - [15/Sep/2026:14:53:49 +0000] "GET /healthz HTTP/1.0" 597 120 "-" "-"
-127.0.0.1 - - [15/Sep/2026:14:53:49 +0000] "GET /nope HTTP/1.0" 597 120 "-" "-"
-127.0.0.1 - - [15/Sep/2026:14:53:49 +0000] "GET /boom HTTP/1.0" 500 199 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /greeter HTTP/1.0" 200 45 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /text HTTP/1.0" 200 11 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /text-literal HTTP/1.0" 200 11 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /view HTTP/1.0" 200 189 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /about HTTP/1.0" 200 5 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /user/ada HTTP/1.0" 200 9 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /num/42 HTTP/1.0" 200 13 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /num/abc HTTP/1.0" 404 9 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /kind/ok HTTP/1.0" 200 7 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /kind/no HTTP/1.0" 404 9 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /pair/x HTTP/1.0" 200 8 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /left/1 HTTP/1.0" 200 8 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /right/2 HTTP/1.0" 200 9 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /view-assign HTTP/1.0" 200 199 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /admin HTTP/1.0" 403 20 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /admin HTTP/1.0" 200 10 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /healthz HTTP/1.0" 404 9 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /nope HTTP/1.0" 404 9 "-" "-"
+127.0.0.1 - - [17/Sep/2026:12:26:16 +0000] "GET /boom HTTP/1.0" 500 199 "-" "-"
 ########## ERROR LOG (lua only) ##########
-2026/09/15 14:53:49 [error] 12#12: *8 [lua] content_by_lua(nginx.conf:111):6: [e2e] content_by_lua failed: /usr/local/openresty/lualib/resty/core/regex.lua:584: attempt to concatenate local 'regex' (a nil value), client: 127.0.0.1, server: , request: "GET /num/42 HTTP/1.0", host: "localhost"
-2026/09/15 14:53:49 [error] 12#12: *9 [lua] content_by_lua(nginx.conf:111):6: [e2e] content_by_lua failed: /usr/local/openresty/lualib/resty/core/regex.lua:584: attempt to concatenate local 'regex' (a nil value), client: 127.0.0.1, server: , request: "GET /num/abc HTTP/1.0", host: "localhost"
-2026/09/15 14:53:49 [error] 12#12: *10 [lua] content_by_lua(nginx.conf:111):6: [e2e] content_by_lua failed: /usr/local/openresty/lualib/resty/core/regex.lua:584: attempt to concatenate local 'regex' (a nil value), client: 127.0.0.1, server: , request: "GET /kind/ok HTTP/1.0", host: "localhost"
-2026/09/15 14:53:49 [error] 12#12: *11 [lua] content_by_lua(nginx.conf:111):6: [e2e] content_by_lua failed: /usr/local/openresty/lualib/resty/core/regex.lua:584: attempt to concatenate local 'regex' (a nil value), client: 127.0.0.1, server: , request: "GET /kind/no HTTP/1.0", host: "localhost"
-2026/09/15 14:53:49 [error] 12#12: *14 [lua] content_by_lua(nginx.conf:111):6: [e2e] content_by_lua failed: /usr/local/openresty/lualib/resty/core/regex.lua:584: attempt to concatenate local 'regex' (a nil value), client: 127.0.0.1, server: , request: "GET /healthz HTTP/1.0", host: "localhost"
-2026/09/15 14:53:49 [error] 12#12: *15 [lua] content_by_lua(nginx.conf:111):6: [e2e] content_by_lua failed: /usr/local/openresty/lualib/resty/core/regex.lua:584: attempt to concatenate local 'regex' (a nil value), client: 127.0.0.1, server: , request: "GET /nope HTTP/1.0", host: "localhost"
